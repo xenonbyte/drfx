@@ -248,8 +248,15 @@ test('strict verified route proof uses same-flow check json only', () => {
     assert.match(text, /same-flow|same route flow|same invocation/i);
     assert.match(text, /runId/);
     assert.match(text, /descriptorPath/);
+    assert.match(text, /descriptorDirectory/);
     assert.match(text, /--capability-descriptor/);
+    assert.match(text, /--descriptor-directory/);
     assert.match(text, /--proof-run-id/);
+    assert.match(
+      text,
+      /drfx workflow start[\s\S]{0,220}(?:<selectedMode>|<requestedMode>|read-only\|review-and-fix|review-and-fix)[\s\S]{0,140}--assurance strict-verified/i,
+      label
+    );
     assert.match(text, /do not scrape|must not scrape|never scrape/i, label);
     assert.match(text, /human-readable.*drfx check|drfx check.*human-readable/i, label);
     assert.match(text, /do not reuse|must not reuse|never reuse/i, label);
@@ -260,11 +267,29 @@ test('strict verified route proof uses same-flow check json only', () => {
   assert.doesNotMatch(geminiText, /--assurance strict-verified[\s\S]{0,160}--runtime-platform gemini|--runtime-platform gemini[\s\S]{0,160}--assurance strict-verified/);
 });
 
+test('record-diff-review route handoff uses result stdin flag', () => {
+  const sourceText = [
+    'templates/claude-command.md.tmpl',
+    'templates/codex-skill.md.tmpl'
+  ].map(read).join('\n\n');
+
+  assert.match(sourceText, /record-diff-review[\s\S]{0,120}--result-stdin/);
+  assert.doesNotMatch(sourceText, /record-diff-review[\s\S]{0,120}--diff-review-stdin/);
+});
+
 test('no mode token path remains explain-only', () => {
   const sourceText = read('templates/codex-skill.md.tmpl');
   assert.match(sourceText, /without read-only or review-and-fix/i);
   assert.match(sourceText, /explain/i);
   assert.doesNotMatch(sourceText, /no mode token[\s\S]{0,120}drfx workflow start/i);
+});
+
+test('coordinator prompt uses read-only-clean instead of read-only PASS', () => {
+  const coordinator = read('shared/prompts/coordinator.md');
+
+  assert.match(coordinator, /Terminal and pause states:[\s\S]*read-only-clean[\s\S]*read-only-findings/);
+  assert.match(coordinator, /read-only clean status is `read-only-clean`|read-only-clean.*not `?pass`?/i);
+  assert.doesNotMatch(coordinator, /mode is read-only[\s\S]{0,180}otherwise report PASS/i);
 });
 
 test('shared prompt sources include required v2 machine contracts', () => {

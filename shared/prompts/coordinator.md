@@ -63,7 +63,7 @@ Loop:
 8. Triage findings into accepted, merged, downgraded, rejected, or deferred.
 9. Write the issue ledger and receipts when persistent state is needed.
 10. Check before automatic PASS: only pass when the full-document review passes and the coordinator independently agrees.
-11. If mode is read-only and findings block PASS under the selected strictness, stop as read-only-findings; otherwise report PASS or non-blocking findings without fixing.
+11. If mode is read-only and findings block under the selected strictness, stop as read-only-findings; if no blocking findings remain, stop as read-only-clean. Never report pass for read-only or no-state flows.
 12. Acquire the target lock before any target modification.
 13. Run the pre-fix guard: confirm the current target fingerprint matches the lock and manifest state.
 14. Fix accepted issues directly by default, or with one bounded serial fixer subagent.
@@ -78,6 +78,7 @@ V2 workflow command loop:
 
 Terminal and pause states:
 - pass
+- read-only-clean
 - stopped-with-deferrals
 - read-only-findings
 - blocked

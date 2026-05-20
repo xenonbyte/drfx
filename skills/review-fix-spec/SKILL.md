@@ -21,7 +21,7 @@ review-fix-spec target=<path> [ref=<path>...] read-only|review-and-fix [strict|n
 
 Practical Mode requires a live reviewer subagent probe that returns exactly `DRFX_REVIEWER_READY`, plus verified stdin handoff for semantic payloads. If subagent delegation is unavailable or invalid, downgrade only through the allowed advisory downgrade reasons. If fingerprint guard or stdin handoff is unavailable, fail closed; stdin handoff failure is `unsafe-handoff-file`.
 
-Strict Verified requires a same-flow `drfx check --json` descriptor path and `runId`. It does not use cached or installer-default descriptors. The internal workflow command decides whether strict proof is valid.
+Strict Verified requires same-flow `drfx check --json` values: `descriptorPath`, `descriptorDirectory`, and `runId`. It does not use cached or installer-default descriptors. The internal workflow command decides whether strict proof is valid.
 
 Automatic writes require `review-and-fix`, a tracked clean HEAD-backed git target, target-only guard success, and target-local lock refresh. Fixers and coordinators may modify only the target document; references remain read-only.
 

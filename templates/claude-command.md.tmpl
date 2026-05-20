@@ -59,21 +59,25 @@ Only explicit `assurance=strict-verified` requests strict verified mode. In the 
 drfx check --platform claude --json
 ```
 
-Read the JSON object, then extract `runId` and `platforms.claude.descriptorPath`. Pass those current-run values to workflow start:
+Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.claude.descriptorPath`. Let `<selectedMode>` be the user's explicit mode, either `read-only` or `review-and-fix`. Pass those current-run values to workflow start:
 
 ```text
-drfx workflow start {{ROUTE_NAME}} target=<path> read-only --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --proof-run-id <runId> --json
+drfx workflow start {{ROUTE_NAME}} target=<path> <selectedMode> --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
 ```
+
+For `review-and-fix assurance=strict-verified`, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
 
 Do not scrape human-readable `drfx check` output. Do not reuse a cached descriptor or installer-default descriptor. Do not claim strict verified assurance unless the internal workflow command accepts the descriptor proof.
 
-## Practical Review-And-Fix Flow
+## Persistent Review-And-Fix Flow
 
-After successful probes, start persistent state:
+For `assurance=practical`, after successful probes, start persistent state:
 
 ```text
 drfx workflow start {{ROUTE_NAME}} target=<path> review-and-fix --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
 ```
+
+For `assurance=strict-verified`, use the strict verified start command above with `<selectedMode>` set to `review-and-fix`.
 
 Then coordinate this loop:
 
@@ -86,7 +90,7 @@ Then coordinate this loop:
 7. Run `drfx workflow refresh-lock <targetStateDir> --json` before writes after 60 seconds, before a delegated fixer writes, and before ending a long fix.
 8. Submit a valid fix report with `drfx workflow end-fix <targetStateDir> --fix-report-stdin --json`.
 9. If interruption, blocker, checkpoint, context pressure, or user stop happens before a valid fix report, run `drfx workflow abort-fix <targetStateDir> --status checkpoint --reason checkpoint-requested --next-action <redacted next action> --json` or use `--status blocked` with an allowed blocking reason.
-10. Review the diff and submit with `drfx workflow record-diff-review <targetStateDir> --diff-review-stdin --json`.
+10. Review the diff and submit with `drfx workflow record-diff-review <targetStateDir> --result-stdin --json`.
 11. After `DIFF-OK`, run full re-review using `drfx workflow context {{ROUTE_NAME}} target=<path> review-and-fix --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --json`, then record the full re-review with `--phase full-re-review --result-stdin`.
 12. Repeat triage, fix, diff review, and full re-review until terminal status.
 13. Finalize only through `drfx workflow finalize <targetStateDir> --final-response-stdin --json`.

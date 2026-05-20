@@ -125,7 +125,7 @@ The coordinator owns the loop and is the only role allowed to mark PASS. Initial
 
 `normal` is the default strictness. High and medium findings block PASS until they are fixed, merged into fixed issues, rejected with rationale, downgraded with rationale, or deferred according to the workflow. Deferred high and medium findings stop as `stopped-with-deferrals`, not PASS. `strict` mode additionally makes low findings blocking unless they are explicitly accepted as non-blocking. `normal` mode allows low issues to remain non-blocking when the coordinator accepts that they do not affect the objective. `read-only` mode reviews and triages only, does not edit files, and stops as `read-only-findings` when blocking findings remain. `review-and-fix` mode may edit only the target document.
 
-Terminal and pause states include `pass`, `stopped-with-deferrals`, `read-only-findings`, `blocked`, `unsupported`, `externally-changed`, `possible-target-replacement`, user stop, and `checkpoint`.
+Terminal and pause states include `pass`, `read-only-clean`, `stopped-with-deferrals`, `read-only-findings`, `blocked`, `unsupported`, `externally-changed`, `possible-target-replacement`, user stop, and `checkpoint`.
 
 Read-only clean status is `read-only-clean`; it is not workflow PASS. One-shot read-only without `ledger=` and without `resume` uses no-state tokens kept in coordinator memory only.
 
@@ -135,7 +135,7 @@ Codex and Claude Code routes default to `assurance=practical`; Gemini defaults t
 
 Practical Mode requires a live reviewer subagent probe returning exactly `DRFX_REVIEWER_READY` and a real stdin handoff probe before semantic payload commands. Practical Mode does not require `drfx check` strict proof. Unverified write-blocking proof does not block practical mode, but fingerprint guard failure or invalid fingerprint output fails closed and must not downgrade to a no-guard advisory flow.
 
-Strict Verified requires explicit `assurance=strict-verified`. Codex routes must run `drfx check --platform codex --json` in the same flow, and Claude Code routes must run `drfx check --platform claude --json` in the same flow. The route reads `runId` and `descriptorPath` from that JSON and passes them to `drfx workflow start` through `--capability-descriptor` and `--proof-run-id`. Cached descriptors and installer-default descriptors are not valid strict proof.
+Strict Verified requires explicit `assurance=strict-verified`. Codex routes must run `drfx check --platform codex --json` in the same flow, and Claude Code routes must run `drfx check --platform claude --json` in the same flow. The route reads `runId`, `descriptorDirectory`, and `descriptorPath` from that JSON and passes them to `drfx workflow start` through `--capability-descriptor`, `--descriptor-directory`, and `--proof-run-id`. For `review-and-fix assurance=strict-verified`, the strict verified start command must preserve `review-and-fix` as the selected mode. Cached descriptors and installer-default descriptors are not valid strict proof.
 
 If the reviewer subagent is unavailable or invalid in Codex or Claude Code, generated routes may downgrade to advisory using only the allowed downgrade reasons. If stdin handoff is unavailable, routes fail closed as `unsafe-handoff-file`; semantic payloads must not be sent through shell pipes, heredocs, herestrings, command substitution, argv, environment variables, or raw temp files.
 
