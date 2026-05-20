@@ -277,6 +277,20 @@ test('persistent workflow context writes reviewer manifest without target body',
   assert.doesNotMatch(text, /Target body sentinel|Reference body sentinel/);
 });
 
+test('persistent workflow context blocks when context directory is an external symlink', async (t) => {
+  const fixture = makePersistentFixture(t);
+  const outsideContext = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-outside-context-'));
+  t.after(() => fs.rmSync(outsideContext, { recursive: true, force: true }));
+  fs.symlinkSync(outsideContext, path.join(fixture.targetDir, 'context'), 'dir');
+
+  const result = await runWorkflowCommand('context', workflowArgs(fixture), { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.equal(fs.existsSync(path.join(outsideContext, 'current-reviewer-context-manifest.md')), false);
+});
+
 test('persistent record-review blocks when reviewer guard fingerprints change', async (t) => {
   const fixture = makePersistentFixture(t);
   await runWorkflowCommand('context', workflowArgs(fixture), { cwd: fixture.root });
@@ -294,6 +308,27 @@ test('persistent record-review blocks when reviewer guard fingerprints change', 
   assert.equal(result.status, 'blocked');
   assert.equal(result.blockingReason, 'reviewer-mutated-file');
   assert.equal(fs.existsSync(path.join(fixture.targetDir, 'reports', 'reviewer-round-001.md')), false);
+});
+
+test('persistent record-review blocks when reports directory is an external symlink', async (t) => {
+  const fixture = makePersistentFixture(t);
+  await runWorkflowCommand('context', workflowArgs(fixture), { cwd: fixture.root });
+  const outsideReports = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-outside-reports-'));
+  t.after(() => fs.rmSync(outsideReports, { recursive: true, force: true }));
+  fs.symlinkSync(outsideReports, path.join(fixture.targetDir, 'reports'), 'dir');
+
+  const result = await runWorkflowCommand('record-review', [
+    ...workflowArgs(fixture),
+    '--result-stdin'
+  ], {
+    cwd: fixture.root,
+    stdin: reviewerFailPayload()
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.equal(fs.existsSync(path.join(outsideReports, 'reviewer-round-001.md')), false);
 });
 
 test('persistent record-review stores producer metadata and record-triage updates ledger', async (t) => {
