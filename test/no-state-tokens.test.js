@@ -1,6 +1,8 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const {
@@ -14,6 +16,27 @@ const {
 } = require('../lib/no-state');
 const { deriveTargetKey } = require('../lib/target-state');
 const { parseWorkflowArgs, runWorkflowCommand } = require('../lib/workflow');
+
+const ROOT = path.join(__dirname, '..');
+
+function readOnlyCleanBlock(target = 'README.md') {
+  return [
+    'Final status: read-only-clean',
+    'Assurance: advisory',
+    'Runtime platform: manual',
+    'Mode: read-only',
+    `Target: ${target}`,
+    'Files changed: none',
+    'Fixed issue IDs: none',
+    'Verification performed: node --test test/no-state-tokens.test.js',
+    'Deferrals or blockers: none',
+    'Blocking reason: none',
+    'Status reason: none',
+    'Residual risk: none identified',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: none'
+  ].join('\n');
+}
 
 test('canonical encoding rejects padding standard base64 and unknown fields', () => {
   const encoded = encodeCanonical({ b: 'two', a: 1 });
@@ -64,7 +87,9 @@ test('state token lineage uses previous canonical bytes sha256', () => {
     runtimePlatform: 'manual',
     guardId: 'guard-1',
     eligibleTerminalStatuses: ['read-only-clean'],
-    normalized: { result: 'PASS' }
+    normalized: { result: 'PASS', blockingFindings: [] },
+    targetFingerprint: { sha256: 'a'.repeat(64), size: 10, mtimeMs: 1 },
+    referenceFingerprints: []
   });
   const second = nextStateToken({
     previousToken: first,
@@ -80,7 +105,9 @@ test('state token lineage uses previous canonical bytes sha256', () => {
     runtimePlatform: 'manual',
     guardId: 'guard-1',
     eligibleTerminalStatuses: ['read-only-clean'],
-    normalized: { decisions: [] }
+    normalized: { decisions: [], blockingFindings: [] },
+    targetFingerprint: { sha256: 'a'.repeat(64), size: 10, mtimeMs: 1 },
+    referenceFingerprints: []
   });
   assert.notEqual(validateStateToken(second).previousTokenSha256, 'none');
   assert.doesNotThrow(() => validateStateToken(second, { previousToken: first }));
@@ -138,7 +165,9 @@ test('state token rejects wrong kind wrong target wrong lineage stale and oversi
     runtimePlatform: 'manual',
     guardId: 'guard-1',
     eligibleTerminalStatuses: ['read-only-clean'],
-    normalized: { result: 'PASS' }
+    normalized: { result: 'PASS', blockingFindings: [] },
+    targetFingerprint: { sha256: 'a'.repeat(64), size: 10, mtimeMs: 1 },
+    referenceFingerprints: []
   });
   const other = nextStateToken({
     previousToken: null,
@@ -154,7 +183,9 @@ test('state token rejects wrong kind wrong target wrong lineage stale and oversi
     runtimePlatform: 'manual',
     guardId: 'guard-2',
     eligibleTerminalStatuses: ['read-only-clean'],
-    normalized: { result: 'PASS' }
+    normalized: { result: 'PASS', blockingFindings: [] },
+    targetFingerprint: { sha256: 'b'.repeat(64), size: 10, mtimeMs: 1 },
+    referenceFingerprints: []
   });
   const second = nextStateToken({
     previousToken: first,
@@ -170,7 +201,9 @@ test('state token rejects wrong kind wrong target wrong lineage stale and oversi
     runtimePlatform: 'manual',
     guardId: 'guard-1',
     eligibleTerminalStatuses: ['read-only-clean'],
-    normalized: { decisions: [] }
+    normalized: { decisions: [], blockingFindings: [] },
+    targetFingerprint: { sha256: 'a'.repeat(64), size: 10, mtimeMs: 1 },
+    referenceFingerprints: []
   });
   assert.throws(() => validateStateToken(first, { allowedKinds: ['triage-result'] }), /kind/i);
   assert.throws(() => validateStateToken(first, { normalizedTarget: 'docs/other.md' }), /target/i);
@@ -191,10 +224,121 @@ test('state token rejects wrong kind wrong target wrong lineage stale and oversi
       runtimePlatform: 'manual',
       guardId: 'guard-1',
       eligibleTerminalStatuses: ['read-only-findings'],
-      normalized: { summary: 'x'.repeat(40000) }
+      normalized: { summary: 'x'.repeat(40000), blockingFindings: [] },
+      targetFingerprint: { sha256: 'a'.repeat(64), size: 10, mtimeMs: 1 },
+      referenceFingerprints: []
     }),
     /state-token-too-large|32768/i
   );
+});
+
+test('workflow context no-state returns review guard for real tracked target', async () => {
+  const result = await runWorkflowCommand('context', [
+    '--no-state',
+    'review-fix-doc',
+    'target=README.md',
+    'read-only',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'manual',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--phase',
+    'initial-review',
+    '--json'
+  ]);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.targetStateDir, null);
+  assert.equal(typeof result.reviewGuard, 'string');
+  const guard = decodeCanonical(result.reviewGuard);
+  assert.equal(Number.isInteger(guard.targetFingerprint.mtimeMs), true);
+});
+
+test('malformed hand-built state token missing required fields is rejected by helper and workflow finalize', async () => {
+  const targetKey = deriveTargetKey(ROOT, path.join(ROOT, 'README.md')).targetKey;
+  const malformed = encodeCanonical({
+    tokenVersion: 1,
+    tokenKind: 'review-result',
+    contentPolicy: 'redacted-normalized-state-only',
+    eligibleTerminalStatuses: ['read-only-clean'],
+    targetKey,
+    normalizedTarget: 'README.md',
+    references: [],
+    mode: 'read-only',
+    assurance: 'advisory',
+    runtimePlatform: 'manual',
+    normalized: { result: 'PASS', blockingFindings: [] }
+  });
+
+  assert.throws(() => validateStateToken(malformed), /missing|required|previousTokenSha256|phase|round|guardId/i);
+
+  await assert.rejects(
+    () => runWorkflowCommand('finalize', [
+      '--no-state',
+      'review-fix-doc',
+      'target=README.md',
+      'read-only',
+      '--assurance',
+      'advisory',
+      '--runtime-platform',
+      'manual',
+      '--runtime-subagent-probe',
+      'not-required',
+      '--runtime-stdin-handoff',
+      'ready',
+      '--state-token',
+      malformed,
+      '--final-response-stdin',
+      '--json'
+    ], { stdin: readOnlyCleanBlock() }),
+    /missing|required|previousTokenSha256|phase|round|guardId/i
+  );
+});
+
+test('oversized no-state preflight token output maps to state-token-too-large blocker', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-no-state-large-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const target = path.join(root, 'target.md');
+  fs.writeFileSync(target, '# Target\n');
+  const args = [
+    '--no-state',
+    'review-fix-doc',
+    `root=${root}`,
+    `target=${target}`,
+    'review-and-fix',
+    '--terminal-status',
+    'unsupported',
+    '--status-reason',
+    'unsupported-runtime-capability',
+    '--blocking-reason',
+    'none',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'gemini',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    '--json'
+  ];
+  for (let index = 0; index < 420; index += 1) {
+    const name = `reference-${String(index).padStart(3, '0')}-${'x'.repeat(80)}.md`;
+    const reference = path.join(root, name);
+    fs.writeFileSync(reference, '# Reference\n');
+    args.splice(4, 0, `ref=${reference}`);
+  }
+
+  const result = await runWorkflowCommand('preflight', args);
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-token-too-large');
+  assert.equal(result.stateToken, undefined);
+  assert.match(result.nextAction, /ledger=|persistent/i);
 });
 
 test('workflow preflight rejects observable semantic inputs', () => {
@@ -287,8 +431,7 @@ test('no-state commands reject strict verified resume ledger full re-review and 
 });
 
 test('no-state finalizer rejects pass and validates clean versus findings', async () => {
-  const root = path.join(__dirname, '..');
-  const targetKey = deriveTargetKey(root, path.join(root, 'README.md')).targetKey;
+  const targetKey = deriveTargetKey(ROOT, path.join(ROOT, 'README.md')).targetKey;
   const token = nextStateToken({
     previousToken: null,
     tokenKind: 'review-result',
@@ -303,7 +446,9 @@ test('no-state finalizer rejects pass and validates clean versus findings', asyn
     runtimePlatform: 'manual',
     guardId: 'guard-1',
     eligibleTerminalStatuses: ['read-only-clean'],
-    normalized: { result: 'PASS', blockingFindings: [] }
+    normalized: { result: 'PASS', blockingFindings: [] },
+    targetFingerprint: { sha256: 'a'.repeat(64), size: 10, mtimeMs: 1 },
+    referenceFingerprints: []
   });
   const passBlock = [
     'Final status: pass',
