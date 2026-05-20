@@ -157,7 +157,7 @@ function writeInitialReviewPass(fixture) {
   });
 }
 
-function writeInitialReviewFailHigh(fixture) {
+function writeInitialReviewFailHigh(fixture, reviewerId = 'R001') {
   writeJsonReport(path.join(fixture.targetDir, 'reports', 'reviewer-round-001.md'), 'Reviewer Report', {
     round: 1,
     phase: 'initial-review',
@@ -167,7 +167,7 @@ function writeInitialReviewFailHigh(fixture) {
       summary: 'Blocking issue found.',
       findings: [
         {
-          id: 'R001',
+          id: reviewerId,
           severity: 'high',
           location: 'docs/spec.md:3',
           issue: 'Missing required section',
@@ -182,16 +182,16 @@ function writeInitialReviewFailHigh(fixture) {
   });
 }
 
-function writeTriageReport(fixture) {
+function writeTriageReport(fixture, decisions = []) {
   writeJsonReport(path.join(fixture.targetDir, 'reports', 'triage-round-001.md'), 'Triage Report', {
     round: 1,
     phase: 'triage',
     producer: 'coordinator',
     normalized: {
-      decisions: [],
+      decisions,
       warnings: []
     },
-    ledgerIssueIds: []
+    ledgerIssueIds: decisions.map((decision) => decision.issue_id).filter(Boolean)
   });
 }
 
@@ -635,7 +635,20 @@ test('persistent read-only finalize accepts clean when triage rejected reviewer 
     ]
   });
   writeInitialReviewFailHigh(fixture);
-  writeTriageReport(fixture);
+  writeTriageReport(fixture, [
+    {
+      reviewer_id: 'R001',
+      issue_id: 'ISSUE-001',
+      decision: 'rejected',
+      severity: 'high',
+      original_severity: 'high',
+      rationale: 'not applicable',
+      merged_into: 'none',
+      deferred_owner: 'none',
+      deferred_next_action: 'none',
+      non_blocking: false
+    }
+  ]);
 
   const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
     cwd: fixture.root,
@@ -652,6 +665,62 @@ test('persistent read-only finalize accepts clean when triage rejected reviewer 
   assert.equal(result.status, 'read-only-clean');
   const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
   assert.equal(manifest.status, 'read-only-clean');
+});
+
+test('persistent read-only finalize rejects clean when latest reviewer finding lacks triage coverage', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      mode: 'read-only',
+      status: 'read-only-clean',
+      currentPhase: 'final',
+      currentReportPath: 'reports/triage-round-001.md',
+      lastReviewerReportPath: 'reports/reviewer-round-001.md',
+      lastTriageReportPath: 'reports/triage-round-001.md',
+      lastFixReportPath: 'none',
+      lastDiffReviewReportPath: 'none'
+    },
+    ledgerIssues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'rejected',
+        location: 'docs/spec.md:3',
+        summary: 'Older rejected reviewer finding',
+        resolution: 'Rejected: not applicable'
+      }
+    ]
+  });
+  writeInitialReviewFailHigh(fixture, 'R999');
+  writeTriageReport(fixture, [
+    {
+      reviewer_id: 'R001',
+      issue_id: 'ISSUE-001',
+      decision: 'rejected',
+      severity: 'high',
+      original_severity: 'high',
+      rationale: 'not applicable',
+      merged_into: 'none',
+      deferred_owner: 'none',
+      deferred_next_action: 'none',
+      non_blocking: false
+    }
+  ]);
+
+  const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'read-only-clean',
+      mode: 'read-only',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'final-validation-failed');
+  assert.match(result.message, /R999|blocking/i);
 });
 
 test('persistent read-only finalize rejects findings when no blocking issues exist', async (t) => {
