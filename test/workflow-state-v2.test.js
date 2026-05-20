@@ -112,6 +112,63 @@ test('schema-2 manifest rejects duplicates, missing fields, unknown enums, and i
   );
 });
 
+test('schema-2 manifest rejects illegal mode and assurance combinations', () => {
+  assert.throws(
+    () => formatManifestV2(makeManifest({ mode: 'review-and-fix', assurance: 'advisory' })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /advisory.*review-and-fix/i.test(error.message)
+  );
+  assert.throws(
+    () => formatManifestV2(makeManifest({
+      status: 'pass',
+      currentPhase: 'final',
+      mode: 'read-only',
+      assurance: 'practical'
+    })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /pass.*review-and-fix/i.test(error.message)
+  );
+  assert.throws(
+    () => formatManifestV2(makeManifest({
+      status: 'pass',
+      currentPhase: 'final',
+      mode: 'review-and-fix',
+      assurance: 'advisory'
+    })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /pass.*assurance/i.test(error.message)
+  );
+});
+
+test('schema-2 manifest rejects illegal assurance proof combinations', () => {
+  assert.throws(
+    () => formatManifestV2(makeManifest({
+      assurance: 'strict-verified',
+      descriptorPlatform: 'codex',
+      assuranceProof: 'none'
+    })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /strict-verified.*Assurance proof/i.test(error.message)
+  );
+  assert.throws(
+    () => formatManifestV2(makeManifest({
+      assurance: 'practical',
+      descriptorPlatform: 'none',
+      assuranceProof: 'capability-descriptor:codex:run-123'
+    })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /practical.*Assurance proof: none/i.test(error.message)
+  );
+  assert.throws(
+    () => formatManifestV2(makeManifest({
+      assurance: 'advisory',
+      mode: 'read-only',
+      descriptorPlatform: 'codex',
+      assuranceProof: 'none'
+    })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /advisory.*Descriptor platform: none/i.test(error.message)
+  );
+  assert.throws(
+    () => parseManifestV2(formatManifestV2(makeManifest()).replace('Descriptor platform: none', 'Descriptor platform: codex')),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /practical.*Descriptor platform: none/i.test(error.message)
+  );
+});
+
 test('atomicWriteFile does not leave a valid-looking partial file on failure', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-atomic-'));
   const filePath = path.join(root, 'MANIFEST.md');
