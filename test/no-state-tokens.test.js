@@ -38,6 +38,25 @@ function readOnlyCleanBlock(target = 'README.md') {
   ].join('\n');
 }
 
+function unsupportedBlock(runtimePlatform = 'gemini', target = 'README.md') {
+  return [
+    'Final status: unsupported',
+    'Assurance: advisory',
+    `Runtime platform: ${runtimePlatform}`,
+    'Mode: read-only',
+    `Target: ${target}`,
+    'Files changed: none',
+    'Fixed issue IDs: none',
+    'Verification performed: no-state preflight terminal token',
+    'Deferrals or blockers: none',
+    'Blocking reason: none',
+    'Status reason: unsupported-runtime-capability',
+    'Residual risk: none identified',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: none'
+  ].join('\n');
+}
+
 test('canonical encoding rejects padding standard base64 and unknown fields', () => {
   const encoded = encodeCanonical({ b: 'two', a: 1 });
   assert.equal(encoded, encodeCanonical({ a: 1, b: 'two' }));
@@ -339,6 +358,76 @@ test('oversized no-state preflight token output maps to state-token-too-large bl
   assert.equal(result.blockingReason, 'state-token-too-large');
   assert.equal(result.stateToken, undefined);
   assert.match(result.nextAction, /ledger=|persistent/i);
+});
+
+test('no-state finalizer binds preflight token to current route runtime fields', async () => {
+  const preflight = await runWorkflowCommand('preflight', [
+    '--no-state',
+    'review-fix-doc',
+    'target=README.md',
+    'review-and-fix',
+    '--terminal-status',
+    'unsupported',
+    '--status-reason',
+    'unsupported-runtime-capability',
+    '--blocking-reason',
+    'none',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'gemini',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    '--json'
+  ]);
+  assert.equal(preflight.ok, true);
+  assert.equal(typeof preflight.stateToken, 'string');
+
+  await assert.rejects(
+    () => runWorkflowCommand('finalize', [
+      '--no-state',
+      'review-fix-doc',
+      'target=README.md',
+      'read-only',
+      '--assurance',
+      'advisory',
+      '--runtime-platform',
+      'manual',
+      '--runtime-subagent-probe',
+      'not-required',
+      '--runtime-stdin-handoff',
+      'ready',
+      '--state-token',
+      preflight.stateToken,
+      '--final-response-stdin',
+      '--json'
+    ], { stdin: unsupportedBlock('gemini') }),
+    /runtimePlatform|runtime platform|state token/i
+  );
+
+  const matched = await runWorkflowCommand('finalize', [
+    '--no-state',
+    'review-fix-doc',
+    'target=README.md',
+    'read-only',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'gemini',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--state-token',
+    preflight.stateToken,
+    '--final-response-stdin',
+    '--json'
+  ], { stdin: unsupportedBlock('gemini') });
+  assert.equal(matched.ok, true);
+  assert.equal(matched.status, 'unsupported');
+  assert.equal(matched.runtimePlatform, 'gemini');
 });
 
 test('workflow preflight rejects observable semantic inputs', () => {
