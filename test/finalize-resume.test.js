@@ -143,6 +143,31 @@ function writeFullReviewPass(fixture) {
   });
 }
 
+function writeFullReviewFailLow(fixture) {
+  writeJsonReport(path.join(fixture.targetDir, 'reports', 'full-review-round-001.md'), 'Reviewer Report', {
+    round: 1,
+    phase: 'full-re-review',
+    producer: 'reviewer-subagent',
+    normalized: {
+      result: 'FAIL',
+      summary: 'Low issue remains after fix.',
+      findings: [
+        {
+          id: 'RLOW-001',
+          severity: 'low',
+          location: 'docs/spec.md:3',
+          issue: 'Minor wording ambiguity',
+          why_it_matters: 'Strict review requires triage before pass',
+          suggested_fix: 'Clarify the wording',
+          confidence: 'confirmed',
+          sensitive: false
+        }
+      ],
+      warnings: []
+    }
+  });
+}
+
 function writeInitialReviewPass(fixture) {
   writeJsonReport(path.join(fixture.targetDir, 'reports', 'reviewer-round-001.md'), 'Reviewer Report', {
     round: 1,
@@ -535,6 +560,51 @@ test('persistent finalize rejects pass when fix round has no diff review report'
   assert.notEqual(manifest.status, 'pass');
 });
 
+test('strict persistent finalize rejects pass when full re-review fails with untriaged low finding', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      status: 'full-re-review',
+      currentPhase: 'full-re-review',
+      strictness: 'strict',
+      assurance: 'strict-verified',
+      descriptorPlatform: 'codex',
+      assuranceProof: 'capability-descriptor:codex:run-1',
+      lastDiffReviewReportPath: 'reports/diff-review-round-001.md',
+      lastTriageReportPath: 'none'
+    },
+    ledgerIssues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'fixed',
+        location: 'docs/spec.md:3',
+        summary: 'Original issue',
+        resolution: 'Fixed: Updated required section.'
+      }
+    ]
+  });
+  writeFixReport(fixture);
+  writeFullReviewFailLow(fixture);
+  writeJsonReport(path.join(fixture.targetDir, 'reports', 'diff-review-round-001.md'), 'Diff Review Report', {
+    round: 1,
+    normalized: { result: 'DIFF-OK', summary: 'ok', findings: [], warnings: [] }
+  });
+
+  const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      assurance: 'strict-verified'
+    })
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'final-validation-failed');
+  assert.match(result.message, /full re-review|PASS|low/i);
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  assert.notEqual(manifest.status, 'pass');
+});
+
 test('persistent review-and-fix finalize rejects pass with deferred high issue', async (t) => {
   const fixture = makeFixture(t, {
     manifestOverrides: {
@@ -603,6 +673,42 @@ test('persistent review-and-fix finalize rejects pass with deferred high issue',
 
   assert.equal(stopped.ok, true);
   assert.equal(stopped.status, 'stopped-with-deferrals');
+});
+
+test('persistent finalize blocks receipt write through symlinked rounds directory', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      status: 'review',
+      currentPhase: 'review',
+      currentReportPath: 'none',
+      lastReviewerReportPath: 'none',
+      lastTriageReportPath: 'none',
+      lastFixReportPath: 'none',
+      lastDiffReviewReportPath: 'none'
+    }
+  });
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-receipt-outside-'));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  fs.symlinkSync(outside, path.join(fixture.targetDir, 'rounds'), 'dir');
+
+  const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'blocked',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      deferralsOrBlockers: 'receipt write validation',
+      blockingReason: 'state-validation-failed',
+      statusReason: 'none',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.match(result.message, /round receipt|symlink|target state/i);
+  assert.equal(fs.existsSync(path.join(outside, '001-final-blocked.md')), false);
 });
 
 test('persistent read-only finalize rejects clean when reviewer has blocking findings', async (t) => {

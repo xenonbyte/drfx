@@ -88,6 +88,30 @@ test('writes receipts under rounds directory with redacted content', () => {
   assert.doesNotMatch(text, /hunter2/);
 });
 
+test('writeRoundReceipt rejects symlinked rounds directory without writing outside target state', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-receipts-symlink-'));
+  const targetDir = path.join(root, '.docs-review-fix', 'targets', 'spec-md-123456789abc');
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-receipts-outside-'));
+  fs.mkdirSync(targetDir, { recursive: true });
+  fs.symlinkSync(outside, path.join(targetDir, 'rounds'), 'dir');
+
+  assert.throws(
+    () => writeRoundReceipt({
+      projectRoot: root,
+      targetKey: 'spec-md-123456789abc',
+      round: 1,
+      kind: 'review',
+      status: 'fail',
+      target: 'docs/spec.md',
+      issueIds: ['ISSUE-001'],
+      summary: 'Found issue',
+      nextAction: 'Triage findings'
+    }),
+    /round receipt|symlink|target state/i
+  );
+  assert.equal(fs.existsSync(path.join(outside, '001-review.md')), false);
+});
+
 test('redacts sensitive values from all formatted receipt fields', () => {
   const text = formatRoundReceipt({
     round: 3,
