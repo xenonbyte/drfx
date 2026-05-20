@@ -108,7 +108,9 @@ function git(root, args) {
 
 function makeWorkflowRepo(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-e2e-'));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-e2e-home-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
   fs.copyFileSync(path.join(FIXTURE_ROOT, 'practical-target.md'), path.join(root, 'docs', 'practical-target.md'));
   fs.copyFileSync(path.join(FIXTURE_ROOT, 'reference.md'), path.join(root, 'docs', 'reference.md'));
@@ -117,6 +119,7 @@ function makeWorkflowRepo(t) {
   git(root, ['commit', '-m', 'init']);
   return {
     root,
+    homeDir,
     target: path.join(root, 'docs', 'practical-target.md'),
     reference: path.join(root, 'docs', 'reference.md')
   };
@@ -141,6 +144,14 @@ function workflowStartArgs(fixture, mode, assurance, runtimePlatform) {
   ];
 }
 
+function workflowOptions(fixture, overrides = {}) {
+  return {
+    cwd: fixture.root,
+    homeDir: fixture.homeDir,
+    ...overrides
+  };
+}
+
 function manifestAt(manifestPath) {
   return parseManifestV2(fs.readFileSync(manifestPath, 'utf8'));
 }
@@ -158,17 +169,13 @@ function assertFileExists(filePath) {
 
 test('deterministic practical workflow reaches pass with target-only diff', async (t) => {
   const fixture = makeWorkflowRepo(t);
-  const start = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), {
-    cwd: fixture.root
-  });
+  const start = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
   assert.equal(start.ok, true);
   assert.equal(start.status, 'review');
   assert.equal(fs.existsSync(start.targetStateDir), true);
   assertManifestPhase(start.manifestPath, 'review', 'review');
 
-  const context = await runWorkflowCommand('context', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), {
-    cwd: fixture.root
-  });
+  const context = await runWorkflowCommand('context', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
   assert.equal(context.ok, true);
   assert.equal(context.status, 'context');
   assertFileExists(context.contextManifestPath);
@@ -178,7 +185,7 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
     '--phase',
     'initial-review',
     '--result-stdin'
-  ], { cwd: fixture.root, stdin: REVIEW_FAIL });
+  ], workflowOptions(fixture, { stdin: REVIEW_FAIL }));
   assert.equal(review.ok, true);
   assertFileExists(review.reviewerReportPath);
   assertManifestPhase(start.manifestPath, 'triage', 'triage');
@@ -186,15 +193,14 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
   const triage = await runWorkflowCommand('record-triage', [
     ...workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'),
     '--triage-stdin'
-  ], { cwd: fixture.root, stdin: TRIAGE_ACCEPT });
+  ], workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
   assert.equal(triage.ok, true);
   assertFileExists(triage.triageReportPath);
   assertManifestPhase(start.manifestPath, 'fix', 'fix');
 
-  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
-    cwd: fixture.root,
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], workflowOptions(fixture, {
     now: new Date('2026-05-21T00:00:00.000Z')
-  });
+  }));
   assert.equal(beginFix.ok, true);
   assert.equal(beginFix.status, 'begin-fix');
   assertFileExists(beginFix.fixGuardReportPath);
@@ -203,7 +209,7 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
     ...workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'),
     '--phase',
     'fix'
-  ], { cwd: fixture.root });
+  ], workflowOptions(fixture));
   assert.equal(fixContext.ok, true);
   assert.equal(fixContext.contextPackSkeleton.phase, 'fix');
   assertFileExists(fixContext.contextManifestPath);
@@ -226,7 +232,7 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
     start.targetStateDir,
     '--fix-report-stdin',
     '--json'
-  ], { cwd: fixture.root, stdin: FIX_REPORT });
+  ], workflowOptions(fixture, { stdin: FIX_REPORT }));
   assert.equal(endFix.ok, true);
   assert.equal(endFix.status, 'end-fix');
   assertFileExists(endFix.fixReportPath);
@@ -236,7 +242,7 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
     start.targetStateDir,
     '--result-stdin',
     '--json'
-  ], { cwd: fixture.root, stdin: DIFF_OK });
+  ], workflowOptions(fixture, { stdin: DIFF_OK }));
   assert.equal(diff.ok, true);
   assert.equal(diff.status, 'recorded-diff-review');
   assertFileExists(diff.diffReviewReportPath);
@@ -246,7 +252,7 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
     ...workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'),
     '--phase',
     'full-re-review'
-  ], { cwd: fixture.root });
+  ], workflowOptions(fixture));
   assert.equal(fullReviewContext.ok, true);
   assert.equal(fullReviewContext.contextPackSkeleton.phase, 'full-re-review');
   assertFileExists(fullReviewContext.contextManifestPath);
@@ -256,7 +262,7 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
     '--phase',
     'full-re-review',
     '--result-stdin'
-  ], { cwd: fixture.root, stdin: REVIEW_PASS });
+  ], workflowOptions(fixture, { stdin: REVIEW_PASS }));
   assert.equal(fullReview.ok, true);
   assertFileExists(fullReview.reviewerReportPath);
 
@@ -264,7 +270,7 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
     start.targetStateDir,
     '--final-response-stdin',
     '--json'
-  ], { cwd: fixture.root, stdin: FINAL_PASS });
+  ], workflowOptions(fixture, { stdin: FINAL_PASS }));
   assert.equal(final.ok, true);
   assert.equal(final.status, 'pass');
   assert.equal(final.assurance, 'practical');
@@ -296,9 +302,7 @@ test('persistent start rejects invalid project rulebook before writing target st
   fs.mkdirSync(projectStateDir, { recursive: true });
   fs.writeFileSync(path.join(projectStateDir, 'RULE.md'), '## UNKNOWN\nThis heading is invalid.\n');
 
-  const result = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), {
-    cwd: fixture.root
-  });
+  const result = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
 
   assert.equal(result.ok, false);
   assert.equal(result.status, 'blocked');
@@ -310,6 +314,49 @@ test('persistent start rejects invalid project rulebook before writing target st
   }
 });
 
+test('persistent start rejects symlinked target state directory before outside writes', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-e2e-outside-state-'));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+
+  const probe = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
+  const targetStateDir = probe.targetStateDir;
+  fs.rmSync(path.join(fixture.root, '.docs-review-fix'), { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(targetStateDir), { recursive: true });
+  fs.symlinkSync(outside, targetStateDir, 'dir');
+
+  const result = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.match(result.message, /symlink|target state/i);
+  assert.equal(fs.existsSync(path.join(outside, 'MANIFEST.md')), false);
+  assert.equal(fs.existsSync(path.join(outside, 'ISSUES.md')), false);
+});
+
+test('workflow e2e fixture is isolated from invalid global rulebook', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const poisonedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-e2e-poison-home-'));
+  t.after(() => fs.rmSync(poisonedHome, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(poisonedHome, '.docs-review-fix'), { recursive: true });
+  fs.writeFileSync(path.join(poisonedHome, '.docs-review-fix', 'RULE.md'), '## UNKNOWN\nPolluting global rule.\n');
+  const originalHome = process.env.HOME;
+  process.env.HOME = poisonedHome;
+  t.after(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+  });
+
+  const result = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'review');
+});
+
 test('no-state read-only fixture finalizes read-only-clean without state', async (t) => {
   const fixture = makeWorkflowRepo(t);
   const context = await runWorkflowCommand('context', [
@@ -317,7 +364,7 @@ test('no-state read-only fixture finalizes read-only-clean without state', async
     ...workflowStartArgs(fixture, 'read-only', 'advisory', 'manual'),
     '--phase',
     'initial-review'
-  ], { cwd: fixture.root });
+  ], workflowOptions(fixture));
   assert.equal(context.ok, true);
   assert.equal(context.targetStateDir, null);
   assert.equal(typeof context.reviewGuard, 'string');
@@ -329,7 +376,7 @@ test('no-state read-only fixture finalizes read-only-clean without state', async
     '--review-guard',
     context.reviewGuard,
     '--result-stdin'
-  ], { cwd: fixture.root, stdin: REVIEW_PASS });
+  ], workflowOptions(fixture, { stdin: REVIEW_PASS }));
   assert.equal(review.ok, true);
   assert.equal(review.status, 'recorded-review');
   assert.equal(typeof review.stateToken, 'string');
@@ -341,7 +388,7 @@ test('no-state read-only fixture finalizes read-only-clean without state', async
     '--state-token',
     review.stateToken,
     '--final-response-stdin'
-  ], { cwd: fixture.root, stdin: FINAL_CLEAN });
+  ], workflowOptions(fixture, { stdin: FINAL_CLEAN }));
   assert.equal(finalized.ok, true);
   assert.equal(finalized.status, 'read-only-clean');
   assert.notEqual(finalized.status, 'pass');
