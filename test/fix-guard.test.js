@@ -192,6 +192,26 @@ test('git rollback anchor blocks dirty target as rollback-unavailable', (t) => {
   );
 });
 
+test('git rollback anchor blocks tracked symlink target as rollback-unavailable', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-fix-guard-symlink-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-external-target-'));
+  t.after(() => fs.rmSync(externalDir, { recursive: true, force: true }));
+  const externalTarget = path.join(externalDir, 'target.md');
+  const target = path.join(root, 'docs', 'target.md');
+  fs.writeFileSync(externalTarget, '# External target\n');
+  fs.symlinkSync(externalTarget, target);
+  git(root, 'init');
+  git(root, 'add docs/target.md');
+  git(root, 'commit -m init');
+
+  assert.throws(
+    () => checkGitRollbackAnchor({ projectRoot: root, targetPath: target }),
+    (error) => error.blockingReason === 'rollback-unavailable'
+  );
+});
+
 test('target-only worktree blocks non-target dirty entry with redacted metadata', (t) => {
   const { root, target } = makeGitRepo(t);
   fs.writeFileSync(path.join(root, 'other.md'), '# Other\n');
@@ -302,6 +322,61 @@ test('workflow begin-fix maps deleted target to rollback-unavailable guard block
   assert.equal(fs.existsSync(reportPath), true);
   assert.match(fs.readFileSync(reportPath, 'utf8'), /Blocking reason: rollback-unavailable/);
   assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }), null);
+});
+
+test('workflow begin-fix rejects clean tracked symlink target as rollback-unavailable', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-fix-workflow-symlink-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-external-target-'));
+  t.after(() => fs.rmSync(externalDir, { recursive: true, force: true }));
+  const externalTarget = path.join(externalDir, 'spec.md');
+  const target = path.join(root, 'docs', 'spec.md');
+  fs.writeFileSync(externalTarget, '# Spec\n\nOriginal.\n');
+  fs.symlinkSync(externalTarget, target);
+  git(root, 'init');
+  git(root, 'add docs/spec.md');
+  git(root, 'commit -m init');
+
+  const targetKey = 'spec-md-aaaaaaaaaaaa';
+  const targetDir = path.join(root, '.docs-review-fix', 'targets', targetKey);
+  const manifestPath = path.join(targetDir, 'MANIFEST.md');
+  const ledgerPath = path.join(targetDir, 'ISSUES.md');
+  const fingerprint = computeFingerprint(target);
+  fs.mkdirSync(targetDir, { recursive: true });
+  fs.writeFileSync(manifestPath, formatManifestV2(makeManifest({
+    target,
+    normalizedTarget: 'docs/spec.md',
+    targetKey,
+    ledgerPath: path.relative(root, ledgerPath).split(path.sep).join('/'),
+    initialContentSha256: fingerprint.sha256,
+    lastKnownContentSha256: fingerprint.sha256,
+    lastReviewedContentSha256: fingerprint.sha256,
+    fileSize: fingerprint.size
+  })));
+  fs.writeFileSync(ledgerPath, formatLedger({
+    issues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'accepted',
+        location: 'docs/spec.md:3',
+        summary: 'Original issue',
+        resolution: 'Pending fix'
+      }
+    ]
+  }));
+
+  const result = await runWorkflowCommand('begin-fix', [targetDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-05-21T00:00:00.000Z')
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'rollback-unavailable');
+  assert.equal(fs.existsSync(path.join(targetDir, 'reports', 'fix-guard-round-001.md')), true);
+  assert.equal(readLease({ projectRoot: root, targetKey }), null);
 });
 
 test('workflow begin-fix writes target-only guard blocker report with redacted entries', async (t) => {
@@ -480,6 +555,31 @@ test('workflow end-fix maps deleted external reference to reference-mutated-file
   assert.equal(result.blockingReason, 'reference-mutated-file');
   assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }), null);
   assert.deepEqual(receiptFiles(fixture), ['001-fix-blocked.md']);
+});
+
+test('workflow end-fix blocks target replaced by external symlink and releases lock', async (t) => {
+  const fixture = makeWorkflowFixture(t);
+  await beginFix(fixture);
+  const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-external-target-'));
+  t.after(() => fs.rmSync(externalDir, { recursive: true, force: true }));
+  const externalTarget = path.join(externalDir, 'spec.md');
+  fs.writeFileSync(externalTarget, '# External target\n');
+  fs.rmSync(fixture.target);
+  fs.symlinkSync(externalTarget, fixture.target);
+  fs.appendFileSync(fixture.target, '\nFixed ISSUE-001 outside the repo.\n');
+
+  const result = await runWorkflowCommand('end-fix', [fixture.targetDir, '--fix-report-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: validFixReport()
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+  assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }), null);
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  assert.notEqual(manifest.status, 'diff-review');
+  assert.match(fs.readFileSync(externalTarget, 'utf8'), /Fixed ISSUE-001 outside the repo/);
 });
 
 test('workflow end-fix maps release failure to lock-release-failed', async (t) => {
