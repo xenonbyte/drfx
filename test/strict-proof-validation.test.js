@@ -102,6 +102,57 @@ test('descriptor outside supplied descriptorDirectory returns strict proof failu
   assert.equal(result.assuranceProof, 'none');
 });
 
+test('missing descriptorDirectory binding returns strict proof failure', async (t) => {
+  const runId = createRunId();
+  const { descriptorPath } = writeDescriptor(t, verifiedDescriptor({ runId }));
+
+  const result = await runStrictStart([
+    '--capability-descriptor',
+    descriptorPath,
+    '--proof-run-id',
+    runId
+  ]);
+
+  assert.equal(result.status, 'unsupported');
+  assert.equal(result.statusReason, 'strict-proof-validation-failed');
+  assert.equal(result.assurance, 'advisory');
+  assert.equal(result.assuranceProof, 'none');
+});
+
+test('strict proof downgrade from review-and-fix normalizes mode metadata', async (t) => {
+  const runId = createRunId();
+  const { descriptorDirectory, descriptorPath } = writeDescriptor(t, verifiedDescriptor({ runId }), 'wrong.json');
+
+  const result = await runWorkflowCommand('start', [
+    'review-fix-spec',
+    'target=docs/spec.md',
+    'review-and-fix',
+    'assurance=strict-verified',
+    '--assurance',
+    'strict-verified',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--capability-descriptor',
+    descriptorPath,
+    '--proof-run-id',
+    runId
+  ], {
+    packageVersion: PACKAGE_VERSION,
+    descriptorDirectory
+  });
+
+  assert.equal(result.status, 'unsupported');
+  assert.equal(result.statusReason, 'strict-proof-validation-failed');
+  assert.equal(result.mode, 'read-only');
+  assert.equal(result.modeNormalizedFrom, 'review-and-fix');
+  assert.equal(result.assurance, 'advisory');
+  assert.equal(result.assuranceNormalizedFrom, 'strict-verified');
+});
+
 test('stale run id or non-verified descriptor returns strict proof failure and advisory assurance', async (t) => {
   const runId = createRunId();
   const staleRunId = createRunId();

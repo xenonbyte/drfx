@@ -3,7 +3,7 @@
 
 const { runCheck, formatCheckReport, formatCheckJson } = require('../lib/check');
 const { installPlatforms, uninstallPlatforms, parsePlatformList } = require('../lib/install');
-const { runWorkflowCommand, formatWorkflowJson } = require('../lib/workflow');
+const { runWorkflowCommand, formatWorkflowJson, formatWorkflowError } = require('../lib/workflow');
 
 function printHelp() {
   process.stdout.write([
@@ -56,6 +56,11 @@ function parseArgs(argv) {
   return parsed;
 }
 
+function workflowJsonRequested(argv) {
+  if (argv[2] !== 'workflow') return false;
+  return argv.slice(4).some((arg) => arg === '--json' || arg.startsWith('--json='));
+}
+
 async function main(argv) {
   const { command, platforms, json, workflowSubcommand, workflowArgs } = parseArgs(argv);
   if (!command || command === '--help' || command === '-h') {
@@ -103,6 +108,11 @@ async function main(argv) {
 main(process.argv)
   .then((code) => { process.exitCode = code; })
   .catch((error) => {
+    if (workflowJsonRequested(process.argv)) {
+      process.stdout.write(formatWorkflowJson(formatWorkflowError({ error })));
+      process.exitCode = 1;
+      return;
+    }
     process.stderr.write(`${error && error.message ? error.message : String(error)}\n`);
     process.exitCode = 1;
   });
