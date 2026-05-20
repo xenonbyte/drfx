@@ -535,6 +535,76 @@ test('persistent finalize rejects pass when fix round has no diff review report'
   assert.notEqual(manifest.status, 'pass');
 });
 
+test('persistent review-and-fix finalize rejects pass with deferred high issue', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      status: 'full-re-review',
+      currentPhase: 'full-re-review',
+      lastDiffReviewReportPath: 'reports/diff-review-round-001.md'
+    },
+    ledgerIssues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'deferred',
+        location: 'docs/spec.md:3',
+        summary: 'Deferred issue',
+        resolution: 'Deferred: needs owner follow-up'
+      }
+    ]
+  });
+  writeFixReport(fixture);
+  writeFullReviewPass(fixture);
+  writeJsonReport(path.join(fixture.targetDir, 'reports', 'diff-review-round-001.md'), 'Diff Review Report', {
+    round: 1,
+    normalized: { result: 'DIFF-OK', summary: 'ok', findings: [], warnings: [] }
+  });
+
+  const pass = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock()
+  });
+
+  assert.equal(pass.ok, false);
+  assert.equal(pass.status, 'blocked');
+  assert.equal(pass.blockingReason, 'final-validation-failed');
+  assert.match(pass.message, /deferred|pass/i);
+
+  const wrongReason = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'stopped-with-deferrals',
+      filesChanged: 'docs/spec.md',
+      fixedIssueIds: 'ISSUE-001',
+      deferralsOrBlockers: 'deferred high issue ISSUE-001',
+      blockingReason: 'none',
+      statusReason: 'none',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(wrongReason.ok, false);
+  assert.equal(wrongReason.status, 'blocked');
+  assert.equal(wrongReason.blockingReason, 'final-validation-failed');
+  assert.match(wrongReason.message, /deferred-findings/i);
+
+  const stopped = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'stopped-with-deferrals',
+      filesChanged: 'docs/spec.md',
+      fixedIssueIds: 'ISSUE-001',
+      deferralsOrBlockers: 'deferred high issue ISSUE-001',
+      blockingReason: 'none',
+      statusReason: 'deferred-findings',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(stopped.ok, true);
+  assert.equal(stopped.status, 'stopped-with-deferrals');
+});
+
 test('persistent read-only finalize rejects clean when reviewer has blocking findings', async (t) => {
   const fixture = makeFixture(t, {
     manifestOverrides: {
