@@ -10,7 +10,8 @@ const {
   refreshLock,
   assertPreFixFingerprint,
   releaseLock,
-  readLease
+  readLease,
+  readPersistedLeaseForTarget
 } = require('../lib/lock');
 const { computeFingerprint } = require('../lib/target-state');
 
@@ -188,7 +189,7 @@ test('blocks stale lock takeover when target fingerprint mismatches baseline', (
 test('refreshes owner lease timestamps and keeps the refresh interval within 60 seconds', () => {
   const workspace = makeWorkspace();
   const started = new Date('2026-05-20T00:00:00.000Z');
-  acquireDefaults({ workspace, now: started, ownerId: 'owner-a' });
+  const lease = acquireDefaults({ workspace, now: started, ownerId: 'owner-a' });
   const refreshAt = new Date(started.getTime() + 60 * 1000);
   const refreshed = refreshLock({
     projectRoot: workspace.root,
@@ -199,7 +200,33 @@ test('refreshes owner lease timestamps and keeps the refresh interval within 60 
 
   assert.equal(refreshed.updatedAt, refreshAt.toISOString());
   assert.equal(refreshed.expiresAt, new Date(refreshAt.getTime() + FIFTEEN_MINUTES_MS).toISOString());
+  assert.equal(refreshed.ownerId, lease.ownerId);
+  assert.equal(refreshed.leaseId, lease.leaseId);
   assert.ok(Date.parse(refreshed.updatedAt) - Date.parse(refreshed.startedAt) <= 60 * 1000);
+});
+
+test('persisted lease ownership helper rejects target mismatch', () => {
+  const workspace = makeWorkspace();
+  acquireDefaults({ workspace, ownerId: 'owner-a' });
+  assert.equal(
+    readPersistedLeaseForTarget({
+      projectRoot: workspace.root,
+      targetKey: workspace.targetKey,
+      targetPath: workspace.targetPath
+    }).ownerId,
+    'owner-a'
+  );
+
+  const otherTarget = path.join(workspace.root, 'docs', 'other.md');
+  fs.writeFileSync(otherTarget, '# Other\n');
+  assert.throws(
+    () => readPersistedLeaseForTarget({
+      projectRoot: workspace.root,
+      targetKey: workspace.targetKey,
+      targetPath: otherTarget
+    }),
+    (error) => error.status === 'blocked' && error.reason === 'corrupt-lock'
+  );
 });
 
 test('refresh mutation lock blocks takeover after validation before write', () => {
