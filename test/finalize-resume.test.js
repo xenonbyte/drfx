@@ -611,6 +611,49 @@ test('persistent read-only finalize rejects clean when ledger has accepted high 
   assert.match(result.message, /read-only-clean|blocking/i);
 });
 
+test('persistent read-only finalize accepts clean when triage rejected reviewer high finding', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      mode: 'read-only',
+      status: 'read-only-clean',
+      currentPhase: 'final',
+      currentReportPath: 'reports/triage-round-001.md',
+      lastReviewerReportPath: 'reports/reviewer-round-001.md',
+      lastTriageReportPath: 'reports/triage-round-001.md',
+      lastFixReportPath: 'none',
+      lastDiffReviewReportPath: 'none'
+    },
+    ledgerIssues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'rejected',
+        location: 'docs/spec.md:3',
+        summary: 'Rejected reviewer finding',
+        resolution: 'Rejected: not applicable'
+      }
+    ]
+  });
+  writeInitialReviewFailHigh(fixture);
+  writeTriageReport(fixture);
+
+  const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'read-only-clean',
+      mode: 'read-only',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'read-only-clean');
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'read-only-clean');
+});
+
 test('persistent read-only finalize rejects findings when no blocking issues exist', async (t) => {
   const fixture = makeFixture(t, {
     manifestOverrides: {
