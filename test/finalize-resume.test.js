@@ -777,6 +777,23 @@ test('persistent read-only finalize rejects clean when triage deferred high find
   assert.equal(clean.status, 'blocked');
   assert.equal(clean.blockingReason, 'final-validation-failed');
   assert.match(clean.message, /R001|blocking|deferred/i);
+
+  const findings = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'read-only-findings',
+      mode: 'read-only',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      statusReason: 'read-only-blocking-findings',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(findings.ok, false);
+  assert.equal(findings.status, 'blocked');
+  assert.equal(findings.blockingReason, 'final-validation-failed');
+  assert.match(findings.message, /read-only-findings|accepted|reopened|downgraded|deferred/i);
 });
 
 test('persistent read-only finalize accepts stopped-with-deferrals for deferred high finding', async (t) => {
