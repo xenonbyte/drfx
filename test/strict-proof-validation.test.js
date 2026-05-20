@@ -7,7 +7,8 @@ const path = require('node:path');
 const test = require('node:test');
 
 const { buildDescriptor, createRunId } = require('../lib/capability');
-const { runWorkflowCommand } = require('../lib/workflow');
+const { formatWorkflowJson, runWorkflowCommand } = require('../lib/workflow');
+const { formatManifestV2, parseManifestV2 } = require('../lib/workflow-state');
 
 const PACKAGE_VERSION = '0.1.0';
 const REAL_TARGET = path.join(__dirname, '..', 'README.md');
@@ -170,6 +171,66 @@ test('stale run id or non-verified descriptor returns strict proof failure and a
   assert.equal(result.statusReason, 'strict-proof-validation-failed');
   assert.equal(result.assurance, 'advisory');
   assert.equal(result.assuranceProof, 'none');
+});
+
+test('strict verified success emits schema-2 compatible proof fields', async (t) => {
+  const runId = createRunId();
+  const { descriptorDirectory, descriptorPath } = writeDescriptor(t, verifiedDescriptor({ runId }));
+
+  const result = await runStrictStart([
+    '--capability-descriptor',
+    descriptorPath,
+    '--proof-run-id',
+    runId
+  ], { descriptorDirectory });
+  const output = JSON.parse(formatWorkflowJson(result));
+
+  assert.equal(output.ok, true);
+  assert.equal(output.assurance, 'strict-verified');
+  assert.equal(output.descriptorPlatform, 'codex');
+  assert.equal(output.assuranceProof, `capability-descriptor:codex:${runId}`);
+
+  const manifestText = formatManifestV2({
+    manifestSchema: 2,
+    target: REAL_TARGET,
+    normalizedTarget: 'README.md',
+    documentType: output.documentType,
+    strictness: output.strictness,
+    mode: output.mode,
+    targetKey: output.targetKey,
+    ledgerPath: `.docs-review-fix/targets/${output.targetKey}/ISSUES.md`,
+    status: 'review',
+    currentPhase: 'review',
+    currentRound: 1,
+    assurance: output.assurance,
+    runtimePlatform: output.runtimePlatform,
+    descriptorPlatform: output.descriptorPlatform,
+    assuranceProof: output.assuranceProof,
+    runtimeSubagentProbe: output.runtimeCheck.subagentProbe.status,
+    runtimeSubagentProbeEvidence: output.runtimeCheck.subagentProbe.evidence,
+    runtimeFingerprintGuard: 'not-run',
+    runtimeStdinHandoff: output.runtimeCheck.stdinHandoff.status,
+    runtimeStdinHandoffEvidence: output.runtimeCheck.stdinHandoff.evidence,
+    runtimeDowngradeReason: output.runtimeCheck.downgradeReason,
+    blockingReason: output.blockingReason,
+    statusReason: output.statusReason,
+    currentReportPath: 'none',
+    lastReviewerReportPath: 'none',
+    lastTriageReportPath: 'none',
+    lastFixReportPath: 'none',
+    lastDiffReviewReportPath: 'none',
+    initialContentSha256: 'a'.repeat(64),
+    lastKnownContentSha256: 'a'.repeat(64),
+    lastReviewedContentSha256: 'none',
+    lastPassedContentSha256: 'none',
+    lastModifiedAt: '2026-05-21T00:00:00.000Z',
+    fileSize: 10,
+    references: [],
+    createdAt: '2026-05-21T00:00:00.000Z',
+    updatedAt: '2026-05-21T00:00:00.000Z'
+  });
+
+  assert.equal(parseManifestV2(manifestText).assuranceProof, `capability-descriptor:codex:${runId}`);
 });
 
 test('direct Gemini strict verified start returns advisory unsupported read-only', async () => {

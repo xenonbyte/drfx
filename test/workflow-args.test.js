@@ -13,6 +13,7 @@ const {
   runWorkflowCommand,
   parseWorkflowArgs
 } = require('../lib/workflow');
+const { BLOCKING_REASONS, STATUS_REASONS, workflowJson } = require('../lib/workflow-state');
 
 const ROOT = path.join(__dirname, '..');
 const REAL_TARGET = path.join(ROOT, 'README.md');
@@ -290,6 +291,16 @@ test('formatWorkflowError stable JSON includes full error contract fields', () =
     statusReason: 'none',
     nextAction: 'fix runtime'
   });
+});
+
+test('formatWorkflowError default blocker is schema-2 legal after stable JSON formatting', () => {
+  const formatted = workflowJson(formatWorkflowError({ error: new Error('bad workflow') }));
+
+  assert.equal(formatted.status, 'blocked');
+  assert.equal(BLOCKING_REASONS.includes(formatted.blockingReason), true);
+  assert.equal(STATUS_REASONS.includes(formatted.statusReason), true);
+  assert.equal(formatted.blockingReason, 'state-validation-failed');
+  assert.equal(formatted.statusReason, 'none');
 });
 
 test('CLI workflow --json errors emit one stable JSON object', () => {
