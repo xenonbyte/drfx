@@ -121,6 +121,32 @@ test('advisory review-and-fix start returns unsupported validation result', asyn
   assert.equal(result.assurance, 'advisory');
 });
 
+test('runtime downgrade advisory review-and-fix normalizes to read-only without unsupported reason', async () => {
+  const result = await runWorkflowCommand('start', [
+    'review-fix-spec',
+    'target=docs/spec.md',
+    'review-and-fix',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'unavailable',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--runtime-downgrade-reason',
+    'subagent-delegation-unavailable'
+  ]);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'started');
+  assert.equal(result.statusReason, 'none');
+  assert.equal(result.mode, 'read-only');
+  assert.equal(result.modeNormalizedFrom, 'review-and-fix');
+  assert.equal(result.assurance, 'advisory');
+  assert.notEqual(result.statusReason, 'advisory-review-and-fix-unsupported');
+});
+
 test('invalid runtime downgrade reason always rejects', () => {
   assert.throws(
     () =>
