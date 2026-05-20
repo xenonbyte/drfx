@@ -45,6 +45,40 @@ test('parses structured tokens with target, repeated refs, flags, ledger, and ro
   assert.equal(parsed.root, '/tmp/project');
 });
 
+test('preserves v1 parser behavior when options are omitted', () => {
+  assert.throws(
+    () => parseInvocation('review-fix-spec', ['target=docs/spec.md', 'assurance=practical']),
+    /unknown token/i
+  );
+  const parsed = parseInvocation('review-fix-spec', ['target=docs/spec.md']);
+  assert.equal(parsed.mode, 'review-and-fix');
+  assert.equal(Object.hasOwn(parsed, 'requestedAssurance'), false);
+});
+
+test('parses workflow metadata when includeMetadata is true', () => {
+  const parsed = parseInvocation('review-fix-spec', ['target=docs/spec.md', 'read-only', 'assurance=practical'], {
+    defaultMode: 'read-only',
+    defaultAssurance: 'practical',
+    includeMetadata: true
+  });
+  assert.equal(parsed.requestedMode, 'read-only');
+  assert.equal(parsed.mode, 'read-only');
+  assert.equal(parsed.modeSource, 'explicit');
+  assert.equal(parsed.modeNormalizedFrom, null);
+  assert.equal(parsed.requestedAssurance, 'practical');
+  assert.equal(parsed.assuranceSource, 'explicit');
+});
+
+test('workflow metadata keeps strictness separate from assurance', () => {
+  const parsed = parseInvocation('review-fix-design', ['target=design/DESIGN-v2.md', 'strict'], {
+    defaultMode: 'read-only',
+    defaultAssurance: 'advisory',
+    includeMetadata: true
+  });
+  assert.equal(parsed.strictness, 'strict');
+  assert.equal(parsed.requestedAssurance, 'advisory');
+});
+
 test('rejects duplicate target and duplicate root', () => {
   assert.throws(() => parseInvocation('review-fix-plan', ['target=a.md', 'target=b.md']), /duplicate target/i);
   assert.throws(() => parseInvocation('review-fix-plan', ['root=/a', 'root=/b', 'target=a.md']), /duplicate root/i);

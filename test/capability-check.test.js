@@ -1085,6 +1085,30 @@ test('check reruns current probes and reports advisory reason', async (t) => {
   }
 });
 
+test('runCheck json mode returns current-run descriptor metadata', async (t) => {
+  const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
+  const result = await runCheck({
+    homeDir,
+    platformRoots,
+    cwd,
+    packageVersion: PACKAGE_VERSION,
+    platforms: ['claude', 'codex', 'gemini'],
+    json: true
+  });
+
+  assert.equal(typeof result.runId, 'string');
+  assert.ok(result.runId.length > 0);
+  assert.equal(path.basename(result.descriptorDirectory).startsWith('drfx-check-'), true);
+
+  for (const platform of ['claude', 'codex', 'gemini']) {
+    const report = result.platforms[platform];
+    assert.equal(path.basename(report.descriptorPath), `${platform}.json`);
+    assert.equal(path.dirname(report.descriptorPath), result.descriptorDirectory);
+    assert.equal(report.descriptor.provenance.runId, result.runId);
+    assert.equal(report.validation.passCapable, false);
+  }
+});
+
 test('generator exposes fixed route to document type mapping', () => {
   assert.deepEqual(
     Object.fromEntries(Object.entries(ROUTES).map(([routeName, route]) => [routeName, route.documentType])),
