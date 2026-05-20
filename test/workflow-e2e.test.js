@@ -290,6 +290,26 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
   ]);
 });
 
+test('persistent start rejects invalid project rulebook before writing target state', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const projectStateDir = path.join(fixture.root, '.docs-review-fix');
+  fs.mkdirSync(projectStateDir, { recursive: true });
+  fs.writeFileSync(path.join(projectStateDir, 'RULE.md'), '## UNKNOWN\nThis heading is invalid.\n');
+
+  const result = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), {
+    cwd: fixture.root
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.match(result.message, /unknown heading|rulebook/i);
+  assert.equal(fs.existsSync(path.join(projectStateDir, 'targets')), false);
+  if (result.targetStateDir) {
+    assert.equal(fs.existsSync(result.targetStateDir), false);
+  }
+});
+
 test('no-state read-only fixture finalizes read-only-clean without state', async (t) => {
   const fixture = makeWorkflowRepo(t);
   const context = await runWorkflowCommand('context', [
