@@ -202,6 +202,23 @@ test('package file list excludes README-zh and project-local state', () => {
   assert.equal(packageJson.files.some((entry) => entry.includes('.docs-review-fix')), false);
 });
 
+test('manual v2 smoke docs record runtime limitations without placeholders', () => {
+  const readme = read('README.md');
+  const receipt = read('docs/manual-smoke-v2.md');
+
+  assert.match(readme, /## Manual V2 Smoke/);
+  assert.match(receipt, /## Codex Practical/);
+  assert.match(receipt, /## Claude Code/);
+  assert.match(receipt, /installed: codex/);
+  assert.match(receipt, /installed: claude/);
+  assert.match(receipt, /ACCEPTED-FAIL-CLOSED-LIMITED/);
+  assert.doesNotMatch(receipt, /\bobserved\s+\S+/i);
+  assert.doesNotMatch(receipt, /\bTODO\b|TBD|<[^>]+>/i);
+  assert.doesNotMatch(receipt, /BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY/i);
+  assert.doesNotMatch(receipt, /\bBearer\s+[A-Za-z0-9._-]+/i);
+  assert.doesNotMatch(receipt, /\bCookie:/i);
+});
+
 test('generated route text contains v2 operational workflow commands', () => {
   const sourceText = [
     'templates/claude-command.md.tmpl',

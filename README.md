@@ -141,6 +141,23 @@ If the reviewer subagent is unavailable or invalid in Codex or Claude Code, gene
 
 Gemini is advisory-only. Gemini can run read-only advisory review, but `review-and-fix` is unsupported through no-state preflight with `unsupported-runtime-capability`; Gemini routes must not edit targets and must not declare workflow PASS.
 
+## Manual V2 Smoke
+
+Codex Practical smoke:
+
+1. Run `node bin/drfx.js install --platform codex`.
+2. Invoke the generated Codex skill on a fixture target with `review-and-fix assurance=practical`.
+3. Record final response, state directory path, and target diff.
+4. Treat `Status: pass` as valid only when the route completed subagent, fingerprint, stdin handoff, diff review, and full re-review steps.
+
+Claude Code smoke:
+
+1. Run `node bin/drfx.js install --platform claude`.
+2. Invoke the generated command on the same fixture target.
+3. If subagent, fingerprint guard, and stdin handoff are exposed, complete the Practical workflow.
+4. If subagent is unavailable, verify Advisory downgrade with no target edits.
+5. If fingerprint guard or stdin handoff is unavailable, verify fail-closed blocker before first target write.
+
 ## User-Global and Project-Local Rule Configuration
 
 Optional custom rule files:
