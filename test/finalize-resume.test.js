@@ -143,6 +143,45 @@ function writeFullReviewPass(fixture) {
   });
 }
 
+function writeInitialReviewPass(fixture) {
+  writeJsonReport(path.join(fixture.targetDir, 'reports', 'reviewer-round-001.md'), 'Reviewer Report', {
+    round: 1,
+    phase: 'initial-review',
+    producer: 'reviewer-subagent',
+    normalized: {
+      result: 'PASS',
+      summary: 'Clean read-only review.',
+      findings: [],
+      warnings: []
+    }
+  });
+}
+
+function writeInitialReviewFailHigh(fixture) {
+  writeJsonReport(path.join(fixture.targetDir, 'reports', 'reviewer-round-001.md'), 'Reviewer Report', {
+    round: 1,
+    phase: 'initial-review',
+    producer: 'reviewer-subagent',
+    normalized: {
+      result: 'FAIL',
+      summary: 'Blocking issue found.',
+      findings: [
+        {
+          id: 'R001',
+          severity: 'high',
+          location: 'docs/spec.md:3',
+          issue: 'Missing required section',
+          why_it_matters: 'Readers cannot verify required behavior',
+          suggested_fix: 'Add the required section',
+          confidence: 'confirmed',
+          sensitive: false
+        }
+      ],
+      warnings: []
+    }
+  });
+}
+
 function writeTriageReport(fixture) {
   writeJsonReport(path.join(fixture.targetDir, 'reports', 'triage-round-001.md'), 'Triage Report', {
     round: 1,
@@ -494,6 +533,114 @@ test('persistent finalize rejects pass when fix round has no diff review report'
   assert.match(result.message, /diff review/i);
   const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
   assert.notEqual(manifest.status, 'pass');
+});
+
+test('persistent read-only finalize rejects clean when reviewer has blocking findings', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      mode: 'read-only',
+      status: 'triage',
+      currentPhase: 'triage',
+      currentReportPath: 'reports/reviewer-round-001.md',
+      lastReviewerReportPath: 'reports/reviewer-round-001.md',
+      lastTriageReportPath: 'none',
+      lastFixReportPath: 'none',
+      lastDiffReviewReportPath: 'none'
+    }
+  });
+  writeInitialReviewFailHigh(fixture);
+
+  const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'read-only-clean',
+      mode: 'read-only',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'final-validation-failed');
+  assert.match(result.message, /read-only-clean|blocking/i);
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  assert.notEqual(manifest.status, 'read-only-clean');
+});
+
+test('persistent read-only finalize rejects clean when ledger has accepted high issue', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      mode: 'read-only',
+      status: 'read-only-clean',
+      currentPhase: 'final',
+      currentReportPath: 'reports/reviewer-round-001.md',
+      lastReviewerReportPath: 'reports/reviewer-round-001.md',
+      lastTriageReportPath: 'none',
+      lastFixReportPath: 'none',
+      lastDiffReviewReportPath: 'none'
+    },
+    ledgerIssues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'accepted',
+        location: 'docs/spec.md:3',
+        summary: 'Blocking read-only issue',
+        resolution: 'Accepted: blocking issue remains'
+      }
+    ]
+  });
+  writeInitialReviewPass(fixture);
+
+  const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'read-only-clean',
+      mode: 'read-only',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'final-validation-failed');
+  assert.match(result.message, /read-only-clean|blocking/i);
+});
+
+test('persistent read-only finalize rejects findings when no blocking issues exist', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      mode: 'read-only',
+      status: 'read-only-clean',
+      currentPhase: 'final',
+      currentReportPath: 'reports/reviewer-round-001.md',
+      lastReviewerReportPath: 'reports/reviewer-round-001.md',
+      lastTriageReportPath: 'none',
+      lastFixReportPath: 'none',
+      lastDiffReviewReportPath: 'none'
+    }
+  });
+  writeInitialReviewPass(fixture);
+
+  const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'read-only-findings',
+      mode: 'read-only',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'final-validation-failed');
+  assert.match(result.message, /read-only-findings|blocking/i);
 });
 
 test('resume blocks corrupt schema-2 manifest as state-validation-failed', async (t) => {
