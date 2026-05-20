@@ -18,6 +18,7 @@ const {
   parseManifest,
   writeManifest,
   readManifest,
+  readManifestAny,
   evaluateResumeState
 } = require('../lib/target-state');
 
@@ -167,6 +168,8 @@ test('validates custom ledger inside target state and rejects outside, reserved,
   assert.throws(() => validateLedgerPath({ projectRoot: root, targetKey, ledgerPath: path.join(targetDir, 'LOCK', 'lease.json') }), /reserved/i);
   assert.throws(() => validateLedgerPath({ projectRoot: root, targetKey, ledgerPath: path.join(targetDir, 'stale-locks', 'old.json') }), /reserved/i);
   assert.throws(() => validateLedgerPath({ projectRoot: root, targetKey, ledgerPath: path.join(targetDir, 'rounds', '001-review.md') }), /reserved/i);
+  assert.throws(() => validateLedgerPath({ projectRoot: root, targetKey, ledgerPath: path.join(targetDir, 'context', 'merged-rules.md') }), /reserved/i);
+  assert.throws(() => validateLedgerPath({ projectRoot: root, targetKey, ledgerPath: path.join(targetDir, 'reports', 'review.json') }), /reserved/i);
 
   const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-ledger-outside-'));
   const outsideLedger = path.join(outsideRoot, 'ISSUES.md');
@@ -205,6 +208,7 @@ test('formats, parses, writes, and reads manifest with exact allowed statuses', 
     'unsupported',
     'externally-changed',
     'possible-target-replacement',
+    'read-only-clean',
     'checkpoint'
   ];
 
@@ -217,6 +221,65 @@ test('formats, parses, writes, and reads manifest with exact allowed statuses', 
   assert.equal(readManifest(manifestPath).lastKnownContentSha256, manifest.lastKnownContentSha256);
   assert.throws(() => formatManifest({ ...manifest, status: 'unknown' }), /unknown status/i);
   assert.throws(() => parseManifest(formatManifest(manifest).replace('Status: review', 'Status: unknown')), /unknown status/i);
+});
+
+test('readManifestAny dispatches v1 and schema-2 manifests without normalizing corrupt schema-2', () => {
+  const root = makeWorkspace();
+  const manifest = makeManifest(root, { status: 'review' });
+  const v1Path = path.join(root, '.docs-review-fix', 'targets', manifest.targetKey, 'MANIFEST.md');
+  writeManifest(v1Path, manifest);
+  assert.equal(readManifestAny(v1Path).manifestSchema, 1);
+  assert.equal(readManifestAny(v1Path).assurance, 'advisory');
+  assert.equal(readManifestAny(v1Path).runtimePlatform, 'manual');
+
+  const v2Path = path.join(root, '.docs-review-fix', 'targets', manifest.targetKey, 'MANIFEST-v2.md');
+  fs.writeFileSync(v2Path, [
+    '# Review Target Manifest',
+    '',
+    'Manifest schema: 2',
+    'Target: docs/spec.md',
+    'Normalized target: docs/spec.md',
+    'Document type: SPEC',
+    'Strictness: normal',
+    'Mode: review-and-fix',
+    'Target key: spec-md-aaaaaaaaaaaa',
+    'Ledger path: .docs-review-fix/targets/spec-md-aaaaaaaaaaaa/ISSUES.md',
+    'Status: blocked',
+    'Current phase: review',
+    'Current round: 1',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Descriptor platform: none',
+    'Assurance proof: none',
+    'Runtime subagent probe: ready',
+    'Runtime subagent probe evidence: route-asserted-ready',
+    'Runtime fingerprint guard: passed',
+    'Runtime stdin handoff: ready',
+    'Runtime stdin handoff evidence: route-asserted-ready',
+    'Runtime downgrade reason: none',
+    'Blocking reason: none',
+    'Status reason: none',
+    'Current report path: none',
+    'Last reviewer report path: none',
+    'Last triage report path: none',
+    'Last fix report path: none',
+    'Last diff review report path: none',
+    `Initial content sha256: ${'a'.repeat(64)}`,
+    `Last known content sha256: ${'a'.repeat(64)}`,
+    'Last reviewed content sha256: none',
+    'Last passed content sha256: none',
+    'Last modified at: 2026-05-21T00:00:00.000Z',
+    'File size: 10',
+    'References:',
+    'Created at: 2026-05-21T00:00:00.000Z',
+    'Updated at: 2026-05-21T00:00:00.000Z',
+    ''
+  ].join('\n'));
+
+  assert.throws(
+    () => readManifestAny(v2Path),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /state-validation-failed/.test(error.message)
+  );
 });
 
 test('resume preserves manifest strictness, mode, and custom ledger path when no explicit conflict exists', () => {

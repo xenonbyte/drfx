@@ -14,6 +14,8 @@ const {
 
 test('decides when round receipts are required', () => {
   assert.equal(shouldWriteRoundReceipt({ auditTrail: true, round: 1, stopReason: null }), true);
+  assert.equal(shouldWriteRoundReceipt({ originalLedgerToken: 'ledger=custom/ISSUES.md', round: 1, stopReason: null }), true);
+  assert.equal(shouldWriteRoundReceipt({ ledgerPath: 'ISSUES.md', round: 1, stopReason: null }), false);
   assert.equal(shouldWriteRoundReceipt({ auditTrail: false, round: 2, stopReason: null }), true);
   assert.equal(shouldWriteRoundReceipt({ auditTrail: false, round: 1, stopReason: 'interruption' }), true);
   assert.equal(shouldWriteRoundReceipt({ auditTrail: false, round: 1, stopReason: 'context-pressure' }), true);
@@ -140,4 +142,48 @@ test('redacts secret-derived fragments in written receipts and preserves issue i
   assert.match(text, /ISSUE-006/);
   assert.match(text, /\[REDACTED:api-token\]/);
   assert.doesNotMatch(text, /token suffix: abc123|secret hash: feedface/);
+});
+
+test('v2 receipts include fixed fields and attempt suffixes', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-receipt-v2-'));
+  const first = writeRoundReceipt({
+    projectRoot: root,
+    targetKey: 'spec-md-aaaaaaaaaaaa',
+    round: 2,
+    kind: 'review',
+    status: 'review',
+    target: 'docs/spec.md',
+    issueIds: [],
+    filesChanged: 'none',
+    verification: 'node --test test/workflow-state-v2.test.js',
+    summary: 'review completed',
+    nextAction: 'triage',
+    blockingReason: 'none',
+    statusReason: 'none'
+  });
+  const second = writeRoundReceipt({
+    projectRoot: root,
+    targetKey: 'spec-md-aaaaaaaaaaaa',
+    round: 2,
+    kind: 'review',
+    status: 'review',
+    target: 'docs/spec.md',
+    issueIds: [],
+    filesChanged: 'none',
+    verification: 'node --test test/workflow-state-v2.test.js',
+    summary: 'review completed again',
+    nextAction: 'triage',
+    blockingReason: 'none',
+    statusReason: 'none'
+  });
+
+  assert.notEqual(first, second);
+  assert.equal(path.basename(first), '002-review.md');
+  assert.equal(path.basename(second), '002-review-attempt-001.md');
+  const text = fs.readFileSync(first, 'utf8');
+  assert.match(text, /- Files changed: none/);
+  assert.match(text, /- Verification: node --test test\/workflow-state-v2\.test\.js/);
+  assert.match(text, /- Blocking reason: none/);
+  assert.match(text, /- Status reason: none/);
+  assert.match(text, /- Issue IDs: none/);
 });
