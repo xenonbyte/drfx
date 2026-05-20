@@ -85,7 +85,7 @@ test('codex strict verified start requires descriptor and proof', () => {
 test('direct Gemini strict verified start parses for unsupported handling', () => {
   const parsed = parseWorkflowArgs('start', [
     'review-fix-design',
-    'target=design/DESIGN-v2.md',
+    `target=${REAL_TARGET}`,
     'read-only',
     'assurance=strict-verified',
     '--assurance',

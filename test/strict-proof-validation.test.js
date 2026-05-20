@@ -175,7 +175,7 @@ test('stale run id or non-verified descriptor returns strict proof failure and a
 test('direct Gemini strict verified start returns advisory unsupported read-only', async () => {
   const result = await runWorkflowCommand('start', [
     'review-fix-design',
-    'target=design/DESIGN-v2.md',
+    `target=${REAL_TARGET}`,
     'read-only',
     'assurance=strict-verified',
     '--assurance',
