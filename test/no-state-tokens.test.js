@@ -57,6 +57,92 @@ function unsupportedBlock(runtimePlatform = 'gemini', target = 'README.md') {
   ].join('\n');
 }
 
+function makeNoStateFixture(t, { withReference = false } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-no-state-stale-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const target = path.join(root, 'target.md');
+  const reference = path.join(root, 'reference.md');
+  fs.writeFileSync(target, '# Target\n\nInitial body.\n');
+  if (withReference) fs.writeFileSync(reference, '# Reference\n\nInitial body.\n');
+  return { root, target, reference };
+}
+
+function noStateReviewArgs({ root, target, references = [] }) {
+  return [
+    '--no-state',
+    'review-fix-doc',
+    `root=${root}`,
+    `target=${target}`,
+    ...references.map((reference) => `ref=${reference}`),
+    'read-only',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'manual',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--phase',
+    'initial-review',
+    '--json'
+  ];
+}
+
+function reviewerFailBlock() {
+  return [
+    'FAIL',
+    'Findings:',
+    '- id: R001',
+    '  severity: high',
+    '  location: target.md:1',
+    '  issue: stale token regression',
+    '  why_it_matters: stale tokens can hide changed content',
+    '  suggested_fix: reject stale no-state tokens',
+    '  confidence: confirmed',
+    '  sensitive: false'
+  ].join('\n');
+}
+
+function reviewerPassBlock() {
+  return [
+    'PASS',
+    'Summary: No blocking findings.'
+  ].join('\n');
+}
+
+function triageAcceptedBlock() {
+  return [
+    'Triage:',
+    '- reviewer_id: R001',
+    '  issue_id: ISSUE-001',
+    '  decision: accepted',
+    '  severity: high',
+    '  original_severity: high',
+    '  rationale: none',
+    '  merged_into: none',
+    '  deferred_owner: none',
+    '  deferred_next_action: none',
+    '  non_blocking: false'
+  ].join('\n');
+}
+
+async function createNoStateReviewToken({ root, target, references = [], resultText }) {
+  const context = await runWorkflowCommand('context', noStateReviewArgs({ root, target, references }));
+  assert.equal(context.ok, true);
+  assert.equal(typeof context.reviewGuard, 'string');
+
+  const review = await runWorkflowCommand('record-review', [
+    ...noStateReviewArgs({ root, target, references }),
+    '--review-guard',
+    context.reviewGuard,
+    '--result-stdin'
+  ], { stdin: resultText });
+  assert.equal(review.ok, true);
+  assert.equal(typeof review.stateToken, 'string');
+  return review.stateToken;
+}
+
 test('canonical encoding rejects padding standard base64 and unknown fields', () => {
   const encoded = encodeCanonical({ b: 'two', a: 1 });
   assert.equal(encoded, encodeCanonical({ a: 1, b: 'two' }));
@@ -430,6 +516,72 @@ test('no-state finalizer binds preflight token to current route runtime fields',
   assert.equal(matched.runtimePlatform, 'gemini');
 });
 
+test('no-state record-triage blocks when target changes after review token', async (t) => {
+  const { root, target } = makeNoStateFixture(t);
+  const stateToken = await createNoStateReviewToken({
+    root,
+    target,
+    resultText: reviewerFailBlock()
+  });
+
+  fs.appendFileSync(target, '\nChanged after review.\n');
+  const result = await runWorkflowCommand('record-triage', [
+    ...noStateReviewArgs({ root, target }),
+    '--state-token',
+    stateToken,
+    '--triage-stdin'
+  ], { stdin: triageAcceptedBlock() });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'reviewer-mutated-file');
+  assert.equal(result.stateToken, undefined);
+});
+
+test('no-state finalizer blocks clean token when target changes after review token', async (t) => {
+  const { root, target } = makeNoStateFixture(t);
+  const stateToken = await createNoStateReviewToken({
+    root,
+    target,
+    resultText: reviewerPassBlock()
+  });
+
+  fs.appendFileSync(target, '\nChanged after clean review.\n');
+  const result = await runWorkflowCommand('finalize', [
+    ...noStateReviewArgs({ root, target }),
+    '--state-token',
+    stateToken,
+    '--final-response-stdin'
+  ], { stdin: readOnlyCleanBlock('target.md') });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'reviewer-mutated-file');
+});
+
+test('no-state record-triage blocks when reference changes after review token', async (t) => {
+  const { root, target, reference } = makeNoStateFixture(t, { withReference: true });
+  const stateToken = await createNoStateReviewToken({
+    root,
+    target,
+    references: [reference],
+    resultText: reviewerFailBlock()
+  });
+
+  fs.appendFileSync(reference, '\nReference changed after review.\n');
+  const result = await runWorkflowCommand('record-triage', [
+    ...noStateReviewArgs({ root, target, references: [reference] }),
+    '--state-token',
+    stateToken,
+    '--triage-stdin'
+  ], { stdin: triageAcceptedBlock() });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'reference-mutated-file');
+  assert.equal(result.stateToken, undefined);
+});
+
 test('workflow preflight rejects observable semantic inputs', () => {
   assert.throws(
     () => parseWorkflowArgs('preflight', [
@@ -520,24 +672,10 @@ test('no-state commands reject strict verified resume ledger full re-review and 
 });
 
 test('no-state finalizer rejects pass and validates clean versus findings', async () => {
-  const targetKey = deriveTargetKey(ROOT, path.join(ROOT, 'README.md')).targetKey;
-  const token = nextStateToken({
-    previousToken: null,
-    tokenKind: 'review-result',
-    targetKey,
-    normalizedTarget: 'README.md',
-    references: [],
-    phase: 'initial-review',
-    round: 1,
-    strictness: 'normal',
-    mode: 'read-only',
-    assurance: 'advisory',
-    runtimePlatform: 'manual',
-    guardId: 'guard-1',
-    eligibleTerminalStatuses: ['read-only-clean'],
-    normalized: { result: 'PASS', blockingFindings: [] },
-    targetFingerprint: { sha256: 'a'.repeat(64), size: 10, mtimeMs: 1 },
-    referenceFingerprints: []
+  const token = await createNoStateReviewToken({
+    root: ROOT,
+    target: path.join(ROOT, 'README.md'),
+    resultText: reviewerPassBlock()
   });
   const passBlock = [
     'Final status: pass',
