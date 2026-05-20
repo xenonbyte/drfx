@@ -1,13 +1,13 @@
-# document-review-loop
+# document-review-fix
 
-`@xenonbyte/document-review-loop` installs four document review routes that run a structured review-fix loop for SPEC, PLAN, DESIGN, and COMMON documents.
+`@xenonbyte/document-review-fix` installs four document review routes that run a structured review-fix loop for SPEC, PLAN, DESIGN, and COMMON documents.
 
 ## Installation
 
 Install the package globally:
 
 ```bash
-npm install -g @xenonbyte/document-review-loop
+npm install -g @xenonbyte/document-review-fix
 ```
 
 After installation, the `drfx` command is available:

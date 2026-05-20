@@ -1290,7 +1290,7 @@ Capability descriptor contract:
   ```json
   {
     "schemaVersion": 1,
-    "packageName": "@xenonbyte/document-review-loop",
+    "packageName": "@xenonbyte/document-review-fix",
     "packageVersion": "<semver>",
     "platform": "claude|codex|gemini",
     "adapterVersion": "<string or none>",
@@ -1425,7 +1425,7 @@ Manifest schema:
 
 ```yaml
 schemaVersion: 1
-packageName: "@xenonbyte/document-review-loop"
+packageName: "@xenonbyte/document-review-fix"
 packageVersion: "<semver>"
 platform: "claude | codex | gemini"
 installedAt: "<ISO-8601 timestamp>"
@@ -1636,7 +1636,7 @@ Required README sections:
 The README must show npm installation:
 
 ```text
-npm install -g @xenonbyte/document-review-loop
+npm install -g @xenonbyte/document-review-fix
 ```
 
 It must state that the installed CLI binary is `drfx`.
@@ -2040,7 +2040,7 @@ V1 implementation decisions:
 The v1 workflow is acceptable when:
 
 - It ships a root `README.md` with installation, platform setup, command usage, built-in rubrics, workflow flow, and rule configuration.
-- It ships `package.json` with package name `@xenonbyte/document-review-loop`, `type: commonjs`, `engines.node: >=20.0.0`, a `bin.drfx` entry pointing to `bin/drfx.js`, an `npm test` script using `node --test`, and package files that include `bin/`, `lib/`, `skills/`, `shared/`, `templates/`, `test/`, `README.md`, and `design/`.
+- It ships `package.json` with package name `@xenonbyte/document-review-fix`, `type: commonjs`, `engines.node: >=20.0.0`, a `bin.drfx` entry pointing to `bin/drfx.js`, an `npm test` script using `node --test`, and package files that include `bin/`, `lib/`, `skills/`, `shared/`, `templates/`, `test/`, `README.md`, and `design/`.
 - It exposes `review-fix-spec`, `review-fix-plan`, `review-fix-design`, and `review-fix-doc`.
 - It provides `drfx install --platform <claude|codex|gemini[,...]>`.
 - It provides `drfx uninstall --platform <claude|codex|gemini[,...]>`.
