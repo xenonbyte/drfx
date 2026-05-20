@@ -856,6 +856,133 @@ test('persistent read-only finalize accepts stopped-with-deferrals for deferred 
   assert.equal(manifest.statusReason, 'deferred-findings');
 });
 
+test('persistent read-only finalize gives deferred findings precedence over blocking findings', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      mode: 'read-only',
+      status: 'stopped-with-deferrals',
+      currentPhase: 'final',
+      currentReportPath: 'reports/triage-round-001.md',
+      lastReviewerReportPath: 'reports/reviewer-round-001.md',
+      lastTriageReportPath: 'reports/triage-round-001.md',
+      lastFixReportPath: 'none',
+      lastDiffReviewReportPath: 'none'
+    },
+    ledgerIssues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'deferred',
+        location: 'docs/spec.md:3',
+        summary: 'Deferred reviewer finding',
+        resolution: 'Deferred: needs owner follow-up'
+      },
+      {
+        id: 'ISSUE-002',
+        severity: 'high',
+        status: 'accepted',
+        location: 'docs/spec.md:8',
+        summary: 'Accepted reviewer finding',
+        resolution: 'Accepted: blocking issue remains'
+      }
+    ]
+  });
+  writeInitialReviewFailHigh(fixture);
+  writeTriageReport(fixture, [
+    {
+      reviewer_id: 'R001',
+      issue_id: 'ISSUE-001',
+      decision: 'deferred',
+      severity: 'high',
+      original_severity: 'high',
+      rationale: 'needs owner follow-up',
+      merged_into: 'none',
+      deferred_owner: 'docs-owner',
+      deferred_next_action: 'resolve before clean finalization',
+      non_blocking: false
+    },
+    {
+      reviewer_id: 'R002',
+      issue_id: 'ISSUE-002',
+      decision: 'accepted',
+      severity: 'high',
+      original_severity: 'high',
+      rationale: 'valid blocking finding',
+      merged_into: 'none',
+      deferred_owner: 'none',
+      deferred_next_action: 'none',
+      non_blocking: false
+    }
+  ]);
+
+  const findings = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'read-only-findings',
+      mode: 'read-only',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      statusReason: 'read-only-blocking-findings',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(findings.ok, false);
+  assert.equal(findings.status, 'blocked');
+  assert.equal(findings.blockingReason, 'final-validation-failed');
+  assert.match(findings.message, /deferred|stopped-with-deferrals/i);
+
+  const stopped = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'stopped-with-deferrals',
+      mode: 'read-only',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      deferralsOrBlockers: 'deferred high issue ISSUE-001',
+      blockingReason: 'none',
+      statusReason: 'deferred-findings',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(stopped.ok, true);
+  assert.equal(stopped.status, 'stopped-with-deferrals');
+});
+
+test('persistent review-and-fix finalize rejects stopped-with-deferrals without deferred high finding', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      status: 'full-re-review',
+      currentPhase: 'full-re-review',
+      currentReportPath: 'reports/reviewer-round-001.md',
+      lastReviewerReportPath: 'reports/reviewer-round-001.md',
+      lastTriageReportPath: 'none',
+      lastFixReportPath: 'none',
+      lastDiffReviewReportPath: 'none'
+    }
+  });
+  writeInitialReviewPass(fixture);
+
+  const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'stopped-with-deferrals',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      deferralsOrBlockers: 'none',
+      blockingReason: 'none',
+      statusReason: 'deferred-findings',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'final-validation-failed');
+  assert.match(result.message, /stopped-with-deferrals|deferred/i);
+});
+
 test('persistent read-only finalize rejects findings when no blocking issues exist', async (t) => {
   const fixture = makeFixture(t, {
     manifestOverrides: {
