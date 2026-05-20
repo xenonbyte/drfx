@@ -1,15 +1,21 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const test = require('node:test');
+const { deriveTargetKey } = require('../lib/target-state');
 
 const {
   formatWorkflowError,
   runWorkflowCommand,
   parseWorkflowArgs
 } = require('../lib/workflow');
+
+const ROOT = path.join(__dirname, '..');
+const REAL_TARGET = path.join(ROOT, 'README.md');
 
 test('parses practical start flags with runtime platform, subagent, stdin, and json', () => {
   const parsed = parseWorkflowArgs('start', [
@@ -101,7 +107,7 @@ test('direct Gemini strict verified start parses for unsupported handling', () =
 test('advisory review-and-fix start returns unsupported validation result', async () => {
   const result = await runWorkflowCommand('start', [
     'review-fix-spec',
-    'target=docs/spec.md',
+    `target=${REAL_TARGET}`,
     'review-and-fix',
     '--assurance',
     'advisory',
@@ -124,7 +130,7 @@ test('advisory review-and-fix start returns unsupported validation result', asyn
 test('runtime downgrade advisory review-and-fix normalizes to read-only without unsupported reason', async () => {
   const result = await runWorkflowCommand('start', [
     'review-fix-spec',
-    'target=docs/spec.md',
+    `target=${REAL_TARGET}`,
     'review-and-fix',
     '--assurance',
     'advisory',
@@ -145,6 +151,67 @@ test('runtime downgrade advisory review-and-fix normalizes to read-only without 
   assert.equal(result.modeNormalizedFrom, 'review-and-fix');
   assert.equal(result.assurance, 'advisory');
   assert.notEqual(result.statusReason, 'advisory-review-and-fix-unsupported');
+});
+
+test('workflow start returns canonical target key from target-state', async () => {
+  const result = await runWorkflowCommand('start', [
+    'review-fix-spec',
+    `target=${REAL_TARGET}`,
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready'
+  ]);
+
+  assert.equal(result.targetKey, deriveTargetKey(ROOT, REAL_TARGET).targetKey);
+});
+
+test('workflow start rejects target outside explicit root before emitting target key', async (t) => {
+  const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-workflow-outside-'));
+  const outsideTarget = path.join(outsideRoot, 'outside.md');
+  fs.writeFileSync(outsideTarget, '# Outside\n');
+  t.after(() => {
+    fs.rmSync(outsideRoot, { recursive: true, force: true });
+  });
+
+  await assert.rejects(
+    () =>
+      runWorkflowCommand('start', [
+        'review-fix-spec',
+        `target=${outsideTarget}`,
+        `root=${ROOT}`,
+        '--assurance',
+        'practical',
+        '--runtime-platform',
+        'codex',
+        '--runtime-subagent-probe',
+        'ready',
+        '--runtime-stdin-handoff',
+        'ready'
+      ]),
+    /contain target/i
+  );
+});
+
+test('workflow start preserves explicit assurance source from CLI flag', async () => {
+  const result = await runWorkflowCommand('start', [
+    'review-fix-spec',
+    `target=${REAL_TARGET}`,
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready'
+  ]);
+
+  assert.equal(result.assuranceSource, 'explicit');
 });
 
 test('invalid runtime downgrade reason always rejects', () => {
@@ -171,7 +238,7 @@ test('invalid runtime downgrade reason always rejects', () => {
 test('unavailable stdin handoff maps to blocked unsafe handoff result', async () => {
   const result = await runWorkflowCommand('start', [
     'review-fix-spec',
-    'target=docs/spec.md',
+    `target=${REAL_TARGET}`,
     '--assurance',
     'advisory',
     '--runtime-platform',

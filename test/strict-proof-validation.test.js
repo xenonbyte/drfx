@@ -10,6 +10,7 @@ const { buildDescriptor, createRunId } = require('../lib/capability');
 const { runWorkflowCommand } = require('../lib/workflow');
 
 const PACKAGE_VERSION = '0.1.0';
+const REAL_TARGET = path.join(__dirname, '..', 'README.md');
 
 function verifiedCapability(runId, proof = 'adapter-descriptor') {
   return {
@@ -46,7 +47,7 @@ function writeDescriptor(t, descriptor, basename = `${descriptor.platform}.json`
 async function runStrictStart(args, options) {
   return runWorkflowCommand('start', [
     'review-fix-spec',
-    'target=docs/spec.md',
+    `target=${REAL_TARGET}`,
     'read-only',
     'assurance=strict-verified',
     '--assurance',
@@ -125,7 +126,7 @@ test('strict proof downgrade from review-and-fix normalizes mode metadata', asyn
 
   const result = await runWorkflowCommand('start', [
     'review-fix-spec',
-    'target=docs/spec.md',
+    `target=${REAL_TARGET}`,
     'review-and-fix',
     'assurance=strict-verified',
     '--assurance',
