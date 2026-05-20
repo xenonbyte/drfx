@@ -143,6 +143,25 @@ function writeFullReviewPass(fixture) {
   });
 }
 
+function writeTriageReport(fixture) {
+  writeJsonReport(path.join(fixture.targetDir, 'reports', 'triage-round-001.md'), 'Triage Report', {
+    round: 1,
+    phase: 'triage',
+    producer: 'coordinator',
+    normalized: {
+      decisions: [],
+      warnings: []
+    },
+    ledgerIssueIds: []
+  });
+}
+
+function writeResumeReports(fixture) {
+  writeFixReport(fixture);
+  writeFullReviewPass(fixture);
+  writeTriageReport(fixture);
+}
+
 function finalResponseBlock(overrides = {}) {
   const block = { ...baseBlock, ...overrides };
   const fixedIssueIds = Array.isArray(block.fixedIssueIds)
@@ -443,6 +462,40 @@ test('persistent finalize validates response before persisting pass', async (t) 
   assert.notEqual(manifest.lastPassedContentSha256, 'none');
 });
 
+test('persistent finalize rejects pass when fix round has no diff review report', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      status: 'full-re-review',
+      currentPhase: 'full-re-review',
+      lastDiffReviewReportPath: 'none'
+    },
+    ledgerIssues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'fixed',
+        location: 'docs/spec.md:3',
+        summary: 'Original issue',
+        resolution: 'Fixed: Updated required section.'
+      }
+    ]
+  });
+  writeFixReport(fixture);
+  writeFullReviewPass(fixture);
+
+  const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock()
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'final-validation-failed');
+  assert.match(result.message, /diff review/i);
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  assert.notEqual(manifest.status, 'pass');
+});
+
 test('resume blocks corrupt schema-2 manifest as state-validation-failed', async (t) => {
   const fixture = makeFixture(t);
   fs.writeFileSync(fixture.manifestPath, '# Review Target Manifest\n\nManifest schema: 2\nTarget: docs/spec.md\n');
@@ -469,6 +522,119 @@ test('resume blocks corrupt schema-2 manifest as state-validation-failed', async
   assert.equal(result.blockingReason, 'state-validation-failed');
 });
 
+test('resume blocks missing ledger as state-validation-failed', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: { status: 'fix', currentPhase: 'fix' }
+  });
+  fs.rmSync(fixture.ledgerPath);
+
+  const result = await runWorkflowCommand('start', [
+    'review-fix-spec',
+    `root=${fixture.root}`,
+    `target=${fixture.target}`,
+    'review-and-fix',
+    'resume',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready'
+  ], { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.match(result.message, /ledger|ISSUES/i);
+});
+
+test('resume blocks corrupt ledger as state-validation-failed', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: { status: 'fix', currentPhase: 'fix' }
+  });
+  fs.writeFileSync(fixture.ledgerPath, 'not a ledger\n');
+
+  const result = await runWorkflowCommand('start', [
+    'review-fix-spec',
+    `root=${fixture.root}`,
+    `target=${fixture.target}`,
+    'review-and-fix',
+    'resume',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready'
+  ], { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.match(result.message, /ledger|header/i);
+});
+
+test('resume blocks missing referenced report as state-validation-failed', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: { status: 'full-re-review', currentPhase: 'full-re-review' }
+  });
+  writeFixReport(fixture);
+
+  const result = await runWorkflowCommand('start', [
+    'review-fix-spec',
+    `root=${fixture.root}`,
+    `target=${fixture.target}`,
+    'review-and-fix',
+    'resume',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready'
+  ], { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.match(result.message, /report/i);
+});
+
+test('resume blocks corrupt referenced report as state-validation-failed', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: { status: 'full-re-review', currentPhase: 'full-re-review' }
+  });
+  writeFixReport(fixture);
+  fs.writeFileSync(path.join(fixture.targetDir, 'reports', 'full-review-round-001.md'), '# Bad report\n');
+
+  const result = await runWorkflowCommand('start', [
+    'review-fix-spec',
+    `root=${fixture.root}`,
+    `target=${fixture.target}`,
+    'review-and-fix',
+    'resume',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready'
+  ], { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.match(result.message, /report/i);
+});
+
 test('resume clears stale pass and restarts review', async (t) => {
   const fixture = makeFixture(t, {
     manifestOverrides: {
@@ -481,6 +647,7 @@ test('resume clears stale pass and restarts review', async (t) => {
     ...before,
     lastPassedContentSha256: before.lastKnownContentSha256
   }));
+  writeResumeReports(fixture);
   fs.appendFileSync(fixture.target, '\nChanged after pass.\n');
 
   const result = await runWorkflowCommand('start', [
@@ -512,6 +679,7 @@ test('resume maps stale non-pass state to externally-changed', async (t) => {
   const fixture = makeFixture(t, {
     manifestOverrides: { status: 'fix', currentPhase: 'fix' }
   });
+  writeResumeReports(fixture);
   fs.appendFileSync(fixture.target, '\nExternal edit.\n');
 
   const result = await runWorkflowCommand('start', [
@@ -539,6 +707,7 @@ test('resume maps same-path replacement suspicion to possible-target-replacement
   const fixture = makeFixture(t, {
     manifestOverrides: { status: 'fix', currentPhase: 'fix' }
   });
+  writeResumeReports(fixture);
   const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
   fs.writeFileSync(fixture.target, 'X'.repeat(Number(manifest.fileSize)));
 
@@ -573,6 +742,7 @@ test('resume converts strict-verified state without current proof to unsupported
       assuranceProof: 'capability-descriptor:codex:prior-run'
     }
   });
+  writeResumeReports(fixture);
 
   const result = await runWorkflowCommand('start', [
     'review-fix-spec',
@@ -602,6 +772,7 @@ test('resume ignores missing summary and malformed continuity for deterministic 
   const fixture = makeFixture(t, {
     manifestOverrides: { status: 'fix', currentPhase: 'fix' }
   });
+  writeResumeReports(fixture);
   fs.writeFileSync(path.join(fixture.targetDir, 'CONTINUITY.md'), '\0 malformed optional handoff');
 
   const result = await runWorkflowCommand('start', [
@@ -623,4 +794,67 @@ test('resume ignores missing summary and malformed continuity for deterministic 
   assert.equal(result.ok, true);
   assert.equal(result.status, 'fix');
   assert.equal(result.currentPhase, 'fix');
+});
+
+test('no-state finalize rejects blocked response without blocking reason', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: { mode: 'read-only', status: 'review', currentPhase: 'review' }
+  });
+  const preflight = await runWorkflowCommand('preflight', [
+    '--no-state',
+    'review-fix-spec',
+    `root=${fixture.root}`,
+    `target=${fixture.target}`,
+    'read-only',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'manual',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    '--terminal-status',
+    'blocked',
+    '--blocking-reason',
+    'state-validation-failed',
+    '--status-reason',
+    'none'
+  ], { cwd: fixture.root });
+
+  const result = await runWorkflowCommand('finalize', [
+    '--no-state',
+    'review-fix-spec',
+    `root=${fixture.root}`,
+    `target=${fixture.target}`,
+    'read-only',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'manual',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--state-token',
+    preflight.stateToken,
+    '--final-response-stdin',
+    '--json'
+  ], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'blocked',
+      assurance: 'advisory',
+      runtimePlatform: 'manual',
+      mode: 'read-only',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      blockingReason: 'none',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.match(result.errorCode || result.blockingReason, /final-validation|blocked/i);
 });
