@@ -455,6 +455,33 @@ test('workflow end-fix maps corrupt persisted guard baseline to target-only-guar
   assert.deepEqual(receiptFiles(fixture), ['001-fix-blocked.md']);
 });
 
+test('workflow end-fix maps deleted external reference to reference-mutated-file and releases lock', async (t) => {
+  const fixture = makeWorkflowFixture(t);
+  const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-external-ref-'));
+  t.after(() => fs.rmSync(externalDir, { recursive: true, force: true }));
+  const reference = path.join(externalDir, 'ref.md');
+  fs.writeFileSync(reference, '# External reference\n');
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  fs.writeFileSync(fixture.manifestPath, formatManifestV2({
+    ...manifest,
+    references: [reference]
+  }));
+  await beginFix(fixture);
+  fs.rmSync(reference);
+  fs.appendFileSync(fixture.target, '\nFixed ISSUE-001.\n');
+
+  const result = await runWorkflowCommand('end-fix', [fixture.targetDir, '--fix-report-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: validFixReport()
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'reference-mutated-file');
+  assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }), null);
+  assert.deepEqual(receiptFiles(fixture), ['001-fix-blocked.md']);
+});
+
 test('workflow end-fix maps release failure to lock-release-failed', async (t) => {
   const fixture = makeWorkflowFixture(t);
   await beginFix(fixture);
