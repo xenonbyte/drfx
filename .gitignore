@@ -1,0 +1,5 @@
+docs/superpowers/
+.docs-review-fix/
+.DS_Store
+*.tgz
+npm-debug.log*

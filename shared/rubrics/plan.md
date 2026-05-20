@@ -1,0 +1,21 @@
+# PLAN Rubric
+
+Use `PLAN` for implementation plans, migration plans, rollout plans, refactor plans, and execution checklists. Apply `shared/rubrics/common.md` first, then this rubric.
+
+Review for:
+
+- Executable order: steps are ordered so another agent or engineer can execute them without re-planning.
+- Prerequisites: dependencies, environment assumptions, credentials, data setup, and approvals are identified.
+- Tooling: commands, scripts, fixtures, CLIs, services, and local checks are named where needed.
+- Sequencing: route, ownership, migration, rollout, and handoff decisions are resolved before execution depends on them.
+- Verification: each meaningful change has tests, type checks, builds, smoke checks, inspection criteria, or acceptance checks.
+- Rollback: rollback or stop-the-line behavior is included where failure would matter.
+- Failure handling: blockers, partial progress, retries, degraded states, and operator communication are covered when material.
+- Data safety: migrations, destructive operations, sensitive data, backups, privacy, and production boundaries are handled.
+- Compatibility: runtime, API, schema, dependency, platform, and backwards-compatibility impacts are acknowledged.
+- Blast radius: affected files, services, users, data, and external systems are visible.
+- Handoff readiness: another agent or engineer can pick up the plan with context, working set, checks, and expected outcomes.
+
+Blocking findings include missing execution order, missing prerequisites, unverifiable steps, hidden external state changes, no rollback for risky operations, and unresolved architecture or product decisions embedded in execution steps.
+
+PASS for `PLAN` means the document is ordered, executable, verifiable, rollback-aware where needed, and ready to hand to another agent or engineer.

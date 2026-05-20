@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "packageName": "@xenonbyte/document-review-loop",
+  "packageVersion": "0.1.0",
+  "platform": "claude",
+  "adapterVersion": "v1",
+  "checkedAt": "2026-05-20T00:00:00.000Z",
+  "provenance": {
+    "source": "installer-default",
+    "runId": "none",
+    "generatedBy": "drfx install",
+    "packageVersion": "0.1.0"
+  },
+  "capabilities": {
+    "can_spawn_isolated_reviewer": {
+      "status": "unverified",
+      "proof": "none",
+      "proofRunId": "none",
+      "detail": "Installer default cannot prove reviewer isolation."
+    },
+    "reviewer_write_blocked": {
+      "status": "unverified",
+      "proof": "none",
+      "proofRunId": "none",
+      "detail": "Installer default cannot prove write blocking."
+    },
+    "fingerprint_guard_available": {
+      "status": "unverified",
+      "proof": "none",
+      "proofRunId": "none",
+      "detail": "Installer default has not run the local probe."
+    }
+  },
+  "advisoryReason": "Run drfx check to refresh capabilities; installer defaults are advisory-only."
+}

@@ -1,0 +1,30 @@
+description = "Review {{DOCUMENT_TYPE}} documents with advisory-only read-only findings for {{ROUTE_NAME}}."
+
+[metadata]
+route_name = "{{ROUTE_NAME}}"
+document_type = "{{DOCUMENT_TYPE}}"
+package_version = "{{PACKAGE_VERSION}}"
+
+[prompt]
+text = '''
+Route name: {{ROUTE_NAME}}
+Document type: {{DOCUMENT_TYPE}}
+Package version: {{PACKAGE_VERSION}}
+
+{{PLATFORM_INVOCATION_TEXT}}
+
+Route contract:
+- This route has a fixed document type: {{DOCUMENT_TYPE}}.
+- Users must not pass type.
+- Must not infer type from filename or path.
+- At workflow start, run drfx check or the same package capability check from this installed package.
+- Do not trust old or stale descriptor files.
+- For resume, read .docs-review-fix/targets/<target-key>/.
+- Gemini v1 is advisory-only and produces read-only findings.
+- automatic fixing is unavailable in Gemini v1.
+- workflow PASS is unavailable in Gemini v1.
+
+Embedded shared content:
+
+{{EMBEDDED_SHARED_CONTENT}}
+'''

@@ -1,0 +1,143 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const test = require('node:test');
+const {
+  shouldWriteRoundReceipt,
+  roundReceiptPath,
+  formatRoundReceipt,
+  writeRoundReceipt
+} = require('../lib/receipts');
+
+test('decides when round receipts are required', () => {
+  assert.equal(shouldWriteRoundReceipt({ auditTrail: true, round: 1, stopReason: null }), true);
+  assert.equal(shouldWriteRoundReceipt({ auditTrail: false, round: 2, stopReason: null }), true);
+  assert.equal(shouldWriteRoundReceipt({ auditTrail: false, round: 1, stopReason: 'interruption' }), true);
+  assert.equal(shouldWriteRoundReceipt({ auditTrail: false, round: 1, stopReason: 'context-pressure' }), true);
+  for (const stopReason of ['blocked', 'unsupported', 'externally-changed', 'possible-target-replacement', 'read-only-findings', 'stopped-with-deferrals']) {
+    assert.equal(shouldWriteRoundReceipt({ auditTrail: false, round: 1, stopReason }), true, stopReason);
+  }
+  assert.equal(shouldWriteRoundReceipt({ auditTrail: false, round: 1, stopReason: null }), false);
+});
+
+test('builds target-local receipt paths', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-receipts-'));
+  const receiptPath = roundReceiptPath({ projectRoot: root, targetKey: 'spec-md-123456789abc', round: 2, kind: 'review' });
+
+  assert.equal(receiptPath, path.join(root, '.docs-review-fix', 'targets', 'spec-md-123456789abc', 'rounds', '002-review.md'));
+});
+
+test('rejects receipt path segments that would escape target-local state', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-receipts-escape-'));
+
+  assert.throws(
+    () => roundReceiptPath({ projectRoot: root, targetKey: '../outside', round: 2, kind: 'review' }),
+    /target key/i
+  );
+  assert.throws(
+    () => roundReceiptPath({ projectRoot: root, targetKey: 'spec-md-123456789abc', round: 2, kind: '../review' }),
+    /kind/i
+  );
+});
+
+test('formats receipts with required fields, issue ids, and redacts raw secrets', () => {
+  const text = formatRoundReceipt({
+    round: 2,
+    kind: 'fix',
+    status: 'blocked',
+    target: 'docs/spec.md',
+    issueIds: ['ISSUE-001', 'ISSUE-002'],
+    summary: 'Removed leaked token sk-live-1234567890abcdef',
+    nextAction: 'Run full re-review'
+  });
+
+  assert.match(text, /^# Round 002 Fix Receipt/m);
+  assert.match(text, /- Round: 2/);
+  assert.match(text, /- Kind: fix/);
+  assert.match(text, /- Status: blocked/);
+  assert.match(text, /- Target: docs\/spec\.md/);
+  assert.match(text, /- Issue IDs: ISSUE-001, ISSUE-002/);
+  assert.match(text, /## Summary\nRemoved leaked token \[REDACTED:api-token\]/);
+  assert.match(text, /## Next Action\nRun full re-review/);
+  assert.doesNotMatch(text, /sk-live-1234567890abcdef/);
+});
+
+test('writes receipts under rounds directory with redacted content', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-receipts-write-'));
+  const written = writeRoundReceipt({
+    projectRoot: root,
+    targetKey: 'spec-md-123456789abc',
+    round: 1,
+    kind: 'review',
+    status: 'fail',
+    target: 'docs/spec.md',
+    issueIds: ['ISSUE-001'],
+    summary: 'Found missing rollback with password=hunter2',
+    nextAction: 'Triage findings'
+  });
+
+  assert.equal(written, path.join(root, '.docs-review-fix', 'targets', 'spec-md-123456789abc', 'rounds', '001-review.md'));
+  const text = fs.readFileSync(written, 'utf8');
+  assert.match(text, /ISSUE-001/);
+  assert.match(text, /\[REDACTED:credential\]/);
+  assert.doesNotMatch(text, /hunter2/);
+});
+
+test('redacts sensitive values from all formatted receipt fields', () => {
+  const text = formatRoundReceipt({
+    round: 3,
+    kind: 'review',
+    status: 'blocked',
+    target: 'docs/spec.md?access_token=secret-token-value',
+    issueIds: ['ISSUE-003', 'token=secret-token-value'],
+    summary: 'Cookie: sessionid=secret-session',
+    nextAction: 'Remove Bearer abcdefghijklmnop'
+  });
+
+  assert.match(text, /ISSUE-003/);
+  assert.match(text, /\[REDACTED:api-token\]/);
+  assert.match(text, /\[REDACTED:cookie\]/);
+  assert.doesNotMatch(text, /secret-token-value|secret-session|abcdefghijklmnop/);
+});
+
+test('redacts secret-derived fragments in formatted receipts without removing ordinary anchors', () => {
+  const text = formatRoundReceipt({
+    round: 4,
+    kind: 'review',
+    status: 'blocked',
+    target: 'docs/spec.md',
+    issueIds: ['ISSUE-004', 'ISSUE-005'],
+    summary: 'Found secret prefix: abcd and token hash: deadbeef near auth setup',
+    nextAction: 'Remove credential checksum: cafe1234 but keep build anchor deadbeef'
+  });
+
+  assert.match(text, /ISSUE-004/);
+  assert.match(text, /ISSUE-005/);
+  assert.match(text, /\[REDACTED:api-token\]/);
+  assert.match(text, /\[REDACTED:credential\]/);
+  assert.match(text, /keep build anchor deadbeef/);
+  assert.doesNotMatch(text, /secret prefix: abcd|token hash: deadbeef|credential checksum: cafe1234/);
+});
+
+test('redacts secret-derived fragments in written receipts and preserves issue ids', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-receipts-derived-'));
+  const written = writeRoundReceipt({
+    projectRoot: root,
+    targetKey: 'spec-md-123456789abc',
+    round: 5,
+    kind: 'fix',
+    status: 'blocked',
+    target: 'docs/spec.md',
+    issueIds: ['ISSUE-006'],
+    summary: 'Removed token suffix: abc123 from prose',
+    nextAction: 'Audit secret hash: feedface before re-review'
+  });
+  const text = fs.readFileSync(written, 'utf8');
+
+  assert.match(text, /ISSUE-006/);
+  assert.match(text, /\[REDACTED:api-token\]/);
+  assert.doesNotMatch(text, /token suffix: abc123|secret hash: feedface/);
+});

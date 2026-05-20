@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "packageName": "@xenonbyte/document-review-loop",
+  "packageVersion": "0.1.0",
+  "platform": "claude",
+  "adapterVersion": "v1",
+  "checkedAt": "2026-05-19T00:00:00.000Z",
+  "provenance": {
+    "source": "drfx-check-probe",
+    "runId": "old-run-id",
+    "generatedBy": "drfx check",
+    "packageVersion": "0.1.0"
+  },
+  "capabilities": {
+    "can_spawn_isolated_reviewer": {
+      "status": "verified",
+      "proof": "adapter-descriptor",
+      "proofRunId": "old-run-id",
+      "detail": "Stale fixture claims reviewer isolation."
+    },
+    "reviewer_write_blocked": {
+      "status": "verified",
+      "proof": "adapter-descriptor",
+      "proofRunId": "old-run-id",
+      "detail": "Stale fixture claims write blocking."
+    },
+    "fingerprint_guard_available": {
+      "status": "verified",
+      "proof": "node-crypto-stat-probe",
+      "proofRunId": "old-run-id",
+      "detail": "Stale fixture claims fingerprint guard support."
+    }
+  },
+  "advisoryReason": ""
+}
