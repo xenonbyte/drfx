@@ -111,6 +111,22 @@ test('blocks missing or invalid lease as corrupt-lock', () => {
   );
 });
 
+test('failed initial acquire does not leave a corrupt empty lock directory', () => {
+  const workspace = makeWorkspace();
+  const missingTarget = path.join(workspace.root, 'docs', 'missing.md');
+
+  assert.throws(
+    () => acquireLock({
+      projectRoot: workspace.root,
+      targetKey: workspace.targetKey,
+      targetPath: missingTarget,
+      ownerId: 'owner-a'
+    }),
+    /ENOENT|no such file/i
+  );
+  assert.equal(readLease({ projectRoot: workspace.root, targetKey: workspace.targetKey }), null);
+});
+
 test('archives stale lock and replaces it when target still matches trusted baseline', () => {
   const workspace = makeWorkspace();
   const staleStarted = new Date('2026-05-20T00:00:00.000Z');

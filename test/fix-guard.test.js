@@ -148,11 +148,33 @@ function validFixReport(targetPath = 'docs/spec.md') {
   ].join('\n');
 }
 
+function fixReportForIssue(issueId) {
+  return [
+    'Fixed:',
+    `- ${issueId}: Updated the required section.`,
+    '',
+    'Files changed:',
+    '- docs/spec.md',
+    '',
+    'Not fixed:',
+    '- none',
+    '',
+    'Residual risk:',
+    '- none identified'
+  ].join('\n');
+}
+
 async function beginFix(fixture) {
   return runWorkflowCommand('begin-fix', [fixture.targetDir, '--json'], {
     cwd: fixture.root,
     now: new Date('2026-05-21T00:00:00.000Z')
   });
+}
+
+function receiptFiles(fixture) {
+  const roundsDir = path.join(fixture.targetDir, 'rounds');
+  if (!fs.existsSync(roundsDir)) return [];
+  return fs.readdirSync(roundsDir).sort();
 }
 
 test('git rollback anchor passes for clean tracked target', (t) => {
@@ -250,6 +272,56 @@ test('workflow begin-fix returns persisted lock metadata and guard report path',
   assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }).leaseId, result.leaseId);
 });
 
+test('workflow begin-fix writes rollback-unavailable guard blocker report', async (t) => {
+  const fixture = makeWorkflowFixture(t);
+  fs.appendFileSync(fixture.target, '\nDirty before fix.\n');
+
+  const result = await beginFix(fixture);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'rollback-unavailable');
+  const reportPath = path.join(fixture.targetDir, 'reports', 'fix-guard-round-001.md');
+  assert.equal(fs.existsSync(reportPath), true);
+  const reportText = fs.readFileSync(reportPath, 'utf8');
+  assert.match(reportText, /Blocking reason: rollback-unavailable/);
+  assert.match(reportText, /"status": "blocked"/);
+  assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }), null);
+});
+
+test('workflow begin-fix maps deleted target to rollback-unavailable guard blocker report', async (t) => {
+  const fixture = makeWorkflowFixture(t);
+  fs.rmSync(fixture.target);
+
+  const result = await beginFix(fixture);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'rollback-unavailable');
+  const reportPath = path.join(fixture.targetDir, 'reports', 'fix-guard-round-001.md');
+  assert.equal(fs.existsSync(reportPath), true);
+  assert.match(fs.readFileSync(reportPath, 'utf8'), /Blocking reason: rollback-unavailable/);
+  assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }), null);
+});
+
+test('workflow begin-fix writes target-only guard blocker report with redacted entries', async (t) => {
+  const fixture = makeWorkflowFixture(t);
+  fs.writeFileSync(path.join(fixture.root, 'other.md'), '# Other\n');
+
+  const result = await beginFix(fixture);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+  const reportPath = path.join(fixture.targetDir, 'reports', 'fix-guard-round-001.md');
+  assert.equal(fs.existsSync(reportPath), true);
+  const reportText = fs.readFileSync(reportPath, 'utf8');
+  assert.match(reportText, /Blocking reason: unexpected-worktree-change/);
+  assert.match(reportText, /"pathSha256": "[a-f0-9]{64}"/);
+  assert.doesNotMatch(reportText, /other\.md/);
+  assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }), null);
+});
+
 test('workflow refresh-lock reads persisted owner and lease identity', async (t) => {
   const fixture = makeWorkflowFixture(t);
   const begin = await beginFix(fixture);
@@ -279,6 +351,108 @@ test('workflow end-fix detects fix-report-mismatch and releases the lock', async
   assert.equal(result.status, 'blocked');
   assert.equal(result.blockingReason, 'fix-report-mismatch');
   assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }), null);
+});
+
+test('workflow end-fix blocks unknown fixed issue id with receipt and lock release', async (t) => {
+  const fixture = makeWorkflowFixture(t);
+  await beginFix(fixture);
+  fs.appendFileSync(fixture.target, '\nFixed ISSUE-999.\n');
+
+  const result = await runWorkflowCommand('end-fix', [fixture.targetDir, '--fix-report-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: fixReportForIssue('ISSUE-999')
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'fix-report-mismatch');
+  assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }), null);
+  assert.deepEqual(receiptFiles(fixture), ['001-fix-blocked.md']);
+});
+
+test('workflow end-fix blocks unparseable fix report with receipt and lock release', async (t) => {
+  const fixture = makeWorkflowFixture(t);
+  await beginFix(fixture);
+  fs.appendFileSync(fixture.target, '\nFixed ISSUE-001.\n');
+
+  const result = await runWorkflowCommand('end-fix', [fixture.targetDir, '--fix-report-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: [
+      'Fixed:',
+      '- ISSUE-001: Updated the required section.'
+    ].join('\n')
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'fix-report-mismatch');
+  assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }), null);
+  assert.deepEqual(receiptFiles(fixture), ['001-fix-blocked.md']);
+});
+
+test('workflow end-fix blocks not-accepted fixed issue id with receipt and lock release', async (t) => {
+  const fixture = makeWorkflowFixture(t);
+  await beginFix(fixture);
+  fs.writeFileSync(fixture.ledgerPath, formatLedger({
+    issues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'fixed',
+        location: 'docs/spec.md:3',
+        summary: 'Original issue',
+        resolution: 'Already fixed'
+      }
+    ]
+  }));
+  fs.appendFileSync(fixture.target, '\nFixed ISSUE-001 again.\n');
+
+  const result = await runWorkflowCommand('end-fix', [fixture.targetDir, '--fix-report-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: validFixReport()
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'fix-report-mismatch');
+  assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }), null);
+  assert.deepEqual(receiptFiles(fixture), ['001-fix-blocked.md']);
+});
+
+test('workflow end-fix maps missing persisted guard baseline to target-only-guard-unavailable', async (t) => {
+  const fixture = makeWorkflowFixture(t);
+  await beginFix(fixture);
+  fs.rmSync(path.join(fixture.targetDir, 'reports', 'fix-guard-round-001.md'));
+  fs.appendFileSync(fixture.target, '\nFixed ISSUE-001.\n');
+
+  const result = await runWorkflowCommand('end-fix', [fixture.targetDir, '--fix-report-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: validFixReport()
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'target-only-guard-unavailable');
+  assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }), null);
+  assert.deepEqual(receiptFiles(fixture), ['001-fix-blocked.md']);
+});
+
+test('workflow end-fix maps corrupt persisted guard baseline to target-only-guard-unavailable', async (t) => {
+  const fixture = makeWorkflowFixture(t);
+  await beginFix(fixture);
+  fs.writeFileSync(path.join(fixture.targetDir, 'reports', 'fix-guard-round-001.md'), '# Fix Guard Report\n\nnot json\n');
+  fs.appendFileSync(fixture.target, '\nFixed ISSUE-001.\n');
+
+  const result = await runWorkflowCommand('end-fix', [fixture.targetDir, '--fix-report-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: validFixReport()
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'target-only-guard-unavailable');
+  assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }), null);
+  assert.deepEqual(receiptFiles(fixture), ['001-fix-blocked.md']);
 });
 
 test('workflow end-fix maps release failure to lock-release-failed', async (t) => {
