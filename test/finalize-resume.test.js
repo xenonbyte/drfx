@@ -723,6 +723,122 @@ test('persistent read-only finalize rejects clean when latest reviewer finding l
   assert.match(result.message, /R999|blocking/i);
 });
 
+test('persistent read-only finalize rejects clean when triage deferred high finding', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      mode: 'read-only',
+      status: 'stopped-with-deferrals',
+      currentPhase: 'final',
+      currentReportPath: 'reports/triage-round-001.md',
+      lastReviewerReportPath: 'reports/reviewer-round-001.md',
+      lastTriageReportPath: 'reports/triage-round-001.md',
+      lastFixReportPath: 'none',
+      lastDiffReviewReportPath: 'none'
+    },
+    ledgerIssues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'deferred',
+        location: 'docs/spec.md:3',
+        summary: 'Deferred reviewer finding',
+        resolution: 'Deferred: needs owner follow-up'
+      }
+    ]
+  });
+  writeInitialReviewFailHigh(fixture);
+  writeTriageReport(fixture, [
+    {
+      reviewer_id: 'R001',
+      issue_id: 'ISSUE-001',
+      decision: 'deferred',
+      severity: 'high',
+      original_severity: 'high',
+      rationale: 'needs owner follow-up',
+      merged_into: 'none',
+      deferred_owner: 'docs-owner',
+      deferred_next_action: 'resolve before clean finalization',
+      non_blocking: false
+    }
+  ]);
+
+  const clean = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'read-only-clean',
+      mode: 'read-only',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(clean.ok, false);
+  assert.equal(clean.status, 'blocked');
+  assert.equal(clean.blockingReason, 'final-validation-failed');
+  assert.match(clean.message, /R001|blocking|deferred/i);
+});
+
+test('persistent read-only finalize accepts stopped-with-deferrals for deferred high finding', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      mode: 'read-only',
+      status: 'stopped-with-deferrals',
+      currentPhase: 'final',
+      currentReportPath: 'reports/triage-round-001.md',
+      lastReviewerReportPath: 'reports/reviewer-round-001.md',
+      lastTriageReportPath: 'reports/triage-round-001.md',
+      lastFixReportPath: 'none',
+      lastDiffReviewReportPath: 'none'
+    },
+    ledgerIssues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'deferred',
+        location: 'docs/spec.md:3',
+        summary: 'Deferred reviewer finding',
+        resolution: 'Deferred: needs owner follow-up'
+      }
+    ]
+  });
+  writeInitialReviewFailHigh(fixture);
+  writeTriageReport(fixture, [
+    {
+      reviewer_id: 'R001',
+      issue_id: 'ISSUE-001',
+      decision: 'deferred',
+      severity: 'high',
+      original_severity: 'high',
+      rationale: 'needs owner follow-up',
+      merged_into: 'none',
+      deferred_owner: 'docs-owner',
+      deferred_next_action: 'resolve before clean finalization',
+      non_blocking: false
+    }
+  ]);
+
+  const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'stopped-with-deferrals',
+      mode: 'read-only',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      deferralsOrBlockers: 'deferred high issue ISSUE-001',
+      blockingReason: 'none',
+      statusReason: 'deferred-findings',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'stopped-with-deferrals');
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'stopped-with-deferrals');
+  assert.equal(manifest.statusReason, 'deferred-findings');
+});
+
 test('persistent read-only finalize rejects findings when no blocking issues exist', async (t) => {
   const fixture = makeFixture(t, {
     manifestOverrides: {
