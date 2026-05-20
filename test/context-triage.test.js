@@ -9,8 +9,10 @@ const test = require('node:test');
 const { buildContextPack } = require('../lib/context-pack');
 const {
   applyTriageDecisions,
+  formatLedger,
   parseLedger
 } = require('../lib/ledger');
+const { acquireLock } = require('../lib/lock');
 const { computeFingerprint, deriveTargetKey } = require('../lib/target-state');
 const { runWorkflowCommand } = require('../lib/workflow');
 const { formatManifestV2, parseManifestV2 } = require('../lib/workflow-state');
@@ -58,7 +60,7 @@ function makeManifest(overrides = {}) {
   };
 }
 
-function makePersistentFixture(t) {
+function makePersistentFixture(t, { manifestOverrides = {} } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-context-triage-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
@@ -81,7 +83,8 @@ function makePersistentFixture(t) {
     lastKnownContentSha256: fingerprint.sha256,
     lastModifiedAt: new Date(0).toISOString(),
     fileSize: fingerprint.size,
-    references: ['docs/ref.md']
+    references: ['docs/ref.md'],
+    ...manifestOverrides
   });
   fs.mkdirSync(targetDir, { recursive: true });
   fs.writeFileSync(manifestPath, formatManifestV2(manifest));
@@ -138,6 +141,22 @@ function triageAcceptedPayload(reviewerId = 'R001') {
     '  deferred_owner: none',
     '  deferred_next_action: none',
     '  non_blocking: false'
+  ].join('\n');
+}
+
+function triageLowNonBlockingPayload() {
+  return [
+    'Triage:',
+    '- reviewer_id: R001',
+    '  issue_id: ISSUE-001',
+    '  decision: accepted',
+    '  severity: low',
+    '  original_severity: low',
+    '  rationale: Accepted but non-blocking',
+    '  merged_into: none',
+    '  deferred_owner: none',
+    '  deferred_next_action: none',
+    '  non_blocking: true'
   ].join('\n');
 }
 
@@ -332,4 +351,84 @@ test('persistent record-triage rejects reviewer ids absent from latest normalize
     /reviewer_id|R999/i
   );
   assert.equal(fs.existsSync(fixture.ledgerPath), false);
+});
+
+test('persistent fix context rejects when no accepted or reopened issues exist', async (t) => {
+  const fixture = makePersistentFixture(t, {
+    manifestOverrides: { status: 'fix', currentPhase: 'fix' }
+  });
+
+  await assert.rejects(
+    () => runWorkflowCommand('context', workflowArgs({ ...fixture, phase: 'fix' }), { cwd: fixture.root }),
+    /accepted|reopened|fix/i
+  );
+});
+
+test('persistent fix context includes lock and target-only skeleton fields', async (t) => {
+  const fixture = makePersistentFixture(t, {
+    manifestOverrides: { status: 'fix', currentPhase: 'fix' }
+  });
+  const metadata = deriveTargetKey(fixture.root, fixture.target);
+  fs.writeFileSync(fixture.ledgerPath, formatLedger({
+    issues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'accepted',
+        location: 'docs/spec.md:3',
+        summary: 'Missing deterministic triage persistence',
+        resolution: 'Persist a normalized ledger update'
+      }
+    ]
+  }));
+  const lease = acquireLock({
+    projectRoot: fixture.root,
+    targetKey: metadata.targetKey,
+    targetPath: fixture.target,
+    ownerId: 'owner-a',
+    mode: 'review-and-fix',
+    strictness: 'normal',
+    now: new Date('2026-05-21T00:00:00.000Z')
+  });
+
+  const result = await runWorkflowCommand('context', workflowArgs({ ...fixture, phase: 'fix' }), { cwd: fixture.root });
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'context');
+  assert.equal(result.contextManifestPath, path.join(result.targetStateDir, 'context', 'current-fixer-context-manifest.md'));
+  const contextText = fs.readFileSync(result.contextManifestPath, 'utf8');
+  const context = JSON.parse(contextText.match(/```json\n([\s\S]*?)\n```/)[1]);
+  assert.equal(context.requiredOutputSchema, 'fix-report');
+  assert.deepEqual(context.fixerGuard.issueIds, ['ISSUE-001']);
+  assert.equal(context.fixerGuard.activeLock.ownerId, 'owner-a');
+  assert.equal(context.fixerGuard.activeLock.leaseId, lease.leaseId);
+  assert.equal(context.fixerGuard.latestFixGuardReportPath, 'none');
+  assert.deepEqual(context.fixerGuard.expectedChangedFileSet, ['docs/spec.md']);
+  assert.deepEqual(context.fixerGuard.safeLocationAnchors, ['docs/spec.md:3']);
+  assert.match(context.fixerGuard.targetOnlyWriteRule, /target only/i);
+  assert.match(context.fixerGuard.referenceReadOnlyRule, /read-only/i);
+});
+
+test('review-and-fix triage with only non-blocking low does not persist read-only-clean', async (t) => {
+  const fixture = makePersistentFixture(t);
+  await runWorkflowCommand('context', workflowArgs(fixture), { cwd: fixture.root });
+  await runWorkflowCommand('record-review', [
+    ...workflowArgs(fixture),
+    '--result-stdin'
+  ], {
+    cwd: fixture.root,
+    stdin: reviewerFailPayload()
+  });
+
+  const triage = await runWorkflowCommand('record-triage', [
+    ...workflowArgs(fixture),
+    '--triage-stdin'
+  ], {
+    cwd: fixture.root,
+    stdin: triageLowNonBlockingPayload()
+  });
+  assert.equal(triage.ok, true);
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  assert.notEqual(manifest.status, 'read-only-clean');
+  assert.equal(manifest.status, 'full-re-review');
+  assert.equal(manifest.currentPhase, 'full-re-review');
 });

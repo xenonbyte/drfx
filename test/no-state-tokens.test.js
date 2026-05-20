@@ -111,10 +111,10 @@ function reviewerPassBlock() {
   ].join('\n');
 }
 
-function triageAcceptedBlock() {
+function triageAcceptedBlock(reviewerId = 'R001') {
   return [
     'Triage:',
-    '- reviewer_id: R001',
+    `- reviewer_id: ${reviewerId}`,
     '  issue_id: ISSUE-001',
     '  decision: accepted',
     '  severity: high',
@@ -580,6 +580,25 @@ test('no-state record-triage blocks when reference changes after review token', 
   assert.equal(result.status, 'blocked');
   assert.equal(result.blockingReason, 'reference-mutated-file');
   assert.equal(result.stateToken, undefined);
+});
+
+test('no-state record-triage rejects reviewer ids absent from review token findings', async (t) => {
+  const { root, target } = makeNoStateFixture(t);
+  const stateToken = await createNoStateReviewToken({
+    root,
+    target,
+    resultText: reviewerFailBlock()
+  });
+
+  await assert.rejects(
+    () => runWorkflowCommand('record-triage', [
+      ...noStateReviewArgs({ root, target }),
+      '--state-token',
+      stateToken,
+      '--triage-stdin'
+    ], { stdin: triageAcceptedBlock('R999') }),
+    /reviewer_id|R999/i
+  );
 });
 
 test('workflow preflight rejects observable semantic inputs', () => {
