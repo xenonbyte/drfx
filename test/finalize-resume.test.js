@@ -427,7 +427,7 @@ test('record-diff-review DIFF-OK enters full re-review without pass', async (t) 
   });
   writeFixReport(fixture);
 
-  const result = await runWorkflowCommand('record-diff-review', [fixture.targetDir, '--diff-review-stdin', '--json'], {
+  const result = await runWorkflowCommand('record-diff-review', [fixture.targetDir, '--result-stdin', '--json'], {
     cwd: fixture.root,
     stdin: 'DIFF-OK\nSummary: Target-only fix matches accepted issue.\n'
   });
@@ -463,7 +463,7 @@ test('record-diff-review DIFF-FAIL returns to fix and uses attempt suffixes', as
     '  required_action: Add the missing detail.'
   ].join('\n');
 
-  const first = await runWorkflowCommand('record-diff-review', [fixture.targetDir, '--diff-review-stdin', '--json'], {
+  const first = await runWorkflowCommand('record-diff-review', [fixture.targetDir, '--result-stdin', '--json'], {
     cwd: fixture.root,
     stdin: payload
   });
@@ -479,7 +479,7 @@ test('record-diff-review DIFF-FAIL returns to fix and uses attempt suffixes', as
     status: 'diff-review',
     currentPhase: 'diff-review'
   }));
-  const second = await runWorkflowCommand('record-diff-review', [fixture.targetDir, '--diff-review-stdin', '--json'], {
+  const second = await runWorkflowCommand('record-diff-review', [fixture.targetDir, '--result-stdin', '--json'], {
     cwd: fixture.root,
     stdin: payload
   });
