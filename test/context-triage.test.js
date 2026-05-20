@@ -160,6 +160,17 @@ function triageLowNonBlockingPayload() {
   ].join('\n');
 }
 
+async function recordFailingReview(fixture) {
+  await runWorkflowCommand('context', workflowArgs(fixture), { cwd: fixture.root });
+  return runWorkflowCommand('record-review', [
+    ...workflowArgs(fixture),
+    '--result-stdin'
+  ], {
+    cwd: fixture.root,
+    stdin: reviewerFailPayload()
+  });
+}
+
 test('context pack includes merged rule set and deterministic rules source list', () => {
   const pack = buildContextPack({
     target: 'docs/spec.md',
@@ -287,15 +298,7 @@ test('persistent record-review blocks when reviewer guard fingerprints change', 
 
 test('persistent record-review stores producer metadata and record-triage updates ledger', async (t) => {
   const fixture = makePersistentFixture(t);
-  await runWorkflowCommand('context', workflowArgs(fixture), { cwd: fixture.root });
-
-  const review = await runWorkflowCommand('record-review', [
-    ...workflowArgs(fixture),
-    '--result-stdin'
-  ], {
-    cwd: fixture.root,
-    stdin: reviewerFailPayload()
-  });
+  const review = await recordFailingReview(fixture);
   assert.equal(review.ok, true);
   assert.equal(review.status, 'recorded-review');
   const reviewerReport = fs.readFileSync(path.join(fixture.targetDir, 'reports', 'reviewer-round-001.md'), 'utf8');
@@ -329,16 +332,107 @@ test('persistent record-review stores producer metadata and record-triage update
   assert.equal(manifest.lastTriageReportPath, 'reports/triage-round-001.md');
 });
 
-test('persistent record-triage rejects reviewer ids absent from latest normalized report', async (t) => {
+test('persistent record-triage blocks when target changes after failed review', async (t) => {
   const fixture = makePersistentFixture(t);
-  await runWorkflowCommand('context', workflowArgs(fixture), { cwd: fixture.root });
-  await runWorkflowCommand('record-review', [
+  const review = await recordFailingReview(fixture);
+  assert.equal(review.ok, true);
+
+  fs.appendFileSync(fixture.target, '\nChanged after review.\n');
+  const result = await runWorkflowCommand('record-triage', [
     ...workflowArgs(fixture),
-    '--result-stdin'
+    '--triage-stdin'
   ], {
     cwd: fixture.root,
-    stdin: reviewerFailPayload()
+    stdin: triageAcceptedPayload()
   });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'reviewer-mutated-file');
+  assert.equal(fs.existsSync(fixture.ledgerPath), false);
+  assert.equal(fs.existsSync(path.join(fixture.targetDir, 'reports', 'triage-round-001.md')), false);
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  assert.equal(manifest.lastTriageReportPath, 'none');
+});
+
+test('persistent record-triage blocks when reference changes after failed review', async (t) => {
+  const fixture = makePersistentFixture(t);
+  const review = await recordFailingReview(fixture);
+  assert.equal(review.ok, true);
+
+  fs.appendFileSync(fixture.reference, '\nChanged after review.\n');
+  const result = await runWorkflowCommand('record-triage', [
+    ...workflowArgs(fixture),
+    '--triage-stdin'
+  ], {
+    cwd: fixture.root,
+    stdin: triageAcceptedPayload()
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'reference-mutated-file');
+  assert.equal(fs.existsSync(fixture.ledgerPath), false);
+  assert.equal(fs.existsSync(path.join(fixture.targetDir, 'reports', 'triage-round-001.md')), false);
+});
+
+test('persistent record-triage blocks absolute manifest ledger path before writing outside target state', async (t) => {
+  const fixture = makePersistentFixture(t);
+  const review = await recordFailingReview(fixture);
+  assert.equal(review.ok, true);
+  const outsideLedger = path.join(fixture.root, 'outside-ISSUES.md');
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  fs.writeFileSync(fixture.manifestPath, formatManifestV2({
+    ...manifest,
+    ledgerPath: outsideLedger
+  }));
+
+  const result = await runWorkflowCommand('record-triage', [
+    ...workflowArgs(fixture),
+    '--triage-stdin'
+  ], {
+    cwd: fixture.root,
+    stdin: triageAcceptedPayload()
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.equal(fs.existsSync(outsideLedger), false);
+  assert.equal(fs.existsSync(fixture.ledgerPath), false);
+  assert.equal(fs.existsSync(path.join(fixture.targetDir, 'reports', 'triage-round-001.md')), false);
+});
+
+test('persistent record-triage blocks escaping manifest reviewer report path before ledger writes', async (t) => {
+  const fixture = makePersistentFixture(t);
+  const review = await recordFailingReview(fixture);
+  assert.equal(review.ok, true);
+  const outsideReport = path.join(fixture.root, 'outside-reviewer-report.md');
+  fs.copyFileSync(path.join(fixture.targetDir, 'reports', 'reviewer-round-001.md'), outsideReport);
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  fs.writeFileSync(fixture.manifestPath, formatManifestV2({
+    ...manifest,
+    lastReviewerReportPath: path.relative(fixture.targetDir, outsideReport).split(path.sep).join('/')
+  }));
+
+  const result = await runWorkflowCommand('record-triage', [
+    ...workflowArgs(fixture),
+    '--triage-stdin'
+  ], {
+    cwd: fixture.root,
+    stdin: triageAcceptedPayload()
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.equal(fs.existsSync(fixture.ledgerPath), false);
+  assert.equal(fs.existsSync(path.join(fixture.targetDir, 'reports', 'triage-round-001.md')), false);
+});
+
+test('persistent record-triage rejects reviewer ids absent from latest normalized report', async (t) => {
+  const fixture = makePersistentFixture(t);
+  await recordFailingReview(fixture);
 
   await assert.rejects(
     () => runWorkflowCommand('record-triage', [
@@ -410,14 +504,7 @@ test('persistent fix context includes lock and target-only skeleton fields', asy
 
 test('review-and-fix triage with only non-blocking low does not persist read-only-clean', async (t) => {
   const fixture = makePersistentFixture(t);
-  await runWorkflowCommand('context', workflowArgs(fixture), { cwd: fixture.root });
-  await runWorkflowCommand('record-review', [
-    ...workflowArgs(fixture),
-    '--result-stdin'
-  ], {
-    cwd: fixture.root,
-    stdin: reviewerFailPayload()
-  });
+  await recordFailingReview(fixture);
 
   const triage = await runWorkflowCommand('record-triage', [
     ...workflowArgs(fixture),
