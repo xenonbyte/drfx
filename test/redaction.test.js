@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { redactSensitive, redactFinding, redactMarkdown } = require('../lib/redaction');
+const { redactSensitive, redactFinding, redactMarkdown, redactSensitiveWithMeta } = require('../lib/redaction');
 
 function assertNoRawSecrets(value) {
   const text = typeof value === 'string' ? value : JSON.stringify(value);
@@ -115,4 +115,16 @@ test('redacts quoted assignment keys in structured snippets', () => {
     '{"password": [REDACTED:credential], "token": [REDACTED:api-token]}'
   );
   assertNoRawSecrets(redactSensitive(text));
+});
+
+test('reports whether sensitive text was redacted', () => {
+  assert.deepEqual(redactSensitiveWithMeta('plain text'), {
+    value: 'plain text',
+    redacted: false
+  });
+
+  const result = redactSensitiveWithMeta('Authorization: Bearer sk-live-1234567890abcdef');
+  assert.equal(result.redacted, true);
+  assert.equal(result.value, 'Authorization: Bearer [REDACTED:api-token]');
+  assertNoRawSecrets(result.value);
 });
