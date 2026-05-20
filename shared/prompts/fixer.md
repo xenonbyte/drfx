@@ -13,6 +13,7 @@ Constraints:
 - Fix only coordinator-accepted issue IDs.
 - The fixer may modify only the target document.
 - References and other files remain read-only.
+- Work serially and stop for coordinator lock refresh before writes after 60 seconds.
 - Do not expand scope.
 - Do not add new background, requirements, or external facts.
 - Do not invent product decisions, risk decisions, goals, or requirements.
@@ -33,4 +34,6 @@ Not fixed:
 
 Residual risk:
 - <risk, or none identified>
+
+If a requested fix cannot be made under the target-only rule, leave the target unchanged for that issue and report it under Not fixed.
 ```

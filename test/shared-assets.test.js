@@ -201,3 +201,87 @@ test('package file list excludes README-zh and project-local state', () => {
   assert.equal(fs.existsSync(path.join(ROOT, 'README-zh.md')), false);
   assert.equal(packageJson.files.some((entry) => entry.includes('.docs-review-fix')), false);
 });
+
+test('generated route text contains v2 operational workflow commands', () => {
+  const sourceText = [
+    'templates/claude-command.md.tmpl',
+    'templates/codex-skill.md.tmpl',
+    'templates/gemini-command.toml.tmpl'
+  ].map(read).join('\n\n');
+
+  assert.match(sourceText, /DRFX_REVIEWER_READY/);
+  assert.match(sourceText, /drfx workflow start/);
+  assert.match(sourceText, /--runtime-stdin-handoff ready/);
+  assert.match(sourceText, /workflow preflight --no-state/);
+  assert.match(sourceText, /do not use shell pipes|must not use shell pipes|never use shell pipes/i);
+  assert.match(sourceText, /heredocs?|herestrings?/i);
+  assert.match(sourceText, /argv|environment variables|env vars|raw temp files/i);
+  assert.doesNotMatch(sourceText, /\|\s*(?:npx\s+)?drfx\s+workflow/i);
+  assert.doesNotMatch(sourceText, /<<\s*(?:EOF|['"]?DRFX)/i);
+  assert.doesNotMatch(sourceText, /--(?:result|triage|fix-report|final-response)\s+(?!-stdin\b)(?:["'`{]|\S)/);
+});
+
+test('route templates bind each runtime platform explicitly', () => {
+  const codexText = read('templates/codex-skill.md.tmpl');
+  const claudeText = read('templates/claude-command.md.tmpl');
+  const geminiText = read('templates/gemini-command.toml.tmpl');
+
+  assert.match(codexText, /--runtime-platform codex\b/);
+  assert.match(claudeText, /--runtime-platform claude-code\b/);
+  assert.match(geminiText, /--runtime-platform gemini\b/);
+  assert.match(geminiText, /workflow preflight --no-state[\s\S]*--status-reason unsupported-runtime-capability/);
+  assert.match(geminiText, /advisory-only/i);
+  assert.match(geminiText, /must not edit|never edit|do not edit/i);
+});
+
+test('strict verified route proof uses same-flow check json only', () => {
+  const codexText = read('templates/codex-skill.md.tmpl');
+  const claudeText = read('templates/claude-command.md.tmpl');
+  const geminiText = read('templates/gemini-command.toml.tmpl');
+
+  for (const [label, text, publicPlatform] of [
+    ['codex', codexText, 'codex'],
+    ['claude', claudeText, 'claude']
+  ]) {
+    assert.match(text, /assurance=strict-verified/);
+    assert.match(text, new RegExp(`drfx check --platform ${publicPlatform} --json`));
+    assert.match(text, /same-flow|same route flow|same invocation/i);
+    assert.match(text, /runId/);
+    assert.match(text, /descriptorPath/);
+    assert.match(text, /--capability-descriptor/);
+    assert.match(text, /--proof-run-id/);
+    assert.match(text, /do not scrape|must not scrape|never scrape/i, label);
+    assert.match(text, /human-readable.*drfx check|drfx check.*human-readable/i, label);
+    assert.match(text, /do not reuse|must not reuse|never reuse/i, label);
+    assert.match(text, /cached descriptor|installer-default descriptor/i, label);
+  }
+
+  assert.match(geminiText, /advisory-only/i);
+  assert.doesNotMatch(geminiText, /--assurance strict-verified[\s\S]{0,160}--runtime-platform gemini|--runtime-platform gemini[\s\S]{0,160}--assurance strict-verified/);
+});
+
+test('no mode token path remains explain-only', () => {
+  const sourceText = read('templates/codex-skill.md.tmpl');
+  assert.match(sourceText, /without read-only or review-and-fix/i);
+  assert.match(sourceText, /explain/i);
+  assert.doesNotMatch(sourceText, /no mode token[\s\S]{0,120}drfx workflow start/i);
+});
+
+test('shared prompt sources include required v2 machine contracts', () => {
+  const sharedText = [
+    'shared/core.md',
+    'shared/long-task.md',
+    'shared/prompts/reviewer.md',
+    'shared/prompts/fixer.md',
+    'shared/prompts/coordinator.md'
+  ].map(read).join('\n\n');
+
+  assert.match(sharedText, /PASS[\s\S]*Summary:/);
+  assert.match(sharedText, /FAIL[\s\S]*Findings:[\s\S]*- id: R001/);
+  assert.match(sharedText, /Triage:[\s\S]*reviewer_id: R001/);
+  assert.match(sharedText, /Fixed:[\s\S]*Files changed:[\s\S]*Not fixed:[\s\S]*Residual risk:/);
+  assert.match(sharedText, /DIFF-OK[\s\S]*DIFF-FAIL/);
+  assert.match(sharedText, /Final status:/);
+  assert.match(sharedText, /redaction/i);
+  assert.doesNotMatch(sharedText, /raw test fixture/i);
+});

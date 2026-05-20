@@ -17,12 +17,42 @@ Route contract:
 - This route has a fixed document type: {{DOCUMENT_TYPE}}.
 - Users must not pass type.
 - Must not infer type from filename or path.
-- At workflow start, run drfx check or the same package capability check from this installed package.
-- Do not trust old or stale descriptor files.
+- Public CLI commands are drfx check, drfx install, and drfx uninstall; drfx workflow is the internal deterministic interface used by this generated route.
+- The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, diff judgment, and final coordinator agreement are LLM work.
 - For resume, read .docs-review-fix/targets/<target-key>/.
+- Gemini is advisory-only.
 - Gemini v1 is advisory-only and produces read-only findings.
 - automatic fixing is unavailable in Gemini v1.
 - workflow PASS is unavailable in Gemini v1.
+- Gemini must not edit target files, reference files, or workflow state except through no-state workflow outputs.
+
+Invocation:
+{{ROUTE_NAME}} target=<path> [ref=<path>...] read-only [strict|normal] [assurance=advisory] [root=<project-root>]
+
+If the invocation is without read-only or review-and-fix, explain usage only. Do not read the target or reference bodies, do not run workflow commands, do not run probes, do not create state, and do not declare a review result.
+
+review-and-fix is unsupported on Gemini. Before reading target/reference bodies or generating any semantic payload, return the unsupported result through no-state preflight:
+
+drfx workflow preflight --no-state {{ROUTE_NAME}} target=<path> review-and-fix --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --terminal-status unsupported --blocking-reason none --status-reason unsupported-runtime-capability --json
+
+If the user requests strict verified assurance, explain that Gemini remains advisory-only and do not issue a strict verified workflow command.
+
+Read-only advisory flow:
+1. Confirm real stdin handoff before semantic payload commands: start the command as a process/session, obtain a stdin handle, write payload bytes, send EOF, and read exit code plus stdout/stderr.
+2. On stdin handoff failure, fail closed as unsafe-handoff-file before semantic handoff. Do not use shell pipes, heredocs, herestrings, command substitution, argv, environment variables, env vars, or raw temp files for semantic payloads.
+3. Start review-backed no-state context:
+
+drfx workflow context --no-state {{ROUTE_NAME}} target=<path> read-only --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
+
+4. Keep reviewGuard and stateToken in coordinator memory only. Never write tokens to the filesystem and never hand-edit tokens.
+5. Build the reviewer prompt in memory from the context skeleton plus target/reference reads. Gemini produces advisory review content; it must not claim workflow PASS.
+6. Submit review, triage, and final response by repeating the same runtime fields:
+
+drfx workflow record-review --no-state {{ROUTE_NAME}} target=<path> read-only --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
+drfx workflow record-triage --no-state {{ROUTE_NAME}} target=<path> read-only --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
+drfx workflow finalize --no-state {{ROUTE_NAME}} target=<path> read-only --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
+
+No-state final status is read-only-clean, read-only-findings, blocked, or unsupported; never pass.
 
 Embedded shared content:
 

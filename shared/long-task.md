@@ -4,6 +4,8 @@ Long tasks must be resumable from project files, not from chat history or runtim
 
 One-shot `read-only` without `ledger=` and without `resume` is no-state: do not create `.docs-review-fix`, target directories, manifests, ledgers, continuity files, summaries, receipts, or locks.
 
+No-state read-only uses command-generated `reviewGuard` and `stateToken` values kept only in coordinator memory. These tokens are redacted normalized state, not document content. Do not write them to disk, do not edit them, and never finalize no-state as `pass`; clean read-only status is `read-only-clean`.
+
 ## Target State Directory
 
 All persistent state for one target lives under:
@@ -34,15 +36,21 @@ Project-root `.docs-review-fix/RULE.md` is shared project configuration, not tar
 
 `MANIFEST.md` records enough state to resume safely:
 
+- Manifest schema: `2`.
 - Target path.
 - Normalized target path.
 - Document type: `SPEC`, `PLAN`, `DESIGN`, or `COMMON`.
 - Strictness: `normal` or `strict`.
 - Mode: `review-and-fix` or `read-only`.
+- Assurance: `practical`, `strict-verified`, or `advisory`.
+- Runtime platform: `codex`, `claude-code`, `gemini`, or `manual`.
+- Runtime subagent probe, stdin handoff, fingerprint guard, downgrade reason, assurance proof, blocking reason, and status reason.
 - Target key.
 - Ledger path, defaulting to `.docs-review-fix/targets/<target-key>/ISSUES.md`.
 - Status: `review`, `triage`, `fix`, `diff-review`, `full-re-review`, `pass`, `stopped-with-deferrals`, `read-only-findings`, `blocked`, `unsupported`, `externally-changed`, `possible-target-replacement`, or `checkpoint`.
+- Read-only clean status: `read-only-clean`.
 - Current round.
+- Current phase.
 - Initial content sha256.
 - Last known content sha256.
 - Last reviewed content sha256.
@@ -115,6 +123,8 @@ Receipts should record:
 - Redacted blocker or residual-risk details.
 
 Receipts must be compact and must not store raw secrets, raw logs, or transcripts.
+
+Semantic payloads enter workflow commands through real stdin handoff. Do not use shell pipes, heredocs, herestrings, command substitution, argv, environment variables, env vars, or raw temp files for reviewer results, triage, fix reports, diff reviews, or final responses. If stdin handoff is unavailable, stop as `blocked` with `unsafe-handoff-file` or use the no-state preflight terminal path before any file body read.
 
 ## Resume Rules
 

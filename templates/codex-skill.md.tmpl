@@ -1,6 +1,6 @@
 ---
 name: {{ROUTE_NAME}}
-description: Review and fix {{DOCUMENT_TYPE}} documents through generated document-review-loop instructions.
+description: Review and fix {{DOCUMENT_TYPE}} documents through the V2 document-review-loop coordinator route.
 ---
 
 # {{ROUTE_NAME}}
@@ -18,10 +18,106 @@ Package version: {{PACKAGE_VERSION}}
 - This route has a fixed document type: `{{DOCUMENT_TYPE}}`.
 - Users must not pass `type`.
 - Must not infer type from filename or path.
-- At workflow start, run `drfx check` or the same package capability check from this installed package.
-- Do not trust old or stale descriptor files for automatic fixing or workflow PASS.
+- Public CLI commands are `drfx check`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.
+- The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, target editing, diff judgment, and final coordinator agreement are LLM work.
 - For resume, read `.docs-review-fix/targets/<target-key>/`.
 - This skill includes copied shared references under this skill directory; it does not need a home-level shared asset directory at runtime.
+
+## Invocation Gate
+
+Invocation syntax:
+
+```text
+{{ROUTE_NAME}} target=<path> [ref=<path>...] read-only|review-and-fix [strict|normal] [assurance=practical|strict-verified|advisory] [resume] [ledger=<target-local path>] [root=<project-root>]
+```
+
+If the invocation is without read-only or review-and-fix, explain usage only. Do not read the target or reference bodies, do not run workflow commands, do not run probes, do not create state, and do not declare a review result.
+
+`strict` and `normal` control review strictness only. `assurance=` controls runtime assurance. If `assurance=` is absent, Codex requests `practical`.
+
+## Runtime Probes
+
+For `assurance=practical` and `assurance=strict-verified`, run a live reviewer subagent probe before workflow start. The probe prompt must not read target/reference files and must not write files. It must require exactly this single output line:
+
+```text
+DRFX_REVIEWER_READY
+```
+
+Only the exact single line means ready. Map failures exactly:
+
+- Tool absent or route cannot initiate the tool call: `--runtime-subagent-probe unavailable --runtime-downgrade-reason subagent-delegation-unavailable`.
+- Tool call error, timeout, user or host rejection, or unreadable result: `--runtime-subagent-probe failed --runtime-downgrade-reason reviewer-dispatch-failed`.
+- Output other than exact `DRFX_REVIEWER_READY`: `--runtime-subagent-probe failed --runtime-downgrade-reason reviewer-probe-invalid`.
+
+Explicit `assurance=advisory read-only` skips the subagent probe and passes `--runtime-subagent-probe not-required --runtime-downgrade-reason none`.
+
+Before any semantic payload command, prove real stdin handoff: start the command as a process/session, obtain a stdin handle, write payload bytes, send EOF, and read exit code plus stdout/stderr. On failure, fail closed as `unsafe-handoff-file` before semantic handoff. Do not use shell pipes, heredocs, herestrings, command substitution, argv, environment variables, env vars, or raw temp files for semantic payloads.
+
+Fingerprint guard failure is not a downgrade path. If workflow start or context reports `fingerprint-guard-unavailable` or `fingerprint-guard-output-invalid`, stop on that blocker, do not rerun a no-guard advisory flow, and do not edit the target.
+
+## Strict Verified Proof
+
+Only explicit `assurance=strict-verified` requests strict verified mode. In the same-flow route invocation, run:
+
+```text
+drfx check --platform codex --json
+```
+
+Read the JSON object, then extract `runId` and `platforms.codex.descriptorPath`. Pass those current-run values to workflow start:
+
+```text
+drfx workflow start {{ROUTE_NAME}} target=<path> read-only --assurance strict-verified --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --proof-run-id <runId> --json
+```
+
+Do not scrape human-readable `drfx check` output. Do not reuse a cached descriptor or installer-default descriptor. Do not claim strict verified assurance unless the internal workflow command accepts the descriptor proof.
+
+## Practical Review-And-Fix Flow
+
+After successful probes, start persistent state:
+
+```text
+drfx workflow start {{ROUTE_NAME}} target=<path> review-and-fix --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
+```
+
+Then coordinate this loop:
+
+1. Run persistent context with `drfx workflow context {{ROUTE_NAME}} target=<path> review-and-fix --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json`.
+2. Build the reviewer prompt in memory from the context manifest plus target/reference reads. Do not write prompt text or document bodies to disk.
+3. Spawn a read-only reviewer subagent and submit its exact output with `drfx workflow record-review {{ROUTE_NAME}} target=<path> review-and-fix --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --result-stdin --json`.
+4. Triage every finding semantically and submit the triage with `drfx workflow record-triage {{ROUTE_NAME}} target=<path> review-and-fix --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --triage-stdin --json`.
+5. For accepted or reopened blocking issues, run `drfx workflow begin-fix <targetStateDir> --json`.
+6. Edit only the target directly by default. Use a bounded serial fixer only when lock refresh rules can be satisfied and the issue list is scoped.
+7. Run `drfx workflow refresh-lock <targetStateDir> --json` before writes after 60 seconds, before a delegated fixer writes, and before ending a long fix.
+8. Submit a valid fix report with `drfx workflow end-fix <targetStateDir> --fix-report-stdin --json`.
+9. If interruption, blocker, checkpoint, context pressure, or user stop happens before a valid fix report, run `drfx workflow abort-fix <targetStateDir> --status checkpoint --reason checkpoint-requested --next-action <redacted next action> --json` or use `--status blocked` with an allowed blocking reason.
+10. Review the diff and submit with `drfx workflow record-diff-review <targetStateDir> --diff-review-stdin --json`.
+11. After `DIFF-OK`, run full re-review using `drfx workflow context {{ROUTE_NAME}} target=<path> review-and-fix --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --json`, then record the full re-review with `--phase full-re-review --result-stdin`.
+12. Repeat triage, fix, diff review, and full re-review until terminal status.
+13. Finalize only through `drfx workflow finalize <targetStateDir> --final-response-stdin --json`.
+
+Automatic target writes require a tracked, clean, HEAD-backed git target. The target-only guard must remain available and parseable before and after writes.
+
+## No-State Read-Only Flow
+
+For one-shot `read-only` without `ledger=` and without `resume`, keep `reviewGuard` and `stateToken` in coordinator memory only. Never write tokens to the filesystem and never hand-edit them.
+
+Preflight terminal paths must run before reading target/reference bodies, before semantic payload generation, and before any state token exists. They must use `workflow preflight --no-state`, must not call `workflow context`, and must not pass semantic stdin flags.
+
+Review-backed no-state flow starts with:
+
+```text
+drfx workflow context --no-state {{ROUTE_NAME}} target=<path> read-only --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
+```
+
+Submit review, triage, and final response by repeating the same runtime platform, requested/effective assurance, subagent probe, stdin handoff, and downgrade fields:
+
+```text
+drfx workflow record-review --no-state {{ROUTE_NAME}} target=<path> read-only --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
+drfx workflow record-triage --no-state {{ROUTE_NAME}} target=<path> read-only --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
+drfx workflow finalize --no-state {{ROUTE_NAME}} target=<path> read-only --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
+```
+
+No-state final status is `read-only-clean`, `read-only-findings`, `blocked`, or `unsupported`; never `pass`.
 
 ## Embedded Shared Content
 

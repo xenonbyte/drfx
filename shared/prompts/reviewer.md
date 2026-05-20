@@ -32,6 +32,7 @@ Instructions:
 
 Output schema:
 PASS
+Summary: <one redacted sentence or none>
 
 or:
 

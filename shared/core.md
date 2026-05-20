@@ -12,6 +12,14 @@ review -> triage -> fix -> diff review -> full re-review -> repeat until PASS or
 
 The initial `review` and every `full re-review` must inspect the whole target document through an isolated read-only reviewer task. A `diff review` after fixes is mandatory, but it is only a gate before the next full-document re-review.
 
+## V2 Operational Boundary
+
+The generated route coordinates host LLM work with deterministic `drfx workflow ...` commands. The CLI validates inputs, guards, state, tokens, and machine payload shapes. It does not perform semantic review, semantic triage, target edits, diff judgment, or final coordinator agreement.
+
+If a user invocation omits `read-only` and `review-and-fix`, the route explains usage only. It must not read target/reference bodies, run workflow commands, run runtime probes, create state, or declare a review result.
+
+`assurance=practical|strict-verified|advisory` selects runtime assurance. `strict` and `normal` select review strictness only.
+
 ## Roles
 
 - Coordinator: owns the loop, reads instructions and rules, dispatches reviewer work, triages findings, manages target state, applies fixes by default, performs diff review, and decides terminal status.
@@ -39,6 +47,7 @@ Strict PASS additionally requires unresolved low issues to be fixed or explicitl
 The loop stops only at one of these states:
 
 - `pass`: the full-document review gate passes and the coordinator agrees.
+- `read-only-clean`: read-only mode found no blocking findings under selected strictness; this is not workflow PASS.
 - `stopped-with-deferrals`: high or medium issues are intentionally deferred with reason and owner; final response includes issue IDs, reasons, owners, and next action.
 - `read-only-findings`: read-only mode found issues that block PASS under the selected strictness.
 - `blocked`: the workflow cannot continue until a concrete blocker is resolved.
@@ -47,6 +56,8 @@ The loop stops only at one of these states:
 - `possible-target-replacement`: the same path appears to contain a different document.
 - user stop: the user explicitly stops the loop.
 - `checkpoint`: the task pauses with durable target-local state and a concrete next action.
+
+Blocking reasons include `reviewer-mutated-file`, `lock-held`, `corrupt-lock`, `lock-release-failed`, `reviewer-output-unparseable`, `fingerprint-guard-unavailable`, `fingerprint-guard-output-invalid`, `state-validation-failed`, `state-token-too-large`, `final-validation-failed`, `target-only-guard-unavailable`, `unexpected-worktree-change`, `reference-mutated-file`, `fix-report-mismatch`, `diff-review-failed`, `rollback-unavailable`, and `unsafe-handoff-file`. Status reasons include `none`, `strict-proof-validation-failed`, `target-fingerprint-mismatch`, `manifest-fingerprint-mismatch`, `stale-fingerprint-mismatch`, `same-path-replacement-suspected`, `read-only-blocking-findings`, `deferred-findings`, `unsupported-runtime-capability`, and `checkpoint-requested`.
 
 ## Reviewer Guard
 
@@ -67,6 +78,22 @@ The coordinator triages every reviewer finding before fixing:
 - `deferred`: valid but intentionally not fixed now, with reason and owner.
 
 Accepted high and medium issues block PASS until resolved. Deferred high and medium issues stop as `stopped-with-deferrals`, not PASS. Low issues are non-blocking in normal mode unless they affect the objective; low issues block strict PASS unless explicitly accepted as non-blocking.
+
+Triage payload schema:
+
+```text
+Triage:
+- reviewer_id: R001
+  issue_id: ISSUE-001
+  decision: accepted | reopened | merged | downgraded | rejected | deferred
+  severity: high | medium | low
+  original_severity: high | medium | low | none
+  rationale: <required except plain accepted with non_blocking=false>
+  merged_into: ISSUE-### | none
+  deferred_owner: <owner or none>
+  deferred_next_action: <next action or none>
+  non_blocking: true | false
+```
 
 ## Fixer Constraints
 
@@ -94,6 +121,23 @@ After each fix round, the coordinator reviews the changed target and confirms:
 
 Diff review is not sufficient for PASS. It only allows the next full re-review.
 
+Diff review contract:
+
+```text
+DIFF-OK
+Summary: <one redacted sentence or none>
+```
+
+or:
+
+```text
+DIFF-FAIL
+Findings:
+- issue_id: ISSUE-001
+  problem: <specific problem>
+  required_action: <specific next action>
+```
+
 ## Final Response Contract
 
 Final responses must state:
@@ -107,11 +151,34 @@ Final responses must state:
 
 Do not print raw secrets, credentials, cookies, tokens, private keys, raw sensitive logs, or partial secret values. Use `[REDACTED:<kind>]` and location anchors.
 
+Final response machine block:
+
+```text
+Final status: pass | read-only-clean | read-only-findings | stopped-with-deferrals | blocked | unsupported | externally-changed | possible-target-replacement | checkpoint
+Assurance: practical | strict-verified | advisory
+Runtime platform: codex | claude-code | gemini | manual
+Mode: review-and-fix | read-only
+Target: <target path>
+Files changed: <none or exact target path>
+Fixed issue IDs: <none or comma-separated ISSUE-### values>
+Verification performed: <redacted summary>
+Deferrals or blockers: <none or redacted issue/blocker summary with owner and next action when applicable>
+Blocking reason: <allowed blocker code or none>
+Status reason: <allowed status reason or none>
+Residual risk: <risk or none identified>
+Redaction statement: <statement or none>
+Coordinator agreement: <required when Final status is pass; otherwise none>
+```
+
+Final response checklist: include final status, assurance, runtime platform, mode, target, files changed, fixed issue IDs, verification performed, deferrals or blockers, blocker/status reason, residual risk, redaction statement, and coordinator agreement. Read-only finalization uses `read-only-clean` or `read-only-findings`, never `pass`.
+
 ## Read-Only Behavior
 
 In `read-only` mode, review and triage only. Do not modify the target document or reference documents. If blocking findings remain, stop as `read-only-findings` and report how to rerun in `review-and-fix` mode.
 
 One-shot `read-only` without `ledger=` and without `resume` must not create `.docs-review-fix`, `MANIFEST.md`, `ISSUES.md`, `CONTINUITY.md`, `SUMMARY.md`, or `rounds/`. Keep fingerprints in memory unless a guard failure must be reported.
+
+No-state read-only flow keeps `reviewGuard` and `stateToken` in coordinator memory only. Do not write tokens to disk, do not hand-edit tokens, and repeat the same runtime platform, assurance, subagent probe, stdin handoff, and downgrade fields on no-state `record-review`, `record-triage`, and `finalize`. A no-state finalizer that consumes `--final-response-stdin` must pass `--runtime-stdin-handoff ready`.
 
 ## Runtime Independence
 
