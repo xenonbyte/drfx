@@ -395,6 +395,18 @@ test('rendered route text omits stale missing-mode explain-only contract', () =>
   assert.match(renderedRoutes, /Help-style or invalid invocations explain usage only and must not read target\/reference bodies, run workflow commands, run probes, create state, or declare a review result/);
 });
 
+test('codex and claude routes run write eligibility preflight before semantic review', () => {
+  const codexTemplate = read('templates/codex-skill.md.tmpl');
+  const claudeTemplate = read('templates/claude-command.md.tmpl');
+
+  for (const template of [codexTemplate, claudeTemplate]) {
+    assert.match(template, /Review-And-Fix Write Eligibility Preflight/i);
+    assert.match(template, /drfx workflow preflight/i);
+    assert.match(template, /before runtime readiness probe, semantic reviewer dispatch, semantic document review, and target-local workflow state creation/i);
+    assert.match(template, /cannot be auto-fixed because it is not a clean tracked Git target/i);
+  }
+});
+
 test('coordinator prompt uses read-only-clean instead of read-only PASS', () => {
   const coordinator = read('shared/prompts/coordinator.md');
 

@@ -10,7 +10,8 @@ const {
   checkGitRollbackAnchor,
   checkTargetOnlyWorktree,
   inspectActualChangedFiles,
-  formatFixGuardReport
+  formatFixGuardReport,
+  parsePorcelainStatus
 } = require('../lib/fix-guard');
 const { formatLedger, parseLedger } = require('../lib/ledger');
 const { readLease } = require('../lib/lock');
@@ -636,4 +637,38 @@ test('workflow end-fix writes normalized report, marks issues fixed, updates man
   assert.equal(manifest.currentPhase, 'diff-review');
   assert.equal(manifest.lastFixReportPath, 'reports/fix-round-001.md');
   assert.equal(readLease({ projectRoot: fixture.root, targetKey: fixture.metadata.targetKey }), null);
+});
+
+test('porcelain status parser classifies copied target entries', () => {
+  assert.deepEqual(parsePorcelainStatus('C  docs/source.md -> docs/target.md\n'), [
+    {
+      statusCode: 'C ',
+      kind: 'copied',
+      paths: ['docs/source.md', 'docs/target.md']
+    }
+  ]);
+});
+
+test('porcelain status parser rejects unparseable target-only guard output', () => {
+  assert.throws(
+    () => parsePorcelainStatus('not-a-porcelain-line\n'),
+    /unparseable git status line/i
+  );
+});
+
+test('target-only worktree maps unavailable git status to target-only-guard-unavailable', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-target-only-unavailable-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  const target = path.join(root, 'docs', 'target.md');
+  fs.writeFileSync(target, '# Target\n');
+
+  assert.throws(
+    () => checkTargetOnlyWorktree({
+      projectRoot: root,
+      targetPath: target,
+      allowedStateDir: null
+    }),
+    (error) => error.blockingReason === 'target-only-guard-unavailable'
+  );
 });

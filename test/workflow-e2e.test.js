@@ -448,3 +448,61 @@ test('no-state read-only fixture finalizes read-only-clean without state', async
   assert.notEqual(finalized.status, 'pass');
   assert.equal(fs.existsSync(path.join(fixture.root, '.docs-review-fix')), false);
 });
+
+test('begin-fix still blocks if target becomes dirty after route preflight passes', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const preflight = await runWorkflowCommand('preflight', [
+    'review-fix-design',
+    `root=${fixture.root}`,
+    `target=${fixture.target}`,
+    'review-and-fix',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    '--runtime-downgrade-reason',
+    'none',
+    '--json'
+  ], workflowOptions(fixture));
+
+  assert.equal(preflight.ok, true);
+  assert.equal(preflight.status, 'write-eligible');
+  assert.equal(fs.existsSync(path.join(fixture.root, '.docs-review-fix', 'targets')), false);
+
+  const start = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
+  assert.equal(start.ok, true);
+  assert.equal(start.status, 'review');
+
+  const context = await runWorkflowCommand('context', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
+  assert.equal(context.ok, true);
+
+  const review = await runWorkflowCommand('record-review', [
+    ...workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'),
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  assert.equal(review.ok, true);
+
+  const triage = await runWorkflowCommand('record-triage', [
+    ...workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'),
+    '--triage-stdin'
+  ], workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+  assert.equal(triage.ok, true);
+
+  fs.appendFileSync(fixture.target, '\nDirty after route preflight.\n');
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], workflowOptions(fixture, {
+    now: new Date('2026-05-21T00:00:00.000Z')
+  }));
+
+  assert.equal(beginFix.ok, false);
+  assert.equal(beginFix.status, 'blocked');
+  assert.equal(beginFix.blockingReason, 'rollback-unavailable');
+  assertFileExists(path.join(start.targetStateDir, 'reports', 'fix-guard-round-001.md'));
+  assert.equal(readLease({ projectRoot: fixture.root, targetKey: start.targetKey }), null);
+});

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const test = require('node:test');
 const { deriveTargetKey } = require('../lib/target-state');
 
@@ -17,6 +17,62 @@ const { BLOCKING_REASONS, STATUS_REASONS, workflowJson } = require('../lib/workf
 
 const ROOT = path.join(__dirname, '..');
 const REAL_TARGET = path.join(ROOT, 'README.md');
+
+function git(cwd, args) {
+  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+function makeGitFixture(t, { commit = true } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-v3-preflight-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  const target = path.join(root, 'docs', 'target.md');
+  fs.writeFileSync(target, '# Target\n');
+  git(root, ['init']);
+  git(root, ['config', 'user.email', 'test@example.com']);
+  git(root, ['config', 'user.name', 'Test User']);
+  git(root, ['add', 'docs/target.md']);
+  if (commit) git(root, ['commit', '-m', 'initial']);
+  return { root, target };
+}
+
+function writePreflightArgs(target, assurance = 'practical') {
+  return [
+    'review-fix-spec',
+    `target=${target}`,
+    'review-and-fix',
+    '--assurance',
+    assurance,
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    '--runtime-downgrade-reason',
+    'none',
+    '--json'
+  ];
+}
+
+function assertNoPreflightState(root) {
+  assert.equal(fs.existsSync(path.join(root, '.docs-review-fix', 'targets')), false);
+}
+
+function makeUnmergedTarget(t) {
+  const fixture = makeGitFixture(t);
+  git(fixture.root, ['checkout', '-b', 'left']);
+  fs.writeFileSync(fixture.target, '# Left\n');
+  git(fixture.root, ['commit', '-am', 'left edit']);
+  git(fixture.root, ['checkout', '-b', 'right', 'HEAD~1']);
+  fs.writeFileSync(fixture.target, '# Right\n');
+  git(fixture.root, ['commit', '-am', 'right edit']);
+  assert.throws(
+    () => git(fixture.root, ['merge', 'left']),
+    /merge|conflict|Automatic merge failed/i
+  );
+  return fixture;
+}
 
 test('parses practical start flags with runtime platform, subagent, stdin, and json', () => {
   const parsed = parseWorkflowArgs('start', [
@@ -366,4 +422,196 @@ test('CLI workflow --json errors emit one stable JSON object', () => {
   assert.equal(parsed.targetStateDir, null);
   assert.equal(parsed.manifestPath, null);
   assert.equal(parsed.nextAction, null);
+});
+
+test('write eligibility preflight passes for clean tracked target without creating state', async (t) => {
+  const fixture = makeGitFixture(t);
+  const result = await runWorkflowCommand('preflight', writePreflightArgs(fixture.target), { cwd: fixture.root });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'write-eligible');
+  assert.equal(result.mode, 'review-and-fix');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight accepts strict verified before proof without creating state', async (t) => {
+  const fixture = makeGitFixture(t);
+  const result = await runWorkflowCommand('preflight', writePreflightArgs(fixture.target, 'strict-verified'), { cwd: fixture.root });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'write-eligible');
+  assert.equal(result.assurance, 'strict-verified');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight reports write-not-required for read-only mode', async (t) => {
+  const fixture = makeGitFixture(t);
+  const args = writePreflightArgs(fixture.target);
+  args[2] = 'read-only';
+  const result = await runWorkflowCommand('preflight', args, { cwd: fixture.root });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'write-not-required');
+  assert.equal(result.mode, 'read-only');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight returns unsupported for advisory review-and-fix', async (t) => {
+  const fixture = makeGitFixture(t);
+  const result = await runWorkflowCommand('preflight', writePreflightArgs(fixture.target, 'advisory'), { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'unsupported');
+  assert.equal(result.statusReason, 'advisory-review-and-fix-unsupported');
+  assert.equal(result.mode, 'read-only');
+  assert.equal(result.modeNormalizedFrom, 'review-and-fix');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight blocks missing HEAD before state creation', async (t) => {
+  const fixture = makeGitFixture(t, { commit: false });
+  const result = await runWorkflowCommand('preflight', writePreflightArgs(fixture.target), { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'rollback-unavailable');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight blocks untracked target before state creation', async (t) => {
+  const fixture = makeGitFixture(t);
+  const untracked = path.join(fixture.root, 'docs', 'untracked.md');
+  fs.writeFileSync(untracked, '# Untracked\n');
+
+  const result = await runWorkflowCommand('preflight', writePreflightArgs(untracked), { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'rollback-unavailable');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight blocks ignored untracked target before state creation', async (t) => {
+  const fixture = makeGitFixture(t);
+  fs.writeFileSync(path.join(fixture.root, '.gitignore'), 'docs/ignored.md\n');
+  fs.writeFileSync(path.join(fixture.root, 'docs', 'ignored.md'), '# Ignored\n');
+
+  const result = await runWorkflowCommand('preflight', writePreflightArgs(path.join(fixture.root, 'docs', 'ignored.md')), { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'rollback-unavailable');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight blocks copied target before state creation', async (t) => {
+  const fixture = makeGitFixture(t);
+  const source = path.join(fixture.root, 'docs', 'source.md');
+  fs.writeFileSync(source, '# Source\n');
+  git(fixture.root, ['add', 'docs/source.md']);
+  git(fixture.root, ['commit', '-m', 'add source']);
+  const copied = path.join(fixture.root, 'docs', 'copied.md');
+  fs.copyFileSync(source, copied);
+
+  const result = await runWorkflowCommand('preflight', writePreflightArgs(copied), { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'rollback-unavailable');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight blocks staged target before state creation', async (t) => {
+  const fixture = makeGitFixture(t);
+  fs.writeFileSync(fixture.target, '# Staged\n');
+  git(fixture.root, ['add', 'docs/target.md']);
+
+  const result = await runWorkflowCommand('preflight', writePreflightArgs(fixture.target), { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'rollback-unavailable');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight blocks dirty target before state creation', async (t) => {
+  const fixture = makeGitFixture(t);
+  fs.writeFileSync(fixture.target, '# Dirty\n');
+
+  const result = await runWorkflowCommand('preflight', writePreflightArgs(fixture.target), { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'rollback-unavailable');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight blocks deleted target before state creation', async (t) => {
+  const fixture = makeGitFixture(t);
+  fs.rmSync(fixture.target);
+
+  const result = await runWorkflowCommand('preflight', writePreflightArgs(fixture.target), { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'rollback-unavailable');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight blocks renamed target before state creation', async (t) => {
+  const fixture = makeGitFixture(t);
+  git(fixture.root, ['mv', 'docs/target.md', 'docs/renamed.md']);
+  const renamed = path.join(fixture.root, 'docs', 'renamed.md');
+
+  const result = await runWorkflowCommand('preflight', writePreflightArgs(renamed), { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'rollback-unavailable');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight blocks unmerged target before state creation', async (t) => {
+  const fixture = makeUnmergedTarget(t);
+  const result = await runWorkflowCommand('preflight', writePreflightArgs(fixture.target), { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'rollback-unavailable');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight blocks unreadable target when platform permissions expose it', async (t) => {
+  const fixture = makeGitFixture(t);
+  const originalMode = fs.statSync(fixture.target).mode & 0o777;
+  fs.chmodSync(fixture.target, 0o000);
+  t.after(() => {
+    if (fs.existsSync(fixture.target)) fs.chmodSync(fixture.target, originalMode);
+  });
+  try {
+    fs.accessSync(fixture.target, fs.constants.R_OK | fs.constants.W_OK);
+    t.skip('platform still allows target read/write access after chmod 000');
+    return;
+  } catch {
+    // Continue with the preflight assertion.
+  }
+
+  const result = await runWorkflowCommand('preflight', writePreflightArgs(fixture.target), { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'rollback-unavailable');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight blocks unsafe non-target worktree changes', async (t) => {
+  const fixture = makeGitFixture(t);
+  fs.writeFileSync(path.join(fixture.root, 'docs', 'other.md'), '# Other\n');
+
+  const result = await runWorkflowCommand('preflight', writePreflightArgs(fixture.target), { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+  assertNoPreflightState(fixture.root);
 });

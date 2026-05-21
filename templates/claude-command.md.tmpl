@@ -37,7 +37,29 @@ Before any `drfx workflow` command, materialize effective `<selectedMode>` and `
 
 `strict` and `normal` control review strictness only. `assurance=` controls runtime assurance. If `assurance=` is absent, Claude Code requests `practical`.
 
-Explicit `review-and-fix assurance=advisory` is unsupported as a user request. Do not run write eligibility preflight, do not edit target files, and do not persist effective `Mode: review-and-fix` with `Assurance: advisory`. The only allowed `requestedMode: review-and-fix` plus `Assurance: advisory` path is a V2 runtime downgrade with effective `mode: read-only` and `modeNormalizedFrom: review-and-fix`.
+Explicit `review-and-fix assurance=advisory` is unsupported as a user request. Do not edit target files, and do not persist effective `Mode: review-and-fix` with `Assurance: advisory`. The only allowed `requestedMode: review-and-fix` plus `Assurance: advisory` path is a V2 runtime downgrade with effective `mode: read-only` and `modeNormalizedFrom: review-and-fix`.
+
+## Review-And-Fix Write Eligibility Preflight
+
+When effective mode is `review-and-fix`, run write eligibility preflight before runtime readiness probe, semantic reviewer dispatch, semantic document review, and target-local workflow state creation:
+
+```text
+drfx workflow preflight {{ROUTE_NAME}} target=<path> review-and-fix --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --json
+```
+
+For Codex, use `--runtime-platform codex`.
+
+This command accepts `assurance=practical` and `assurance=strict-verified` before runtime probes and strict proof because it does not create target state. It returns `unsupported` for explicit `review-and-fix assurance=advisory`.
+
+If preflight blocks, do not dispatch the semantic reviewer and do not create target state. Render concise default output:
+
+```text
+Blocked: <target> cannot be auto-fixed because it is not a clean tracked Git target.
+
+Next: commit or restore the target, or rerun with read-only.
+```
+
+When `debug` is present, include the redacted normalized blocker reason returned by preflight. Do not create target-local state for debug output on this path.
 
 ## Runtime Probes
 
