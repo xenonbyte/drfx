@@ -41,7 +41,7 @@ const {
 } = require('../lib/install');
 const { runCheck, formatCheckReport } = require('../lib/check');
 
-const PACKAGE_VERSION = '0.1.0';
+const PACKAGE_VERSION = '0.1.1';
 const FIXTURE_DIR = path.join(__dirname, 'fixtures', 'descriptors');
 
 function readFixture(name) {
@@ -432,7 +432,7 @@ test('install manifest serializes and parses deterministic YAML subset', (t) => 
   const text = serializeManifest(manifest);
 
   assert.equal(text, serializeManifest(parseManifestText(text)));
-  assert.match(text, /^schemaVersion: 1\npackageName: "@xenonbyte\/document-review-fix"\npackageVersion: "0\.1\.0"/);
+  assert.match(text, /^schemaVersion: 1\npackageName: "@xenonbyte\/document-review-fix"\npackageVersion: "0\.1\.1"/);
   assert.deepEqual(parseManifestText(text), manifest);
 
   const descriptorExtra = text.replace('  mutable: true\n', '  mutable: true\n  checksum: "not-allowed"\n');
@@ -1126,7 +1126,7 @@ test('generated Claude commands use fixed type, current checks, target-local res
 
   assert.match(text, /review-fix-spec/);
   assert.match(text, /Document type:\s*SPEC/i);
-  assert.match(text, /Package version:\s*0\.1\.0/i);
+  assert.match(text, new RegExp(`Package version:\\s*${PACKAGE_VERSION.replaceAll('.', '\\.')}`, 'i'));
   assert.match(text, /run `drfx check`|run the same package capability check/i);
   assert.match(text, /must not trust old|stale descriptor/i);
   assert.match(text, /users? must not pass `?type`?/i);

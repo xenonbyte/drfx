@@ -193,13 +193,14 @@ test('source skills templates generated routes and README avoid runtime memory c
   assert.match(sourceText, /\.docs-review-fix\/targets\/<target-key>\//);
 });
 
-test('package file list excludes README-zh and project-local state', () => {
+test('package file list excludes README-zh, project-local state, and local design drafts', () => {
   const packageJson = JSON.parse(read('package.json'));
 
-  assert.deepEqual(packageJson.files, ['bin/', 'lib/', 'skills/', 'shared/', 'templates/', 'test/', 'README.md', 'design/']);
+  assert.deepEqual(packageJson.files, ['bin/', 'lib/', 'skills/', 'shared/', 'templates/', 'test/', 'README.md']);
   assert.equal(packageJson.files.includes('README-zh.md'), false);
   assert.equal(fs.existsSync(path.join(ROOT, 'README-zh.md')), false);
   assert.equal(packageJson.files.some((entry) => entry.includes('.docs-review-fix')), false);
+  assert.equal(packageJson.files.some((entry) => entry === 'design/' || entry.startsWith('design/')), false);
 });
 
 test('manual v2 smoke docs record runtime limitations without placeholders', () => {

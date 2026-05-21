@@ -1,11 +1,11 @@
 {
   "name": "@xenonbyte/document-review-fix",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Review and fix document workflows for SPEC, PLAN, DESIGN, and COMMON documents.",
   "type": "commonjs",
   "bin": { "drfx": "bin/drfx.js" },
   "scripts": { "test": "node --test" },
   "engines": { "node": ">=20.0.0" },
-  "files": ["bin/", "lib/", "skills/", "shared/", "templates/", "test/", "README.md", "design/"],
+  "files": ["bin/", "lib/", "skills/", "shared/", "templates/", "test/", "README.md"],
   "license": "UNLICENSED"
 }

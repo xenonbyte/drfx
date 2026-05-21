@@ -10,7 +10,7 @@ const { buildDescriptor, createRunId } = require('../lib/capability');
 const { formatWorkflowJson, runWorkflowCommand } = require('../lib/workflow');
 const { formatManifestV2, parseManifestV2 } = require('../lib/workflow-state');
 
-const PACKAGE_VERSION = '0.1.0';
+const PACKAGE_VERSION = '0.1.1';
 const REAL_TARGET = path.join(__dirname, '..', 'README.md');
 
 function verifiedCapability(runId, proof = 'adapter-descriptor') {
