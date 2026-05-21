@@ -123,12 +123,15 @@ Redaction:
 - Use location anchors instead of raw secrets, partial values, hashes, raw logs, cookies, tokens, credentials, or private keys.
 
 Final response:
-- Report final status.
-- Report changes made, including issue IDs when available.
-- Report files changed and issue IDs fixed.
-- Report verification performed.
-- Report not fixed, deferrals with issue IDs, reason, owner, and next action, blockers, or unsupported items.
-- Report residual risk, or none identified.
-- Include exactly one machine block with `Final status:`, `Assurance:`, `Runtime platform:`, `Mode:`, `Target:`, `Files changed:`, `Fixed issue IDs:`, `Verification performed:`, `Deferrals or blockers:`, `Blocking reason:`, `Status reason:`, `Residual risk:`, `Redaction statement:`, and `Coordinator agreement:`.
+- Submit an internal workflow final-response payload to `drfx workflow finalize ... --final-response-stdin`; this machine payload is required for workflow validation and audit, not for default user-visible output.
+- The internal payload records final status.
+- The internal payload records changes made and fixed issue IDs when available.
+- The internal payload records files changed.
+- The internal payload records verification performed.
+- The internal payload records not fixed items, deferrals with issue IDs, reason, owner, and next action, blockers, or unsupported items.
+- The internal payload records residual risk, or none identified.
+- Internal workflow final-response payload machine block fields are `Final status:`, `Assurance:`, `Runtime platform:`, `Mode:`, `Target:`, `Files changed:`, `Fixed issue IDs:`, `Verification performed:`, `Deferrals or blockers:`, `Blocking reason:`, `Status reason:`, `Residual risk:`, `Redaction statement:`, and `Coordinator agreement:`.
+- Default user output uses concise Route Output after workflow finalization. It must not print the 14-line machine block or internal issue IDs.
+- Debug output may print the redacted final-response machine block and redacted audit details after validation.
 - Read-only/no-state clean status is `read-only-clean`, not `pass`.
 ```

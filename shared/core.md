@@ -18,7 +18,7 @@ The generated route coordinates host LLM work with deterministic `drfx workflow 
 
 Generated Codex and Claude Code routes default a valid target invocation to `review-and-fix assurance=practical` when mode and assurance are omitted. Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code. Generated Gemini routes default a valid target invocation to `read-only assurance=advisory`. Help-style or invalid invocations explain usage only and must not read target/reference bodies, run workflow commands, run probes, create state, or declare a review result.
 
-Default route output is concise and user-focused. It must not print handoff blocks, raw workflow JSON, probe transcripts, prompt text, raw subagent transcripts, or the final-response machine block. The explicit `debug` route token may surface redacted workflow audit details after validation, but it must not print raw document bodies, raw prompts, raw transcripts, secrets, tokens, or raw logs.
+Default user output uses concise Route Output and is user-focused. It must not print handoff blocks, raw workflow JSON, probe transcripts, prompt text, raw subagent transcripts, internal issue IDs, or the final-response machine block. The explicit `debug` route token may surface redacted workflow audit details and the redacted final-response machine block after validation, but it must not print raw document bodies, raw prompts, raw transcripts, secrets, tokens, or raw logs.
 
 `assurance=practical|strict-verified|advisory` selects runtime assurance. `strict` and `normal` select review strictness only.
 
@@ -142,10 +142,12 @@ Findings:
 
 ## Final Response Contract
 
-Final responses must state:
+The payload submitted to `drfx workflow finalize ... --final-response-stdin` is an internal workflow final-response payload only. It remains required for workflow validation and audit, and it may carry redacted internal issue IDs needed to reconcile ledgers and receipts. It is not the default user-visible output.
+
+The internal workflow final-response payload records:
 
 - Final status: one of the terminal or pause states above.
-- Changes made, including issue IDs when available.
+- Changes made and fixed issue IDs when available.
 - Files changed, limited to files actually modified.
 - Verification performed, including reviewer passes and any local checks.
 - Not fixed items, deferrals with issue IDs, reason, owner, and next action, blockers, or unsupported capability reasons.
@@ -153,7 +155,7 @@ Final responses must state:
 
 Do not print raw secrets, credentials, cookies, tokens, private keys, raw sensitive logs, or partial secret values. Use `[REDACTED:<kind>]` and location anchors.
 
-Final response machine block:
+Internal workflow final-response payload machine block:
 
 ```text
 Final status: pass | read-only-clean | read-only-findings | stopped-with-deferrals | blocked | unsupported | externally-changed | possible-target-replacement | checkpoint
@@ -172,7 +174,9 @@ Redaction statement: <statement or none>
 Coordinator agreement: <required when Final status is pass; otherwise none>
 ```
 
-Final response checklist: include final status, assurance, runtime platform, mode, target, files changed, fixed issue IDs, verification performed, deferrals or blockers, blocker/status reason, residual risk, redaction statement, and coordinator agreement. Read-only finalization uses `read-only-clean` or `read-only-findings`, never `pass`.
+Internal payload checklist: include final status, assurance, runtime platform, mode, target, files changed, fixed issue IDs, verification performed, deferrals or blockers, blocker/status reason, residual risk, redaction statement, and coordinator agreement. Read-only finalization uses `read-only-clean` or `read-only-findings`, never `pass`.
+
+Default user output uses concise Route Output after workflow finalization. It must summarize status, locations, problems, fixes or needed actions, and verification without printing the 14-line machine block or internal issue IDs. Debug output may additionally show the redacted final-response machine block and redacted audit details.
 
 ## Read-Only Behavior
 

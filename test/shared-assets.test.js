@@ -336,12 +336,18 @@ test('generated routes define concise default output and debug output', () => {
     assert.match(source, /Location:/);
     assert.match(source, /Problem:/);
     assert.match(source, /Clean:/);
-    assert.match(source, /Fixed:/);
-    assert.match(source, /Files changed: none/);
     assert.match(source, /Unfixed:/);
     assert.match(source, /debug/i);
     assert.match(source, /must not print raw target body/i);
     assert.match(source, /must not print raw prompts/i);
+  }
+
+  for (const source of [
+    read('templates/codex-skill.md.tmpl'),
+    read('templates/claude-command.md.tmpl')
+  ]) {
+    assert.match(source, /Fixed:/);
+    assert.match(source, /Files changed: none/);
   }
 });
 
@@ -357,6 +363,20 @@ test('generated routes require coordinator-quality semantic subagents without mo
     assert.match(source, /semantic fixer subagents inherit coordinator model quality/i);
     assert.doesNotMatch(source, /gpt-5\.5/i);
   }
+});
+
+test('gemini route output stays advisory-only concise', () => {
+  const geminiTemplate = read('templates/gemini-command.toml.tmpl');
+
+  assert.match(geminiTemplate, /For read-only findings/i);
+  assert.match(geminiTemplate, /For clean read-only runs/i);
+  assert.match(geminiTemplate, /Unsupported:/);
+  assert.match(geminiTemplate, /Blocked:/);
+  assert.doesNotMatch(geminiTemplate, /For fixed findings/i);
+  assert.doesNotMatch(geminiTemplate, /For successful review-and-fix/i);
+  assert.doesNotMatch(geminiTemplate, /^Pass: <target> was updated\./m);
+  assert.doesNotMatch(geminiTemplate, /^Fixed:\s*$/m);
+  assert.doesNotMatch(geminiTemplate, /^Files changed: none$/m);
 });
 
 test('generated route text rejects explicit advisory review-and-fix user requests', () => {
@@ -431,6 +451,24 @@ test('rendered route text omits stale missing-mode explain-only contract', () =>
   assert.match(renderedRoutes, /Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code/);
   assert.match(renderedRoutes, /Gemini routes default a valid target invocation to `read-only assurance=advisory`/);
   assert.match(renderedRoutes, /Help-style or invalid invocations explain usage only and must not read target\/reference bodies, run workflow commands, run probes, create state, or declare a review result/);
+});
+
+test('rendered routes separate default output from internal final-response payload', () => {
+  const renderedRoutes = [
+    renderPlatformRoute('codex', 'review-fix-spec', { packageVersion: '0.0.0-test' }),
+    renderPlatformRoute('claude', 'review-fix-spec', { packageVersion: '0.0.0-test' }),
+    renderPlatformRoute('gemini', 'review-fix-spec', { packageVersion: '0.0.0-test' })
+  ].join('\n\n--- rendered route boundary ---\n\n');
+
+  assert.match(renderedRoutes, /--final-response-stdin/);
+  assert.match(renderedRoutes, /Internal workflow final-response payload/i);
+  assert.match(renderedRoutes, /Default user output uses concise Route Output/i);
+  assert.match(renderedRoutes, /debug[\s\S]{0,160}redacted final-response machine block|redacted final-response machine block[\s\S]{0,160}debug/i);
+  assert.doesNotMatch(renderedRoutes, /Final responses must state:/i);
+  assert.doesNotMatch(renderedRoutes, /Report changes made, including issue IDs when available/i);
+  assert.doesNotMatch(renderedRoutes, /Report files changed and issue IDs fixed/i);
+  assert.doesNotMatch(renderedRoutes, /Include exactly one machine block/i);
+  assert.doesNotMatch(renderedRoutes, /Final response checklist: include/i);
 });
 
 test('codex and claude routes run write eligibility preflight before semantic review', () => {
