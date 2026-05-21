@@ -314,6 +314,48 @@ test('persistent start rejects stale project RULE.md before writing target state
   }
 });
 
+test('persistent start uses stale project RULE.md as root marker before falling back to outer cwd', async (t) => {
+  const outer = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-e2e-outer-'));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-e2e-home-'));
+  t.after(() => fs.rmSync(outer, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
+
+  const projectRoot = path.join(outer, 'project');
+  const docsDir = path.join(projectRoot, 'docs');
+  const projectStateDir = path.join(projectRoot, '.docs-review-fix');
+  fs.mkdirSync(docsDir, { recursive: true });
+  fs.mkdirSync(projectStateDir, { recursive: true });
+  fs.copyFileSync(path.join(FIXTURE_ROOT, 'practical-target.md'), path.join(docsDir, 'practical-target.md'));
+  fs.copyFileSync(path.join(FIXTURE_ROOT, 'reference.md'), path.join(docsDir, 'reference.md'));
+  fs.writeFileSync(path.join(projectStateDir, 'RULE.md'), '## COMMON\nOld config\n');
+
+  const result = await runWorkflowCommand('start', [
+    'review-fix-design',
+    `target=${path.join(docsDir, 'practical-target.md')}`,
+    `ref=${path.join(docsDir, 'reference.md')}`,
+    'review-and-fix',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--json'
+  ], {
+    cwd: outer,
+    homeDir
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.match(result.message, /RULE\.md|stale/i);
+  assert.equal(fs.existsSync(path.join(projectStateDir, 'targets')), false);
+  assert.equal(fs.existsSync(path.join(outer, '.docs-review-fix', 'targets')), false);
+});
+
 test('persistent start rejects symlinked target state directory before outside writes', async (t) => {
   const fixture = makeWorkflowRepo(t);
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-e2e-outside-state-'));

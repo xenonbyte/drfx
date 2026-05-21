@@ -113,6 +113,14 @@ test('resolves explicit, git, docs-review-fix, and cwd project roots determinist
     fs.realpathSync.native(ruleRoot)
   );
   assert.equal(fs.existsSync(path.join(ruleRoot, '.docs-review-fix', 'targets')), false);
+
+  const staleRuleRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-stale-rule-root-'));
+  fs.mkdirSync(path.join(staleRuleRoot, '.docs-review-fix'), { recursive: true });
+  fs.writeFileSync(path.join(staleRuleRoot, '.docs-review-fix', 'RULE.md'), '## COMMON\nOld rule\n');
+  fs.mkdirSync(path.join(staleRuleRoot, 'deep'), { recursive: true });
+  const staleRuleTarget = path.join(staleRuleRoot, 'deep', 'plan.md');
+  fs.writeFileSync(staleRuleTarget, '# Plan\n');
+  assert.equal(resolveProjectRoot({ targetPath: staleRuleTarget, cwd: os.tmpdir() }), fs.realpathSync.native(staleRuleRoot));
 });
 
 test('rejects unresolved persistent root and target escape using realpaths', () => {
