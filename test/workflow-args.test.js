@@ -154,6 +154,53 @@ test('runtime downgrade advisory review-and-fix normalizes to read-only without 
   assert.notEqual(result.statusReason, 'advisory-review-and-fix-unsupported');
 });
 
+test('advisory review-and-fix user request is unsupported without runtime downgrade', async () => {
+  const result = await runWorkflowCommand('start', [
+    'review-fix-spec',
+    'target=test/fixtures/workflow/practical-target.md',
+    'review-and-fix',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    '--runtime-downgrade-reason',
+    'none',
+    '--json'
+  ], { cwd: path.join(__dirname, '..') });
+
+  assert.equal(result.status, 'unsupported');
+  assert.equal(result.statusReason, 'advisory-review-and-fix-unsupported');
+  assert.equal(result.mode, 'read-only');
+  assert.equal(result.requestedMode, 'review-and-fix');
+});
+
+test('advisory without mode stays read-only and does not enter unsupported review-and-fix path', async () => {
+  const result = await runWorkflowCommand('start', [
+    'review-fix-spec',
+    'target=test/fixtures/workflow/practical-target.md',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    '--runtime-downgrade-reason',
+    'none',
+    '--json'
+  ], { cwd: path.join(__dirname, '..') });
+
+  assert.notEqual(result.statusReason, 'advisory-review-and-fix-unsupported');
+  assert.equal(result.mode, 'read-only');
+  assert.equal(result.requestedMode, 'read-only');
+  assert.equal(result.assurance, 'advisory');
+});
+
 test('workflow start returns canonical target key from target-state', async () => {
   const result = await runWorkflowCommand('start', [
     'review-fix-spec',

@@ -295,11 +295,40 @@ test('record-diff-review route handoff uses result stdin flag', () => {
   assert.doesNotMatch(sourceText, /record-diff-review[\s\S]{0,120}--diff-review-stdin/);
 });
 
-test('no mode token path remains explain-only', () => {
+test('help-style and invalid route path remains explain-only', () => {
   const sourceText = read('templates/codex-skill.md.tmpl');
-  assert.match(sourceText, /without read-only or review-and-fix/i);
-  assert.match(sourceText, /explain/i);
-  assert.doesNotMatch(sourceText, /no mode token[\s\S]{0,120}drfx workflow start/i);
+  assert.match(sourceText, /Help-style or invalid invocations still explain usage only/i);
+  assert.match(sourceText, /missing target, unknown usage, or explicit help/i);
+  assert.doesNotMatch(sourceText, /Help-style or invalid invocations[\s\S]{0,180}drfx workflow start/i);
+});
+
+test('generated route text documents v3 platform defaults and advisory override', () => {
+  const codexTemplate = read('templates/codex-skill.md.tmpl');
+  const claudeTemplate = read('templates/claude-command.md.tmpl');
+  const geminiTemplate = read('templates/gemini-command.toml.tmpl');
+
+  assert.match(codexTemplate, /missing mode selects `review-and-fix`/i);
+  assert.match(codexTemplate, /missing assurance selects `practical`/i);
+  assert.match(codexTemplate, /explicit `assurance=advisory` without mode selects `read-only`/i);
+  assert.match(claudeTemplate, /missing mode selects `review-and-fix`/i);
+  assert.match(claudeTemplate, /missing assurance selects `practical`/i);
+  assert.match(claudeTemplate, /explicit `assurance=advisory` without mode selects `read-only`/i);
+  assert.match(geminiTemplate, /missing mode selects read-only/i);
+  assert.match(geminiTemplate, /missing assurance selects advisory/i);
+
+  assert.doesNotMatch(codexTemplate, /without read-only or review-and-fix, explain usage only/i);
+  assert.doesNotMatch(claudeTemplate, /without read-only or review-and-fix, explain usage only/i);
+});
+
+test('generated route text rejects explicit advisory review-and-fix user requests', () => {
+  const codexTemplate = read('templates/codex-skill.md.tmpl');
+  const claudeTemplate = read('templates/claude-command.md.tmpl');
+
+  for (const template of [codexTemplate, claudeTemplate]) {
+    assert.match(template, /review-and-fix assurance=advisory/i);
+    assert.match(template, /unsupported as a user request/i);
+    assert.match(template, /modeNormalizedFrom: review-and-fix/i);
+  }
 });
 
 test('coordinator prompt uses read-only-clean instead of read-only PASS', () => {

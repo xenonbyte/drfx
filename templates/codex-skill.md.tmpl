@@ -28,12 +28,18 @@ Package version: {{PACKAGE_VERSION}}
 Invocation syntax:
 
 ```text
-{{ROUTE_NAME}} target=<path> [ref=<path>...] read-only|review-and-fix [strict|normal] [assurance=practical|strict-verified|advisory] [resume] [ledger=<target-local path>] [root=<project-root>]
+{{ROUTE_NAME}} target=<path> [ref=<path>...] [read-only|review-and-fix] [strict|normal] [assurance=practical|strict-verified|advisory] [resume] [ledger=<target-local path>] [root=<project-root>] [debug]
 ```
 
-If the invocation is without read-only or review-and-fix, explain usage only. Do not read the target or reference bodies, do not run workflow commands, do not run probes, do not create state, and do not declare a review result.
+If a valid target invocation omits both mode and assurance, missing mode selects `review-and-fix` and missing assurance selects `practical`.
+
+Explicit `assurance=advisory` without mode selects `read-only`; advisory assurance cannot write targets. This is an explicit token override, not the pure platform default.
+
+Help-style or invalid invocations still explain usage only. Do not read target/reference bodies, run workflow commands, run probes, create state, or declare a review result for missing target, unknown usage, or explicit help.
 
 `strict` and `normal` control review strictness only. `assurance=` controls runtime assurance. If `assurance=` is absent, Codex requests `practical`.
+
+Explicit `review-and-fix assurance=advisory` is unsupported as a user request. Do not run write eligibility preflight, do not edit target files, and do not persist effective `Mode: review-and-fix` with `Assurance: advisory`. The only allowed `requestedMode: review-and-fix` plus `Assurance: advisory` path is a V2 runtime downgrade with effective `mode: read-only` and `modeNormalizedFrom: review-and-fix`.
 
 ## Runtime Probes
 
