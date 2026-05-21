@@ -79,6 +79,33 @@ test('merges rules in seven-layer runtime order', () => {
     merged.sources.join(' > '),
     'hard > built-in-common > built-in-SPEC > user-global:rules/COMMON.md > user-global:rules/SPEC.md > project-local:rules/COMMON.md > project-local:rules/SPEC.md'
   );
+  assert.deepEqual(
+    merged.sourceList
+      .filter((item) => item.identifier.includes(':rules/'))
+      .map(({ source, identifier, category }) => ({ source, identifier, category })),
+    [
+      {
+        source: 'user-global:rules/COMMON.md',
+        identifier: 'user-global:rules/COMMON.md',
+        category: 'user-global'
+      },
+      {
+        source: 'user-global:rules/SPEC.md',
+        identifier: 'user-global:rules/SPEC.md',
+        category: 'user-global'
+      },
+      {
+        source: 'project-local:rules/COMMON.md',
+        identifier: 'project-local:rules/COMMON.md',
+        category: 'project-local'
+      },
+      {
+        source: 'project-local:rules/SPEC.md',
+        identifier: 'project-local:rules/SPEC.md',
+        category: 'project-local'
+      }
+    ]
+  );
   assert.match(merged.text, /Workflow hard constraints/);
   assert.ok(merged.text.indexOf('Built common rule') < merged.text.indexOf('Built spec rule'));
   assert.ok(merged.text.indexOf('User spec rule') < merged.text.indexOf('Project common rule'));
@@ -167,12 +194,31 @@ test('loads only COMMON and current document type rule files', (t) => {
     COMMON: 'Project common',
     SPEC: 'Project spec'
   });
-  assert.deepEqual(loaded.contentPaths.map((item) => item.identifier), [
-    'user-global:rules/COMMON.md',
-    'user-global:rules/SPEC.md',
-    'project-local:rules/COMMON.md',
-    'project-local:rules/SPEC.md'
-  ]);
+  assert.deepEqual(
+    loaded.contentPaths.map(({ source, identifier, category }) => ({ source, identifier, category })),
+    [
+      {
+        source: 'user-global:rules/COMMON.md',
+        identifier: 'user-global:rules/COMMON.md',
+        category: 'user-global'
+      },
+      {
+        source: 'user-global:rules/SPEC.md',
+        identifier: 'user-global:rules/SPEC.md',
+        category: 'user-global'
+      },
+      {
+        source: 'project-local:rules/COMMON.md',
+        identifier: 'project-local:rules/COMMON.md',
+        category: 'project-local'
+      },
+      {
+        source: 'project-local:rules/SPEC.md',
+        identifier: 'project-local:rules/SPEC.md',
+        category: 'project-local'
+      }
+    ]
+  );
 });
 
 test('COMMON documents load only COMMON custom rule files', (t) => {
@@ -190,10 +236,21 @@ test('COMMON documents load only COMMON custom rule files', (t) => {
 
   assert.deepEqual(loaded.user, { COMMON: 'User common' });
   assert.deepEqual(loaded.project, { COMMON: 'Project common' });
-  assert.deepEqual(loaded.contentPaths.map((item) => item.identifier), [
-    'user-global:rules/COMMON.md',
-    'project-local:rules/COMMON.md'
-  ]);
+  assert.deepEqual(
+    loaded.contentPaths.map(({ source, identifier, category }) => ({ source, identifier, category })),
+    [
+      {
+        source: 'user-global:rules/COMMON.md',
+        identifier: 'user-global:rules/COMMON.md',
+        category: 'user-global'
+      },
+      {
+        source: 'project-local:rules/COMMON.md',
+        identifier: 'project-local:rules/COMMON.md',
+        category: 'project-local'
+      }
+    ]
+  );
 });
 
 test('missing rules directories and files return empty custom rule sets', (t) => {
