@@ -296,18 +296,18 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
   ]);
 });
 
-test('persistent start rejects invalid project rulebook before writing target state', async (t) => {
+test('persistent start rejects stale project RULE.md before writing target state', async (t) => {
   const fixture = makeWorkflowRepo(t);
   const projectStateDir = path.join(fixture.root, '.docs-review-fix');
   fs.mkdirSync(projectStateDir, { recursive: true });
-  fs.writeFileSync(path.join(projectStateDir, 'RULE.md'), '## UNKNOWN\nThis heading is invalid.\n');
+  fs.writeFileSync(path.join(projectStateDir, 'RULE.md'), '## COMMON\nOld config\n');
 
   const result = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
 
   assert.equal(result.ok, false);
   assert.equal(result.status, 'blocked');
   assert.equal(result.blockingReason, 'state-validation-failed');
-  assert.match(result.message, /unknown heading|rulebook/i);
+  assert.match(result.message, /RULE\.md|stale/i);
   assert.equal(fs.existsSync(path.join(projectStateDir, 'targets')), false);
   if (result.targetStateDir) {
     assert.equal(fs.existsSync(result.targetStateDir), false);
@@ -335,26 +335,38 @@ test('persistent start rejects symlinked target state directory before outside w
   assert.equal(fs.existsSync(path.join(outside, 'ISSUES.md')), false);
 });
 
-test('workflow e2e fixture is isolated from invalid global rulebook', async (t) => {
+test('persistent start rejects stale global RULE.md before writing target state', async (t) => {
   const fixture = makeWorkflowRepo(t);
   const poisonedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-e2e-poison-home-'));
   t.after(() => fs.rmSync(poisonedHome, { recursive: true, force: true }));
   fs.mkdirSync(path.join(poisonedHome, '.docs-review-fix'), { recursive: true });
-  fs.writeFileSync(path.join(poisonedHome, '.docs-review-fix', 'RULE.md'), '## UNKNOWN\nPolluting global rule.\n');
-  const originalHome = process.env.HOME;
-  process.env.HOME = poisonedHome;
-  t.after(() => {
-    if (originalHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
-    }
+  fs.writeFileSync(path.join(poisonedHome, '.docs-review-fix', 'RULE.md'), '## COMMON\nOld global config\n');
+
+  const result = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), {
+    ...workflowOptions(fixture),
+    homeDir: poisonedHome
   });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.match(result.message, /RULE\.md|stale/i);
+  assert.equal(fs.existsSync(path.join(fixture.root, '.docs-review-fix', 'targets')), false);
+});
+
+test('persistent start rejects unknown markdown file under project rules', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const rulesDir = path.join(fixture.root, '.docs-review-fix', 'rules');
+  fs.mkdirSync(rulesDir, { recursive: true });
+  fs.writeFileSync(path.join(rulesDir, 'SPEC-RULE.md'), 'Wrong filename\n');
 
   const result = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
 
-  assert.equal(result.ok, true);
-  assert.equal(result.status, 'review');
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.match(result.message, /unknown custom rule file|SPEC-RULE\.md/i);
+  assert.equal(fs.existsSync(path.join(fixture.root, '.docs-review-fix', 'targets')), false);
 });
 
 test('no-state read-only fixture finalizes read-only-clean without state', async (t) => {

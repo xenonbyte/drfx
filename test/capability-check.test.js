@@ -1050,9 +1050,10 @@ test('failed Codex skill directory overwrite preserves old owned directory and d
 
 test('check reruns current probes and reports advisory reason', async (t) => {
   const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix'), { recursive: true });
-  fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'RULE.md'), '# User rules\n');
-  fs.mkdirSync(path.join(cwd, '.docs-review-fix'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'rules', 'COMMON.md'), '# User rules\n');
+  fs.mkdirSync(path.join(cwd, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, '.docs-review-fix', 'rules', 'SPEC.md'), '# Project rules\n');
 
   const result = await runCheck({
     homeDir,
@@ -1063,10 +1064,12 @@ test('check reruns current probes and reports advisory reason', async (t) => {
   });
   const report = formatCheckReport(result);
 
-  assert.equal(result.globalRule.present, true);
+  assert.equal(result.userRules.present, true);
+  assert.equal(result.projectRules.present, true);
   assert.equal(result.projectState.present, true);
   assert.match(report, /Advisory-only/i);
-  assert.match(report, /global rule: present/i);
+  assert.match(report, /user rules: present/i);
+  assert.match(report, /project rules: present/i);
   assert.match(report, /project state: present/i);
 
   for (const platform of ['claude', 'codex', 'gemini']) {
