@@ -51,7 +51,7 @@ Issues:
   Problem: <specific problem>
   Fix: <suggested correction>
 
-Next: rerun with review-and-fix to apply fixes.
+Next: apply fixes manually, or rerun with a Codex/Claude Code review-and-fix route.
 ```
 
 For clean read-only runs:
@@ -65,9 +65,9 @@ Verification: full-document read-only review completed.
 For unsupported review-and-fix or strict-verified requests:
 
 ```text
-Unsupported: <target> cannot run review-and-fix on Gemini.
+Unsupported: <target> requested a mode or assurance unavailable on Gemini.
 
-Reason: unsupported runtime capability.
+Reason: review-and-fix or strict-verified is unavailable on Gemini.
 Next: rerun with Codex or Claude Code for review-and-fix, or use read-only advisory review.
 ```
 

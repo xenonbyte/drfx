@@ -372,6 +372,10 @@ test('gemini route output stays advisory-only concise', () => {
   assert.match(geminiTemplate, /For clean read-only runs/i);
   assert.match(geminiTemplate, /Unsupported:/);
   assert.match(geminiTemplate, /Blocked:/);
+  assert.match(geminiTemplate, /apply fixes manually/i);
+  assert.match(geminiTemplate, /Codex\/Claude Code review-and-fix route/i);
+  assert.match(geminiTemplate, /review-and-fix or strict-verified is unavailable on Gemini/i);
+  assert.doesNotMatch(geminiTemplate, /Next: rerun with review-and-fix to apply fixes/i);
   assert.doesNotMatch(geminiTemplate, /For fixed findings/i);
   assert.doesNotMatch(geminiTemplate, /For successful review-and-fix/i);
   assert.doesNotMatch(geminiTemplate, /^Pass: <target> was updated\./m);
@@ -469,6 +473,15 @@ test('rendered routes separate default output from internal final-response paylo
   assert.doesNotMatch(renderedRoutes, /Report files changed and issue IDs fixed/i);
   assert.doesNotMatch(renderedRoutes, /Include exactly one machine block/i);
   assert.doesNotMatch(renderedRoutes, /Final response checklist: include/i);
+});
+
+test('rendered gemini route keeps advisory next actions reachable', () => {
+  const geminiRoute = renderPlatformRoute('gemini', 'review-fix-spec', { packageVersion: '0.0.0-test' });
+
+  assert.match(geminiRoute, /apply fixes manually/i);
+  assert.match(geminiRoute, /Codex\/Claude Code review-and-fix route/i);
+  assert.match(geminiRoute, /review-and-fix or strict-verified is unavailable on Gemini/i);
+  assert.doesNotMatch(geminiRoute, /Next: rerun with review-and-fix to apply fixes/i);
 });
 
 test('codex and claude routes run write eligibility preflight before semantic review', () => {
