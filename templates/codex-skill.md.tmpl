@@ -37,6 +37,8 @@ Explicit `assurance=advisory` without mode selects `read-only`; advisory assuran
 
 Help-style or invalid invocations still explain usage only. Do not read target/reference bodies, run workflow commands, run probes, create state, or declare a review result for missing target, unknown usage, or explicit help.
 
+Before any `drfx workflow` command, materialize effective `<selectedMode>` and `<selectedAssurance>`. Compute `<selectedMode>` from explicit mode, defaults, and advisory override. Compute `<selectedAssurance>` from explicit assurance or platform default. Always pass those explicit materialized values to workflow commands; never pass omitted mode or assurance through to `drfx workflow`.
+
 `strict` and `normal` control review strictness only. `assurance=` controls runtime assurance. If `assurance=` is absent, Codex requests `practical`.
 
 Explicit `review-and-fix assurance=advisory` is unsupported as a user request. Do not run write eligibility preflight, do not edit target files, and do not persist effective `Mode: review-and-fix` with `Assurance: advisory`. The only allowed `requestedMode: review-and-fix` plus `Assurance: advisory` path is a V2 runtime downgrade with effective `mode: read-only` and `modeNormalizedFrom: review-and-fix`.
@@ -69,7 +71,7 @@ Only explicit `assurance=strict-verified` requests strict verified mode. In the 
 drfx check --platform codex --json
 ```
 
-Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.codex.descriptorPath`. Let `<selectedMode>` be the user's explicit mode, either `read-only` or `review-and-fix`. Pass those current-run values to workflow start:
+Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.codex.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Pass those current-run values to workflow start:
 
 ```text
 drfx workflow start {{ROUTE_NAME}} target=<path> <selectedMode> --assurance strict-verified --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
@@ -87,7 +89,7 @@ For `assurance=practical`, after successful probes, start persistent state:
 drfx workflow start {{ROUTE_NAME}} target=<path> review-and-fix --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
 ```
 
-For `assurance=strict-verified`, use the strict verified start command above with `<selectedMode>` set to `review-and-fix`.
+This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix` and `<selectedAssurance>` is `practical`. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
 
 Then coordinate this loop:
 

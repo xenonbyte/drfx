@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const { renderPlatformRoute } = require('../lib/generator');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -328,6 +329,28 @@ test('generated route text rejects explicit advisory review-and-fix user request
     assert.match(template, /review-and-fix assurance=advisory/i);
     assert.match(template, /unsupported as a user request/i);
     assert.match(template, /modeNormalizedFrom: review-and-fix/i);
+  }
+});
+
+test('generated route text materializes defaults before workflow commands', () => {
+  const codexTemplate = read('templates/codex-skill.md.tmpl');
+  const claudeTemplate = read('templates/claude-command.md.tmpl');
+
+  for (const template of [codexTemplate, claudeTemplate]) {
+    assert.match(template, /materialize effective `<selectedMode>` and `<selectedAssurance>`/i);
+    assert.match(template, /never pass omitted mode or assurance through to `drfx workflow`/i);
+    assert.match(template, /compute `<selectedMode>` from explicit mode, defaults, and advisory override/i);
+    assert.match(template, /compute `<selectedAssurance>` from explicit assurance or platform default/i);
+    assert.doesNotMatch(template, /Let `<selectedMode>` be the user's explicit mode/i);
+    assert.doesNotMatch(template, /pass the user's raw invocation to `drfx workflow`/i);
+  }
+
+  for (const rendered of [
+    renderPlatformRoute('codex', 'review-fix-spec', { packageVersion: '0.0.0-test' }),
+    renderPlatformRoute('claude', 'review-fix-spec', { packageVersion: '0.0.0-test' })
+  ]) {
+    assert.match(rendered, /generated route must materialize effective mode and assurance before workflow calls/i);
+    assert.match(rendered, /never pass omitted values through to `drfx workflow`/i);
   }
 });
 
