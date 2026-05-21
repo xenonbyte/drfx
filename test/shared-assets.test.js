@@ -620,6 +620,7 @@ test('public docs and source skills omit stale v2 rule and mode wording', () => 
 
   assert.doesNotMatch(publicText, /Rule heading restrictions are strict/i);
   assert.doesNotMatch(publicText, /`?\.docs-review-fix\/RULE\.md`? is shared project configuration/i);
+  assert.doesNotMatch(publicText, /`?RULE\.md`? is shared project configuration/i);
   assert.doesNotMatch(publicText, /No mode token means explain only/i);
   assert.doesNotMatch(publicText, /Without an explicit mode token, explain usage only/i);
   assert.doesNotMatch(publicText, /`read-only` or `review-and-fix` is required to start workflow/i);
