@@ -18,6 +18,8 @@ The generated route coordinates host LLM work with deterministic `drfx workflow 
 
 Generated Codex and Claude Code routes default a valid target invocation to `review-and-fix assurance=practical` when mode and assurance are omitted. Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code. Generated Gemini routes default a valid target invocation to `read-only assurance=advisory`. Help-style or invalid invocations explain usage only and must not read target/reference bodies, run workflow commands, run probes, create state, or declare a review result.
 
+Default route output is concise and user-focused. It must not print handoff blocks, raw workflow JSON, probe transcripts, prompt text, raw subagent transcripts, or the final-response machine block. The explicit `debug` route token may surface redacted workflow audit details after validation, but it must not print raw document bodies, raw prompts, raw transcripts, secrets, tokens, or raw logs.
+
 `assurance=practical|strict-verified|advisory` selects runtime assurance. `strict` and `normal` select review strictness only.
 
 ## Roles

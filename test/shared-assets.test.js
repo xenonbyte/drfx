@@ -321,6 +321,44 @@ test('generated route text documents v3 platform defaults and advisory override'
   assert.doesNotMatch(claudeTemplate, /without read-only or review-and-fix, explain usage only/i);
 });
 
+test('generated routes define concise default output and debug output', () => {
+  const sources = [
+    read('templates/codex-skill.md.tmpl'),
+    read('templates/claude-command.md.tmpl'),
+    read('templates/gemini-command.toml.tmpl')
+  ];
+
+  for (const source of sources) {
+    assert.match(source, /Default output is concise/i);
+    assert.match(source, /must not print.*Goal \/ Now \/ Next \/ Open Questions/is);
+    assert.match(source, /must not print.*14-line final-response machine block/is);
+    assert.match(source, /Issues:/);
+    assert.match(source, /Location:/);
+    assert.match(source, /Problem:/);
+    assert.match(source, /Clean:/);
+    assert.match(source, /Fixed:/);
+    assert.match(source, /Files changed: none/);
+    assert.match(source, /Unfixed:/);
+    assert.match(source, /debug/i);
+    assert.match(source, /must not print raw target body/i);
+    assert.match(source, /must not print raw prompts/i);
+  }
+});
+
+test('generated routes require coordinator-quality semantic subagents without model pins', () => {
+  const sources = [
+    read('templates/codex-skill.md.tmpl'),
+    read('templates/claude-command.md.tmpl')
+  ];
+
+  for (const source of sources) {
+    assert.match(source, /readiness probes may use lower reasoning effort/i);
+    assert.match(source, /semantic reviewer subagents inherit coordinator model quality/i);
+    assert.match(source, /semantic fixer subagents inherit coordinator model quality/i);
+    assert.doesNotMatch(source, /gpt-5\.5/i);
+  }
+});
+
 test('generated route text rejects explicit advisory review-and-fix user requests', () => {
   const codexTemplate = read('templates/codex-skill.md.tmpl');
   const claudeTemplate = read('templates/claude-command.md.tmpl');

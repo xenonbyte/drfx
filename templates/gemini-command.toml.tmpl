@@ -33,6 +33,73 @@ If a valid target invocation omits mode, missing mode selects read-only. If it o
 
 Help-style or invalid invocations explain usage only. Do not read the target or reference bodies, do not run workflow commands, do not run probes, do not create state, and do not declare a review result.
 
+Route output:
+
+Default output is concise. It must not print `Goal / Now / Next / Open Questions`, the 14-line final-response machine block, raw workflow JSON, runtime probe transcripts, reviewer/fixer prompt text, or raw subagent transcripts.
+
+Default output must include only terminal status, target path, files changed when any, fixed issue summaries, unresolved issue summaries, blocker or unsupported reason, one next action when blocked or unsupported, and state directory or receipt path only when needed for resume, audit, or follow-up.
+
+Do not expose internal issue IDs such as `ISSUE-001` in default `Issues:`, `Fixed:`, or `Unfixed:` lists.
+
+For read-only findings:
+
+```text
+Findings: <target> has blocking issues.
+
+Issues:
+- Location: <line, heading, section, or safe anchor>
+  Problem: <specific problem>
+  Fix: <suggested correction>
+
+Next: rerun with review-and-fix to apply fixes.
+```
+
+For clean read-only runs:
+
+```text
+Clean: <target> has no blocking findings.
+
+Verification: full-document read-only review completed.
+```
+
+For fixed findings:
+
+```text
+Pass: <target> was updated.
+
+Fixed:
+- Location: <line, heading, section, or safe anchor>
+  Problem: <specific problem that was fixed>
+  Change: <what changed>
+
+Verification: <short reviewer/check summary>
+```
+
+For successful review-and-fix runs that found no blocking issues and changed no files:
+
+```text
+Pass: <target> has no blocking findings.
+
+Files changed: none
+Verification: <short reviewer/check summary>
+```
+
+For unresolved review-and-fix findings:
+
+```text
+Blocked: <one-sentence reason>.
+
+Unfixed:
+- Location: <line, heading, section, or safe anchor>
+  Problem: <specific problem that remains>
+  Needed: <decision, manual input, or environmental fix required>
+
+Next: <one concrete action>
+State: <target-state-dir when persistent state exists>
+```
+
+When debug is present, generated routes may print the final-response machine block, target state directory, receipt paths, normalized blocker/status reason, runtime probe results, relevant drfx workflow --json outputs, report paths, and issue IDs. Debug output must still redact sensitive values and must not print raw target body, must not print raw reference body, must not print raw prompts, must not print raw subagent transcripts, and must not print secrets, tokens, or raw logs. Debug must not change final status, effective mode, assurance, validation behavior, or persisted state.
+
 review-and-fix is unsupported on Gemini. Before reading target/reference bodies or generating any semantic payload, return the unsupported result through no-state preflight:
 
 drfx workflow preflight --no-state {{ROUTE_NAME}} target=<path> review-and-fix --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --terminal-status unsupported --blocking-reason none --status-reason unsupported-runtime-capability --json
