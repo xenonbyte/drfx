@@ -172,7 +172,14 @@ Directory inspection is required to detect stale or misspelled Markdown
 configuration. Directory inspection must not read unrelated document-type file
 bodies.
 
+Missing rules directories are treated as absent.
+
 Empty or missing custom rule files are treated as absent.
+
+An existing rules directory that cannot be inspected is a configuration
+validation failure. A custom rule file that is required for the current
+document type but cannot be read is also a configuration validation failure.
+Both failures must stop before workflow start writes target state.
 
 Custom rule file contents are plain Markdown fragments. They do not require a
 wrapping `## SPEC`, `## PLAN`, `## DESIGN`, or `## COMMON` heading.
@@ -181,12 +188,15 @@ wrapping `## SPEC`, `## PLAN`, `## DESIGN`, or `## COMMON` heading.
 
 Upstream design scope: `design/DESIGN-v3.md` sections 3, 4, 11, 13, 14, and 15.
 
-Workflow start must stop before writing target state when either of these
+Workflow start must stop before writing target state when any of these
 conditions exists:
 
 - a legacy rulebook exists at `~/.docs-review-fix/RULE.md` or
   `.docs-review-fix/RULE.md`;
-- an unknown Markdown file exists under an inspected rules directory.
+- an unknown Markdown file exists under an inspected rules directory;
+- an existing rules directory cannot be inspected;
+- a custom rule file required for the current document type exists but cannot be
+  read.
 
 Unknown Markdown examples include:
 
@@ -205,6 +215,10 @@ Blocking reason: state-validation-failed
 
 The implementation must not read or merge the stale or unknown file as a
 fallback.
+
+Unreadable custom rule files required for the current document type must not be
+silently treated as absent. Only missing files and empty readable files are
+absent.
 
 Non-Markdown files under rules directories are ignored unless the implementation
 uses them as package-owned metadata. V3 does not require such metadata.
@@ -274,6 +288,18 @@ Explicit user tokens override defaults:
 - `review-and-fix` requests automatic fixes where supported.
 - `assurance=practical|strict-verified|advisory` selects runtime assurance.
 - `strict` and `normal` select review strictness only.
+
+Explicit `review-and-fix assurance=advisory` is unsupported as a user request.
+Generated routes and internal workflow commands must not persist effective
+`Mode: review-and-fix` with `Assurance: advisory`, must not edit target files,
+and must not enter the write eligibility preflight or fix path for that
+combination.
+
+The only allowed `requestedMode: review-and-fix` plus `Assurance: advisory`
+combination is a V2 runtime downgrade path: a route originally requested
+pass-capable `review-and-fix`, a runtime probe failed with an allowed downgrade
+reason, and the effective mode is normalized to `read-only` with
+`modeNormalizedFrom: review-and-fix`.
 
 Codex and Claude Code route behavior:
 
@@ -607,6 +633,10 @@ wins.
 - Existing hard-constraint weakening rules are still rejected.
 - Legacy `RULE.md` blocks before persistent target state is written.
 - Unknown Markdown filenames under rules directories are rejected.
+- Existing rules directories that cannot be inspected are rejected before
+  persistent target state is written.
+- Custom rule files required for the current document type that cannot be read
+  are rejected before persistent target state is written.
 - Non-Markdown files under rules directories are ignored unless package-owned
   metadata is explicitly implemented.
 - Project-root `.docs-review-fix/rules/` is not treated as a target state
@@ -628,6 +658,12 @@ wins.
 - Help-style or invalid invocations still explain usage without reading targets,
   running probes, creating state, or declaring review results.
 - Codex and Claude Code `assurance=advisory` without mode selects `read-only`.
+- Explicit `review-and-fix assurance=advisory` is unsupported as a user request,
+  writes no target files, and persists no effective `review-and-fix` advisory
+  state.
+- Runtime downgrade from pass-capable `review-and-fix` to advisory preserves
+  requested mode as `review-and-fix`, normalizes effective mode to `read-only`,
+  and records `modeNormalizedFrom: review-and-fix`.
 - Gemini explicit `review-and-fix` remains unsupported and does not edit target
   files.
 
