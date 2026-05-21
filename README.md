@@ -145,7 +145,7 @@ If the reviewer subagent is unavailable or invalid in Codex or Claude Code, gene
 
 Gemini is advisory-only. Gemini can run read-only advisory review, but `review-and-fix` is unsupported through no-state preflight with `unsupported-runtime-capability`; Gemini routes must not edit targets and must not declare workflow PASS.
 
-## Manual V2 Smoke
+## Manual Route Smoke
 
 Codex Practical smoke:
 

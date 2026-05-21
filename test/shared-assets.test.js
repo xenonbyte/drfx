@@ -205,11 +205,12 @@ test('package file list excludes README-zh, project-local state, and local desig
   assert.equal(packageJson.files.some((entry) => entry === 'design/' || entry.startsWith('design/')), false);
 });
 
-test('manual v2 smoke docs record runtime limitations without placeholders', () => {
+test('manual route smoke docs record runtime limitations without placeholders', () => {
   const readme = read('README.md');
   const receipt = read('docs/manual-smoke-v2.md');
 
-  assert.match(readme, /## Manual V2 Smoke/);
+  assert.match(readme, /## Manual (?:Route )?Smoke/);
+  assert.doesNotMatch(readme, /## Manual V2 Smoke/);
   assert.match(receipt, /## Codex Practical/);
   assert.match(receipt, /## Claude Code/);
   assert.match(receipt, /installed: codex/);
@@ -539,7 +540,7 @@ test('public docs no longer teach legacy RULE.md as supported configuration', ()
 
   assert.doesNotMatch(readme, /Optional custom rule files:\s*```text\s*~\/\.docs-review-fix\/RULE\.md/is);
   assert.doesNotMatch(readme, /Example `RULE\.md` shape/i);
-  assert.doesNotMatch(longTask, /\.docs-review-fix\/RULE\.md is shared project configuration/i);
+  assert.doesNotMatch(longTask, /`?\.docs-review-fix\/RULE\.md`? is shared project configuration/i);
   assert.doesNotMatch(sourceSkills, /Without an explicit mode token, explain usage only/i);
 
   assert.match(readme, /~\/\.docs-review-fix\/rules\/COMMON\.md/);
@@ -599,7 +600,7 @@ test('source skills individually document v3 defaults and concise debug output',
     assert.match(skill, /missing mode selects `review-and-fix` and missing assurance selects `practical`/, relativePath);
     assert.match(skill, /Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code/, relativePath);
     assert.match(skill, /Gemini generated routes select `read-only assurance=advisory` by default/, relativePath);
-    assert.match(skill, /Help-style or invalid invocations explain usage only and do not read files or run workflow commands/, relativePath);
+    assert.match(skill, /Help-style or invalid invocations explain usage only and do not read files, run workflow commands, run probes, create state, or declare review results/, relativePath);
     assert.match(skill, /Pass `debug` to print redacted workflow audit details/, relativePath);
     assert.match(skill, /Default output is concise/, relativePath);
     assert.match(skill, /must not expose raw workflow JSON, prompt text, subagent transcripts, or internal issue IDs/, relativePath);
@@ -618,7 +619,7 @@ test('public docs and source skills omit stale v2 rule and mode wording', () => 
   ].join('\n\n');
 
   assert.doesNotMatch(publicText, /Rule heading restrictions are strict/i);
-  assert.doesNotMatch(publicText, /\.docs-review-fix\/RULE\.md is shared project configuration/i);
+  assert.doesNotMatch(publicText, /`?\.docs-review-fix\/RULE\.md`? is shared project configuration/i);
   assert.doesNotMatch(publicText, /No mode token means explain only/i);
   assert.doesNotMatch(publicText, /Without an explicit mode token, explain usage only/i);
   assert.doesNotMatch(publicText, /`read-only` or `review-and-fix` is required to start workflow/i);
