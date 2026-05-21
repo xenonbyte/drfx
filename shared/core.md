@@ -16,7 +16,7 @@ The initial `review` and every `full re-review` must inspect the whole target do
 
 The generated route coordinates host LLM work with deterministic `drfx workflow ...` commands. The CLI validates inputs, guards, state, tokens, and machine payload shapes. It does not perform semantic review, semantic triage, target edits, diff judgment, or final coordinator agreement.
 
-If a user invocation omits `read-only` and `review-and-fix`, the route explains usage only. It must not read target/reference bodies, run workflow commands, run runtime probes, create state, or declare a review result.
+Generated Codex and Claude Code routes default a valid target invocation to `review-and-fix assurance=practical` when mode and assurance are omitted. Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code. Generated Gemini routes default a valid target invocation to `read-only assurance=advisory`. Help-style or invalid invocations explain usage only and must not read target/reference bodies, run workflow commands, run probes, create state, or declare a review result.
 
 `assurance=practical|strict-verified|advisory` selects runtime assurance. `strict` and `normal` select review strictness only.
 

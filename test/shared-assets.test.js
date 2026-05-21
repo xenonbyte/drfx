@@ -380,6 +380,21 @@ test('generated route text separates advisory no-state read-only commands', () =
   }
 });
 
+test('rendered route text omits stale missing-mode explain-only contract', () => {
+  const renderedRoutes = [
+    renderPlatformRoute('codex', 'review-fix-spec', { packageVersion: '0.0.0-test' }),
+    renderPlatformRoute('claude', 'review-fix-spec', { packageVersion: '0.0.0-test' }),
+    renderPlatformRoute('gemini', 'review-fix-spec', { packageVersion: '0.0.0-test' })
+  ].join('\n\n--- rendered route boundary ---\n\n');
+
+  assert.doesNotMatch(renderedRoutes, /omits `?read-only`? and `?review-and-fix`?[^.]*explains usage only/i);
+  assert.doesNotMatch(renderedRoutes, /Without an explicit mode token, explain usage only/i);
+  assert.match(renderedRoutes, /Codex and Claude Code routes default a valid target invocation to `review-and-fix assurance=practical`/);
+  assert.match(renderedRoutes, /Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code/);
+  assert.match(renderedRoutes, /Gemini routes default a valid target invocation to `read-only assurance=advisory`/);
+  assert.match(renderedRoutes, /Help-style or invalid invocations explain usage only and must not read target\/reference bodies, run workflow commands, run probes, create state, or declare a review result/);
+});
+
 test('coordinator prompt uses read-only-clean instead of read-only PASS', () => {
   const coordinator = read('shared/prompts/coordinator.md');
 
