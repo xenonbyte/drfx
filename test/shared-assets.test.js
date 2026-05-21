@@ -205,12 +205,18 @@ test('package file list excludes README-zh, project-local state, and local desig
   assert.equal(packageJson.files.some((entry) => entry === 'design/' || entry.startsWith('design/')), false);
 });
 
-test('manual route smoke docs record runtime limitations without placeholders', () => {
+test('README stays usage-focused and manual smoke receipt records runtime limitations without placeholders', () => {
   const readme = read('README.md');
   const receipt = read('docs/manual-smoke-v2.md');
 
-  assert.match(readme, /## Manual (?:Route )?Smoke/);
+  assert.match(readme, /## Quick Start/);
+  assert.match(readme, /## Output/);
+  assert.match(readme, /## Troubleshooting/);
+  assert.doesNotMatch(readme, /## Manual (?:Route )?Smoke/);
   assert.doesNotMatch(readme, /## Manual V2 Smoke/);
+  assert.doesNotMatch(readme, /## Runtime Capability Behavior/);
+  assert.doesNotMatch(readme, /Manual smoke expectations/i);
+  assert.doesNotMatch(readme, /Final response requirements/i);
   assert.match(receipt, /## Codex Practical/);
   assert.match(receipt, /## Claude Code/);
   assert.match(receipt, /installed: codex/);

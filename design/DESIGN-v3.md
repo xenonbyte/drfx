@@ -2,7 +2,7 @@
 
 ## 1. Scope
 
-V3 supersedes two parts of `design/DESIGN-v2.md`:
+V3 supersedes these parts of `design/DESIGN-v2.md`:
 
 - custom rulebook configuration
 - user-facing route mode defaults
@@ -171,22 +171,27 @@ A target is write-eligible only when all of these are true:
 - the target is tracked by Git
 - the target is index-clean and worktree-clean
 - the target is not deleted, renamed, copied, unmerged, or unreadable
-- the target-only guard can run and parse Git status
+- the target-only guard passes, including rejection of unsafe non-target
+  worktree changes and parse failures
 
 If write eligibility fails, the route must stop before reviewer dispatch, before
-semantic document review, and before creating target-local workflow state unless
-an explicit audit/debug path requires a preflight receipt. The default output
-must be concise:
+semantic document review, and before creating target-local workflow state.
+Default output and `debug` output both remain non-persistent on this path. A
+future explicit `audit` or `debug-persist` token may write a preflight receipt,
+but that token must be separate from `debug` and must define the receipt path
+before implementation. The default output must be concise:
 
 ```text
-Blocked: <target> cannot be auto-fixed because it is not a clean tracked Git target.
+Blocked: <target> cannot be auto-fixed because the target or worktree is not write-eligible.
 
-Next: commit or restore the target, or rerun with read-only.
+Next: commit or restore the target and unsafe non-target worktree changes, or rerun with read-only.
 ```
 
 Debug output may include the normalized guard reason, such as
-`rollback-unavailable`, and redacted status metadata. It must not print raw file
-contents or broad worktree details.
+`rollback-unavailable`, `unexpected-worktree-change`, or
+`target-only-guard-unavailable`, and redacted status metadata. Debug output
+must not create target-local state, and it must not print raw file contents or
+broad worktree details.
 
 The preflight is only a user-experience shortcut. `begin-fix` must still rerun
 the full rollback anchor and target-only guard immediately before any target
@@ -284,7 +289,8 @@ Clean: <target> has no blocking findings.
 Verification: full-document read-only review completed.
 ```
 
-For a successful review-and-fix run, the route should use this shape:
+For a successful review-and-fix run that changed the target, the route should
+use this shape:
 
 ```text
 Pass: <target> was updated.
@@ -294,6 +300,16 @@ Fixed:
   Problem: <specific problem that was fixed>
   Change: <what changed>
 
+Verification: <short reviewer/check summary>
+```
+
+For a successful review-and-fix run that found no blocking issues and changed no
+files, the route should use this shape:
+
+```text
+Pass: <target> has no blocking findings.
+
+Files changed: none
 Verification: <short reviewer/check summary>
 ```
 
@@ -419,8 +435,11 @@ PLAN.md
 DESIGN.md
 ```
 
-The loader may inspect directory entries under `rules/` to catch typos, but it
-must only read file contents for the current document type and `COMMON`.
+For each existing `rules/` directory under the user-global and project-local
+roots, the loader must inspect directory entries to catch stale or misspelled
+Markdown configuration before workflow start writes target state. Directory
+inspection must not read file contents for unrelated document types; content
+reads remain limited to `COMMON` and the current document type.
 
 Validation rules:
 
@@ -429,7 +448,9 @@ Validation rules:
   with `Status: blocked` plus `Blocking reason: state-validation-failed` before
   writing target state. It must not read or merge the stale file.
 - Unknown Markdown files under `rules/`, such as `Spec.md`, `SPEC-RULE.md`, or
-  `REQUIREMENTS.md`, are configuration errors.
+  `REQUIREMENTS.md`, are configuration errors. Workflow start must stop with
+  `Status: blocked` plus `Blocking reason: state-validation-failed` before
+  writing target state.
 - Non-Markdown files under `rules/` are ignored unless they are used by the
   implementation as package-owned metadata. V3 does not require such metadata.
 - Custom rule file contents are plain Markdown fragments. They no longer need
@@ -501,7 +522,8 @@ Expected code changes:
   internal issue IDs by default.
 - Add a route-level `review-and-fix` write eligibility preflight that reuses the
   same Git rollback/target-only checks as `begin-fix` where possible, but runs
-  before semantic review and state creation.
+  before semantic review and state creation. The preflight must reject unsafe
+  non-target worktree changes whenever the target-only guard would reject them.
 - Keep `begin-fix` as the authoritative pre-write guard even when route-level
   preflight passed earlier.
 
@@ -560,8 +582,9 @@ Required tests:
   write eligibility.
 - `review-and-fix` stops before semantic reviewer dispatch and before target
   state creation when the target lacks Git `HEAD`, is untracked, staged, dirty,
-  ignored, deleted, renamed, copied, unmerged, unreadable, or when the
-  target-only guard is unavailable.
+  ignored, deleted, renamed, copied, unmerged, unreadable, when unsafe
+  non-target worktree changes are present, or when the target-only guard is
+  unavailable or unparseable.
 - Route-level write eligibility preflight does not replace `begin-fix`; tests
   still prove `begin-fix` blocks if the target becomes ineligible after the
   preflight.
