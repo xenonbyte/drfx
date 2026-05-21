@@ -30,7 +30,7 @@ Target-local layout:
 └── rounds/
 ```
 
-Project-root `.docs-review-fix/RULE.md` is shared project configuration, not target state. Do not write target review state to project-root `.docs-review-fix/ISSUES.md`, `.docs-review-fix/CONTINUITY.md`, or `.docs-review-fix/SUMMARY.md`.
+Project-root `.docs-review-fix/rules/` is shared project configuration, not target state. Do not write target review state to project-root `.docs-review-fix/ISSUES.md`, `.docs-review-fix/CONTINUITY.md`, `.docs-review-fix/SUMMARY.md`, or `.docs-review-fix/rules/`.
 
 ## Manifest Fields
 

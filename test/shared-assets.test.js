@@ -526,3 +526,24 @@ test('shared prompt sources include required v2 machine contracts', () => {
   assert.match(sharedText, /redaction/i);
   assert.doesNotMatch(sharedText, /raw test fixture/i);
 });
+
+test('public docs no longer teach legacy RULE.md as supported configuration', () => {
+  const readme = read('README.md');
+  const longTask = read('shared/long-task.md');
+  const sourceSkills = [
+    read('skills/review-fix-spec/SKILL.md'),
+    read('skills/review-fix-plan/SKILL.md'),
+    read('skills/review-fix-design/SKILL.md'),
+    read('skills/review-fix-doc/SKILL.md')
+  ].join('\n');
+
+  assert.doesNotMatch(readme, /Optional custom rule files:\s*```text\s*~\/\.docs-review-fix\/RULE\.md/is);
+  assert.doesNotMatch(readme, /Example `RULE\.md` shape/i);
+  assert.doesNotMatch(longTask, /\.docs-review-fix\/RULE\.md is shared project configuration/i);
+  assert.doesNotMatch(sourceSkills, /Without an explicit mode token, explain usage only/i);
+
+  assert.match(readme, /~\/\.docs-review-fix\/rules\/COMMON\.md/);
+  assert.match(readme, /\.docs-review-fix\/rules\/SPEC\.md/);
+  assert.match(readme, /Legacy `RULE\.md` is stale configuration/i);
+  assert.match(sourceSkills, /missing mode selects `review-and-fix`/i);
+});

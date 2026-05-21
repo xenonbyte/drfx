@@ -72,6 +72,9 @@ review-fix-spec docs/spec.md read-only
 review-fix-plan docs/plan.md review-and-fix strict
 review-fix-design docs/design.md read-only
 review-fix-doc docs/notes.md read-only resume
+review-fix-spec target=docs/spec.md
+review-fix-plan target=docs/plan.md
+review-fix-design target=docs/design.md debug
 review-fix-spec target=docs/spec.md review-and-fix assurance=practical
 review-fix-plan target=docs/plan.md ref=docs/spec.md review-and-fix strict
 review-fix-design target=docs/design.md ref=docs/requirements.md ref=docs/brand.md read-only assurance=advisory
@@ -90,8 +93,9 @@ Supported input tokens:
 - `read-only` and `review-and-fix` select mode; they are mutually exclusive.
 - `assurance=practical|strict-verified|advisory` selects runtime assurance. `strict` and `normal` do not select assurance.
 - `resume` resumes from target-local state.
+- `debug` prints redacted workflow audit details. Default output is concise.
 
-No mode token means explain only. A generated route must explain usage and show explicit next-step examples; it must not read files, run `drfx workflow`, create state, run probes, or declare PASS until `read-only` or `review-and-fix` is explicit.
+For valid target invocations, Codex and Claude Code routes default missing mode to `review-and-fix` and missing assurance to `practical`. Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code because advisory assurance cannot write targets. Gemini routes default missing mode to `read-only` and missing assurance to `advisory`. Help-style or invalid invocations, such as missing target, unknown usage, or explicit help, explain usage only and must not read files, run `drfx workflow`, create state, run probes, or declare review results.
 
 Parsing rules are intentionally strict. A single unlabeled target path is allowed, but once `target=` is used, unlabeled paths are rejected. Duplicate `target=` and duplicate `root=` are rejected. Unknown `key=value` tokens and unknown dash options are rejected. Paths with spaces must be shell quoted, or the host runtime must preserve the path as one `target=` or `ref=` token; the parser does not split paths. Natural-language input is accepted only when the target/reference roles are unambiguous; otherwise use explicit `target=` and `ref=`.
 
@@ -163,31 +167,21 @@ Claude Code smoke:
 Optional custom rule files:
 
 ```text
-~/.docs-review-fix/RULE.md
-.docs-review-fix/RULE.md
+~/.docs-review-fix/rules/COMMON.md
+~/.docs-review-fix/rules/SPEC.md
+~/.docs-review-fix/rules/PLAN.md
+~/.docs-review-fix/rules/DESIGN.md
+.docs-review-fix/rules/COMMON.md
+.docs-review-fix/rules/SPEC.md
+.docs-review-fix/rules/PLAN.md
+.docs-review-fix/rules/DESIGN.md
 ```
 
-Rule heading restrictions are strict: only second-level headings named `## COMMON`, `## SPEC`, `## PLAN`, and `## DESIGN` are accepted. Unknown rule headings are rejected. Custom rules may extend review expectations but may not weaken hard workflow constraints such as reviewer isolation, read-only references, full re-review, redaction, target-local state, PASS criteria, or serial fixing.
+Each custom rule file is a plain Markdown fragment. It does not need a wrapping `## SPEC`, `## PLAN`, `## DESIGN`, or `## COMMON` heading.
 
-Example `RULE.md` shape:
+For a typed review, the loader reads only `COMMON.md` plus the current document type file from user-global and project-local rules. A `SPEC` review does not read `PLAN.md` or `DESIGN.md`; a `PLAN` review does not read `SPEC.md` or `DESIGN.md`; a `DESIGN` review does not read `SPEC.md` or `PLAN.md`; a COMMON document review reads only `COMMON.md`.
 
-```markdown
-## COMMON
-
-- Apply to every document type.
-
-## SPEC
-
-- Apply only to SPEC reviews.
-
-## PLAN
-
-- Apply only to PLAN reviews.
-
-## DESIGN
-
-- Apply only to DESIGN reviews.
-```
+Legacy `RULE.md` is stale configuration. If `~/.docs-review-fix/RULE.md` or `.docs-review-fix/RULE.md` exists, workflow start blocks with `state-validation-failed` before writing target state. Unknown Markdown files under `rules/`, such as `Spec.md`, `SPEC-RULE.md`, or `REQUIREMENTS.md`, also block before target state is written.
 
 Seven-layer precedence is:
 
@@ -215,12 +209,16 @@ Project-local `.docs-review-fix/` top-level layout:
 
 ```text
 .docs-review-fix/
-  RULE.md
+  rules/
+    COMMON.md
+    SPEC.md
+    PLAN.md
+    DESIGN.md
   index.md
   targets/
 ```
 
-`RULE.md` is shared project configuration. `index.md` is project-level index material when present. `targets/<target-key>/` is single-target workflow state.
+`rules/` is shared project configuration. Legacy `RULE.md` is stale configuration that blocks workflow start before target state is written. `index.md` is project-level index material when present. `targets/<target-key>/` is single-target workflow state.
 
 Default target state layout:
 

@@ -12,12 +12,14 @@ Users must not pass type. This entry skill always treats the target as a `SPEC` 
 Invocation syntax:
 
 ```text
-review-fix-spec target=<path> [ref=<path>...] read-only|review-and-fix [strict|normal] [assurance=practical|strict-verified|advisory] [resume] [ledger=<target-local path>] [root=<project-root>]
+review-fix-spec target=<path> [ref=<path>...] [read-only|review-and-fix] [strict|normal] [assurance=practical|strict-verified|advisory] [resume] [ledger=<target-local path>] [root=<project-root>] [debug]
 ```
 
-`read-only` or `review-and-fix` is required to start workflow. If no mode is provided, explain usage only: do not read target/reference files, do not run `drfx workflow`, do not create state, and do not declare review results.
+Valid target invocations may omit mode. Codex and Claude Code generated routes select `review-and-fix assurance=practical` by default when mode and assurance are omitted; missing mode selects `review-and-fix` and missing assurance selects `practical`. Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code. Gemini generated routes select `read-only assurance=advisory` by default. Help-style or invalid invocations explain usage only and do not read files or run workflow commands.
 
 `assurance=practical|strict-verified|advisory` controls runtime assurance. `strict` and `normal` are review strictness only.
+
+Pass `debug` to print redacted workflow audit details. Default output is concise and must not expose raw workflow JSON, prompt text, subagent transcripts, or internal issue IDs in `Issues:`, `Fixed:`, or `Unfixed:` lists.
 
 Practical Mode requires a live reviewer subagent probe that returns exactly `DRFX_REVIEWER_READY`, plus verified stdin handoff for semantic payloads. If subagent delegation is unavailable or invalid, downgrade only through the allowed advisory downgrade reasons. If fingerprint guard or stdin handoff is unavailable, fail closed; stdin handoff failure is `unsafe-handoff-file`.
 
