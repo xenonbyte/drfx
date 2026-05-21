@@ -196,6 +196,60 @@ test('COMMON documents load only COMMON custom rule files', (t) => {
   ]);
 });
 
+test('missing rules directories and files return empty custom rule sets', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-v3-rules-'));
+  const homeDir = path.join(root, 'home');
+  const projectRoot = path.join(root, 'project');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  assert.deepEqual(
+    loadCustomRuleFiles({
+      projectRoot,
+      documentType: 'SPEC',
+      homeDir
+    }),
+    {
+      user: {},
+      project: {},
+      contentPaths: []
+    }
+  );
+
+  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(projectRoot, '.docs-review-fix', 'rules'), { recursive: true });
+
+  assert.deepEqual(
+    loadCustomRuleFiles({
+      projectRoot,
+      documentType: 'SPEC',
+      homeDir
+    }),
+    {
+      user: {},
+      project: {},
+      contentPaths: []
+    }
+  );
+});
+
+test('empty custom rule files are absent and do not add content paths', (t) => {
+  const fixture = makeRulesFixture(t);
+  fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'rules', 'COMMON.md'), '\n');
+  fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'rules', 'PLAN.md'), '');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'COMMON.md'), '   \n\t\n');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'PLAN.md'), '\n\n');
+
+  const loaded = loadCustomRuleFiles({
+    projectRoot: fixture.projectRoot,
+    documentType: 'PLAN',
+    homeDir: fixture.homeDir
+  });
+
+  assert.deepEqual(loaded.user, {});
+  assert.deepEqual(loaded.project, {});
+  assert.deepEqual(loaded.contentPaths, []);
+});
+
 test('rejects stale legacy RULE.md files', (t) => {
   const fixture = makeRulesFixture(t);
   fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'RULE.md'), '## COMMON\nLegacy\n');
