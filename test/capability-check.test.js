@@ -1052,8 +1052,10 @@ test('check reruns current probes and reports advisory reason', async (t) => {
   const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
   fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
   fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'rules', 'COMMON.md'), '# User rules\n');
+  fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'RULE.md'), '# Stale user rules\n');
   fs.mkdirSync(path.join(cwd, '.docs-review-fix', 'rules'), { recursive: true });
   fs.writeFileSync(path.join(cwd, '.docs-review-fix', 'rules', 'SPEC.md'), '# Project rules\n');
+  fs.writeFileSync(path.join(cwd, '.docs-review-fix', 'RULE.md'), '# Stale project rules\n');
 
   const result = await runCheck({
     homeDir,
@@ -1065,11 +1067,15 @@ test('check reruns current probes and reports advisory reason', async (t) => {
   const report = formatCheckReport(result);
 
   assert.equal(result.userRules.present, true);
+  assert.equal(result.userRules.staleRulePresent, true);
+  assert.equal(result.userRules.staleRulePath, path.join(homeDir, '.docs-review-fix', 'RULE.md'));
   assert.equal(result.projectRules.present, true);
+  assert.equal(result.projectRules.staleRulePresent, true);
+  assert.equal(result.projectRules.staleRulePath, path.join(cwd, '.docs-review-fix', 'RULE.md'));
   assert.equal(result.projectState.present, true);
   assert.match(report, /Advisory-only/i);
-  assert.match(report, /user rules: present/i);
-  assert.match(report, /project rules: present/i);
+  assert.match(report, /user rules: present; stale RULE\.md present/i);
+  assert.match(report, /project rules: present; stale RULE\.md present/i);
   assert.match(report, /project state: present/i);
 
   for (const platform of ['claude', 'codex', 'gemini']) {
