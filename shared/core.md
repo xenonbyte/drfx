@@ -50,7 +50,7 @@ The loop stops only at one of these states:
 
 - `pass`: the full-document review gate passes and the coordinator agrees.
 - `read-only-clean`: read-only mode found no blocking findings under selected strictness; this is not workflow PASS.
-- `stopped-with-deferrals`: high or medium issues are intentionally deferred with reason and owner; final response includes issue IDs, reasons, owners, and next action.
+- `stopped-with-deferrals`: high or medium issues are intentionally deferred with reason and owner; the internal workflow payload may include redacted issue IDs, reasons, owners, and next action. Default user output uses concise Unfixed/Next without internal issue IDs; debug may show redacted internal IDs and audit details.
 - `read-only-findings`: read-only mode found issues that block PASS under the selected strictness.
 - `blocked`: the workflow cannot continue until a concrete blocker is resolved.
 - `unsupported`: the runtime lacks verified reviewer isolation for automatic review-fix work.
@@ -180,7 +180,7 @@ Default user output uses concise Route Output after workflow finalization. It mu
 
 ## Read-Only Behavior
 
-In `read-only` mode, review and triage only. Do not modify the target document or reference documents. If blocking findings remain, stop as `read-only-findings` and report how to rerun in `review-and-fix` mode.
+In `read-only` mode, review and triage only. Do not modify the target document or reference documents. If blocking findings remain, stop as `read-only-findings`. Codex and Claude Code routes may tell users to rerun the same route with `review-and-fix`; Gemini routes must tell users to apply fixes manually or rerun with a Codex/Claude Code review-and-fix route.
 
 One-shot `read-only` without `ledger=` and without `resume` must not create `.docs-review-fix`, `MANIFEST.md`, `ISSUES.md`, `CONTINUITY.md`, `SUMMARY.md`, or `rounds/`. Keep fingerprints in memory unless a guard failure must be reported.
 

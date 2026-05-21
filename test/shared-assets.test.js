@@ -134,7 +134,8 @@ test('deferred issue metadata and final response next action are both documented
 
   assert.match(core, /deferred[^\n]*reason and owner/i);
   assert.match(longTask, /deferred[^\n]*reason and owner/i);
-  assert.match(core, /stopped-with-deferrals[^\n]*issue IDs[^\n]*reasons?[^\n]*owners?[^\n]*next action/i);
+  assert.match(core, /stopped-with-deferrals[^\n]*internal workflow payload[^\n]*issue IDs[^\n]*reasons?[^\n]*owners?[^\n]*next action/i);
+  assert.match(core, /Default user output[^\n]*Unfixed\/Next[^\n]*without internal issue IDs/i);
   assert.match(readme, /deferrals?[^\n]*reason[^\n]*owner[^\n]*next action/i);
 });
 
@@ -362,6 +363,7 @@ test('generated routes require coordinator-quality semantic subagents without mo
     assert.match(source, /semantic reviewer subagents inherit coordinator model quality/i);
     assert.match(source, /semantic fixer subagents inherit coordinator model quality/i);
     assert.doesNotMatch(source, /gpt-5\.5/i);
+    assert.doesNotMatch(source, /gpt-5\.[345]/i);
   }
 });
 
@@ -473,6 +475,7 @@ test('rendered routes separate default output from internal final-response paylo
   assert.doesNotMatch(renderedRoutes, /Report files changed and issue IDs fixed/i);
   assert.doesNotMatch(renderedRoutes, /Include exactly one machine block/i);
   assert.doesNotMatch(renderedRoutes, /Final response checklist: include/i);
+  assert.doesNotMatch(renderedRoutes, /final response includes issue IDs/i);
 });
 
 test('rendered gemini route keeps advisory next actions reachable', () => {
@@ -482,6 +485,7 @@ test('rendered gemini route keeps advisory next actions reachable', () => {
   assert.match(geminiRoute, /Codex\/Claude Code review-and-fix route/i);
   assert.match(geminiRoute, /review-and-fix or strict-verified is unavailable on Gemini/i);
   assert.doesNotMatch(geminiRoute, /Next: rerun with review-and-fix to apply fixes/i);
+  assert.doesNotMatch(geminiRoute, /rerun in `review-and-fix` mode/i);
 });
 
 test('codex and claude routes run write eligibility preflight before semantic review', () => {
