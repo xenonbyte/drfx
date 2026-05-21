@@ -354,6 +354,32 @@ test('generated route text materializes defaults before workflow commands', () =
   }
 });
 
+test('generated route text separates advisory no-state read-only commands', () => {
+  const cases = [
+    [read('templates/codex-skill.md.tmpl'), 'codex'],
+    [read('templates/claude-command.md.tmpl'), 'claude-code']
+  ];
+
+  for (const [template, platform] of cases) {
+    assert.match(template, /Advisory read-only no-state path/i);
+    assert.match(template, /Do not use the practical\/strict-verified ready-probe commands for advisory read-only/i);
+    assert.match(
+      template,
+      new RegExp(`drfx workflow context --no-state \\{\\{ROUTE_NAME\\}\\} target=<path> read-only --assurance advisory --runtime-platform ${platform} --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json`)
+    );
+    assert.match(
+      template,
+      new RegExp(`drfx workflow record-review --no-state \\{\\{ROUTE_NAME\\}\\} target=<path> read-only --assurance advisory --runtime-platform ${platform} --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none`)
+    );
+    assert.match(template, /Practical read-only no-state path/i);
+    assert.match(
+      template,
+      new RegExp(`--assurance <selectedAssurance> --runtime-platform ${platform} --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none`)
+    );
+    assert.match(template, /Strict-verified read-only is state-backed/i);
+  }
+});
+
 test('coordinator prompt uses read-only-clean instead of read-only PASS', () => {
   const coordinator = read('shared/prompts/coordinator.md');
 
