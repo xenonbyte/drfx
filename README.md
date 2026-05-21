@@ -164,7 +164,7 @@ Claude Code smoke:
 
 ## User-Global and Project-Local Rule Configuration
 
-Optional custom rule files:
+Supported V3 custom rule files:
 
 ```text
 ~/.docs-review-fix/rules/COMMON.md

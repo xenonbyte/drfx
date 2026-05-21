@@ -453,7 +453,7 @@ test('rendered route text omits stale missing-mode explain-only contract', () =>
   ].join('\n\n--- rendered route boundary ---\n\n');
 
   assert.doesNotMatch(renderedRoutes, /omits `?read-only`? and `?review-and-fix`?[^.]*explains usage only/i);
-  assert.doesNotMatch(renderedRoutes, /Without an explicit mode token, explain usage only/i);
+  assert.doesNotMatch(renderedRoutes, new RegExp('Without an explicit mode token' + ', explain usage only', 'i'));
   assert.match(renderedRoutes, /Codex and Claude Code routes default a valid target invocation to `review-and-fix assurance=practical`/);
   assert.match(renderedRoutes, /Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code/);
   assert.match(renderedRoutes, /Gemini routes default a valid target invocation to `read-only assurance=advisory`/);
@@ -538,10 +538,13 @@ test('public docs no longer teach legacy RULE.md as supported configuration', ()
     read('skills/review-fix-doc/SKILL.md')
   ].join('\n');
 
-  assert.doesNotMatch(readme, /Optional custom rule files:\s*```text\s*~\/\.docs-review-fix\/RULE\.md/is);
+  assert.doesNotMatch(
+    readme,
+    new RegExp(('Optional custom rule ' + 'files:') + '\\s*```text\\s*~\\/\\.docs-review-fix\\/RULE\\.md', 'is')
+  );
   assert.doesNotMatch(readme, /Example `RULE\.md` shape/i);
   assert.doesNotMatch(longTask, /`?\.docs-review-fix\/RULE\.md`? is shared project configuration/i);
-  assert.doesNotMatch(sourceSkills, /Without an explicit mode token, explain usage only/i);
+  assert.doesNotMatch(sourceSkills, new RegExp('Without an explicit mode token' + ', explain usage only', 'i'));
 
   assert.match(readme, /~\/\.docs-review-fix\/rules\/COMMON\.md/);
   assert.match(readme, /\.docs-review-fix\/rules\/SPEC\.md/);
@@ -622,7 +625,7 @@ test('public docs and source skills omit stale v2 rule and mode wording', () => 
   assert.doesNotMatch(publicText, /`?\.docs-review-fix\/RULE\.md`? is shared project configuration/i);
   assert.doesNotMatch(publicText, /`?RULE\.md`? is shared project configuration/i);
   assert.doesNotMatch(publicText, /No mode token means explain only/i);
-  assert.doesNotMatch(publicText, /Without an explicit mode token, explain usage only/i);
+  assert.doesNotMatch(publicText, new RegExp('Without an explicit mode token' + ', explain usage only', 'i'));
   assert.doesNotMatch(publicText, /`read-only` or `review-and-fix` is required to start workflow/i);
   assert.doesNotMatch(publicText, /If no mode is provided, explain usage only/i);
 });
