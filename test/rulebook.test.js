@@ -171,6 +171,19 @@ function makeRulesFixture(t) {
   return { root, homeDir, projectRoot };
 }
 
+function symlinkOrSkip(t, target, linkPath, type) {
+  try {
+    fs.symlinkSync(target, linkPath, type);
+    return true;
+  } catch (error) {
+    if (error && ['EACCES', 'ENOTSUP', 'EPERM'].includes(error.code)) {
+      t.skip(`symlinks unavailable: ${error.code}`);
+      return false;
+    }
+    throw error;
+  }
+}
+
 test('loads only COMMON and current document type rule files', (t) => {
   const fixture = makeRulesFixture(t);
   fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'rules', 'COMMON.md'), 'User common\n');
@@ -305,6 +318,43 @@ test('empty custom rule files are absent and do not add content paths', (t) => {
   assert.deepEqual(loaded.user, {});
   assert.deepEqual(loaded.project, {});
   assert.deepEqual(loaded.contentPaths, []);
+});
+
+test('rejects symlinked custom rules directories', (t) => {
+  const fixture = makeRulesFixture(t);
+  const externalRules = path.join(fixture.root, 'external-rules');
+  const rulesDir = path.join(fixture.projectRoot, '.docs-review-fix', 'rules');
+  fs.mkdirSync(externalRules);
+  fs.writeFileSync(path.join(externalRules, 'COMMON.md'), 'External common must not load\n');
+  fs.rmSync(rulesDir, { recursive: true, force: true });
+  if (!symlinkOrSkip(t, externalRules, rulesDir, 'dir')) return;
+
+  assert.throws(
+    () => loadCustomRuleFiles({
+      projectRoot: fixture.projectRoot,
+      documentType: 'SPEC',
+      homeDir: fixture.homeDir
+    }),
+    /symlink/i
+  );
+});
+
+test('rejects symlinked custom rule files before reading target content', (t) => {
+  for (const fileName of ['COMMON.md', 'SPEC.md']) {
+    const fixture = makeRulesFixture(t);
+    const linkPath = path.join(fixture.projectRoot, '.docs-review-fix', 'rules', fileName);
+    const targetPath = path.join(fixture.root, 'outside-rules', fileName);
+    if (!symlinkOrSkip(t, targetPath, linkPath, 'file')) return;
+
+    assert.throws(
+      () => loadCustomRuleFiles({
+        projectRoot: fixture.projectRoot,
+        documentType: 'SPEC',
+        homeDir: fixture.homeDir
+      }),
+      /symlink/i
+    );
+  }
 });
 
 test('rejects stale legacy RULE.md files', (t) => {
