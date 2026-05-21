@@ -547,3 +547,80 @@ test('public docs no longer teach legacy RULE.md as supported configuration', ()
   assert.match(readme, /Legacy `RULE\.md` is stale configuration/i);
   assert.match(sourceSkills, /missing mode selects `review-and-fix`/i);
 });
+
+test('README documents v3 invocation defaults and explain-only boundary', () => {
+  const readme = read('README.md');
+
+  assert.match(readme, /Codex and Claude Code routes default missing mode to `review-and-fix` and missing assurance to `practical`/);
+  assert.match(readme, /Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code/);
+  assert.match(readme, /Gemini routes default missing mode to `read-only` and missing assurance to `advisory`/);
+  assert.match(readme, /Help-style or invalid invocations[\s\S]*explain usage only[\s\S]*must not read files[\s\S]*run `drfx workflow`[\s\S]*create state[\s\S]*run probes[\s\S]*declare review results/);
+});
+
+test('README documents typed scoped custom rule reads', () => {
+  const readme = read('README.md');
+
+  assert.match(readme, /loader reads only `COMMON\.md` plus the current document type file/);
+  assert.match(readme, /A `SPEC` review does not read `PLAN\.md` or `DESIGN\.md`/);
+  assert.match(readme, /a `PLAN` review does not read `SPEC\.md` or `DESIGN\.md`/);
+  assert.match(readme, /a `DESIGN` review does not read `SPEC\.md` or `PLAN\.md`/);
+  assert.match(readme, /a COMMON document review reads only `COMMON\.md`/);
+});
+
+test('README documents unknown markdown rule files block before target state', () => {
+  const readme = read('README.md');
+
+  assert.match(readme, /Unknown Markdown files under `rules\/`/);
+  assert.match(readme, /`SPEC-RULE\.md`/);
+  assert.match(readme, /`REQUIREMENTS\.md`/);
+  assert.match(readme, /block before target state is written/);
+});
+
+test('long-task keeps project-root rules outside target state', () => {
+  const longTask = read('shared/long-task.md');
+
+  assert.match(longTask, /Project-root `\.docs-review-fix\/rules\/` is shared project configuration, not target state/);
+  assert.match(longTask, /Do not write target review state to project-root[\s\S]*`\.docs-review-fix\/rules\/`/);
+});
+
+test('source skills individually document v3 defaults and concise debug output', () => {
+  const skills = [
+    'skills/review-fix-spec/SKILL.md',
+    'skills/review-fix-plan/SKILL.md',
+    'skills/review-fix-design/SKILL.md',
+    'skills/review-fix-doc/SKILL.md'
+  ];
+
+  for (const relativePath of skills) {
+    const skill = read(relativePath);
+
+    assert.match(skill, /Valid target invocations may omit mode/, relativePath);
+    assert.match(skill, /select `review-and-fix assurance=practical` by default when mode and assurance are omitted/, relativePath);
+    assert.match(skill, /missing mode selects `review-and-fix` and missing assurance selects `practical`/, relativePath);
+    assert.match(skill, /Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code/, relativePath);
+    assert.match(skill, /Gemini generated routes select `read-only assurance=advisory` by default/, relativePath);
+    assert.match(skill, /Help-style or invalid invocations explain usage only and do not read files or run workflow commands/, relativePath);
+    assert.match(skill, /Pass `debug` to print redacted workflow audit details/, relativePath);
+    assert.match(skill, /Default output is concise/, relativePath);
+    assert.match(skill, /must not expose raw workflow JSON, prompt text, subagent transcripts, or internal issue IDs/, relativePath);
+    assert.match(skill, /`Issues:`, `Fixed:`, or `Unfixed:` lists/, relativePath);
+  }
+});
+
+test('public docs and source skills omit stale v2 rule and mode wording', () => {
+  const publicText = [
+    read('README.md'),
+    read('shared/long-task.md'),
+    read('skills/review-fix-spec/SKILL.md'),
+    read('skills/review-fix-plan/SKILL.md'),
+    read('skills/review-fix-design/SKILL.md'),
+    read('skills/review-fix-doc/SKILL.md')
+  ].join('\n\n');
+
+  assert.doesNotMatch(publicText, /Rule heading restrictions are strict/i);
+  assert.doesNotMatch(publicText, /\.docs-review-fix\/RULE\.md is shared project configuration/i);
+  assert.doesNotMatch(publicText, /No mode token means explain only/i);
+  assert.doesNotMatch(publicText, /Without an explicit mode token, explain usage only/i);
+  assert.doesNotMatch(publicText, /`read-only` or `review-and-fix` is required to start workflow/i);
+  assert.doesNotMatch(publicText, /If no mode is provided, explain usage only/i);
+});
