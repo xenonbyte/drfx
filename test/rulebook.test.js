@@ -357,6 +357,22 @@ test('rejects symlinked custom rule files before reading target content', (t) =>
   }
 });
 
+test('rejects symlinked allowed rule files that are not selected for reading', (t) => {
+  const fixture = makeRulesFixture(t);
+  const linkPath = path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'PLAN.md');
+  const targetPath = path.join(fixture.root, 'outside-rules', 'PLAN.md');
+  if (!symlinkOrSkip(t, targetPath, linkPath, 'file')) return;
+
+  assert.throws(
+    () => loadCustomRuleFiles({
+      projectRoot: fixture.projectRoot,
+      documentType: 'SPEC',
+      homeDir: fixture.homeDir
+    }),
+    /symlink/i
+  );
+});
+
 test('rejects stale legacy RULE.md files', (t) => {
   const fixture = makeRulesFixture(t);
   fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'RULE.md'), '## COMMON\nLegacy\n');
