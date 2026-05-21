@@ -4,4 +4,3 @@ docs/superpowers/
 *.tgz
 npm-debug.log*
 .codegraph
-design/
