@@ -3,3 +3,5 @@ docs/superpowers/
 .DS_Store
 *.tgz
 npm-debug.log*
+.codegraph
+design/
