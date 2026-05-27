@@ -6,7 +6,7 @@
 
 - `guard=snapshot` opt-in route mode for non-git rollback/guard flows, including snapshot capture/restore and end-to-end workflow coverage.
 - Bare-path invocation as the recommended form, for example `review-fix-spec docs/spec.md`.
-- Simplified Chinese README at `README.zh-CN.md`.
+- Simplified Chinese README at `docs/README.zh-CN.md`.
 
 ### Changed
 

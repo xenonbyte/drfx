@@ -287,6 +287,17 @@ test('package file list excludes README-zh, project-local state, and local desig
   assert.equal(packageJson.files.some((entry) => entry === 'design/' || entry.startsWith('design/')), false);
 });
 
+test('package avoids lifecycle hooks that hide tracked localized README files', () => {
+  const packageJson = JSON.parse(read('package.json'));
+
+  assert.equal(packageJson.scripts.prepack, undefined);
+  assert.equal(packageJson.scripts.postpack, undefined);
+  assert.equal(fs.existsSync(path.join(ROOT, 'scripts', 'pack-readme-zh.js')), false);
+  assert.equal(fs.existsSync(path.join(ROOT, 'README.zh-CN.md')), false);
+  assert.equal(fs.existsSync(path.join(ROOT, 'docs', 'README.zh-CN.md')), true);
+  assert.match(read('README.md'), /docs\/README\.zh-CN\.md/);
+});
+
 test('usage examples prefer bare target paths while preserving target form and guard tokens', () => {
   const readme = read('README.md');
   const core = read('shared/core.md');

@@ -36,11 +36,22 @@ function makeGitFixture(t, { commit = true } = {}) {
   return { root, target };
 }
 
-function writePreflightArgs(target, assurance = 'practical') {
+function makeNonGitFixture(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-v3-preflight-non-git-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  const target = path.join(root, 'docs', 'target.md');
+  fs.writeFileSync(target, '# Target\n');
+  return { root, target };
+}
+
+function writePreflightArgs(target, assurance = 'practical', options = {}) {
+  const guardToken = options.guardMode ? [`guard=${options.guardMode}`] : [];
   return [
     'review-fix-spec',
     `target=${target}`,
     'review-and-fix',
+    ...guardToken,
     '--assurance',
     assurance,
     '--runtime-platform',
@@ -544,6 +555,23 @@ test('write eligibility preflight passes for clean tracked target without creati
   assert.equal(result.ok, true);
   assert.equal(result.status, 'write-eligible');
   assert.equal(result.mode, 'review-and-fix');
+  assertNoPreflightState(fixture.root);
+});
+
+test('write eligibility preflight honors snapshot guard outside git before creating state', async (t) => {
+  const fixture = makeNonGitFixture(t);
+  const result = await runWorkflowCommand(
+    'preflight',
+    writePreflightArgs(fixture.target, 'practical', { guardMode: 'snapshot' }),
+    { cwd: fixture.root }
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'write-eligible');
+  assert.equal(result.guardMode, 'snapshot');
+  assert.equal(result.rollbackAnchor.guardMode, 'snapshot');
+  assert.equal(result.targetOnlyGuard.guardMode, 'snapshot');
+  assert.equal(result.targetOnlyGuard.status, 'passed');
   assertNoPreflightState(fixture.root);
 });
 
