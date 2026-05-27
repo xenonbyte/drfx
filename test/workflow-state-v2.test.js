@@ -23,6 +23,7 @@ function makeManifest(overrides = {}) {
     documentType: 'SPEC',
     strictness: 'normal',
     mode: 'review-and-fix',
+    guardMode: 'git',
     targetKey: 'spec-md-aaaaaaaaaaaa',
     ledgerPath: '.docs-review-fix/targets/spec-md-aaaaaaaaaaaa/ISSUES.md',
     status: 'review',
@@ -66,6 +67,7 @@ test('formats and parses schema-2 manifest with required runtime fields', () => 
   assert.equal(parsed.manifestSchema, 2);
   assert.equal(parsed.status, 'review');
   assert.equal(parsed.currentPhase, 'review');
+  assert.equal(parsed.guardMode, 'git');
   assert.equal(parsed.assurance, 'practical');
   assert.equal(parsed.runtimePlatform, 'codex');
   assert.equal(parsed.runtimeSubagentProbeEvidence, 'route-asserted-ready');
@@ -103,6 +105,10 @@ test('schema-2 manifest rejects duplicates, missing fields, unknown enums, and i
     /unknown enum/i
   );
   assert.throws(
+    () => parseManifestV2(validText.replace('Guard mode: git', 'Guard mode: unknown')),
+    /guard mode/i
+  );
+  assert.throws(
     () => formatManifestV2(makeManifest({ status: 'fix', currentPhase: 'review' })),
     /current phase/i
   );
@@ -110,6 +116,13 @@ test('schema-2 manifest rejects duplicates, missing fields, unknown enums, and i
     () => formatManifestV2(makeManifest({ status: 'pass', currentPhase: 'review' })),
     /current phase/i
   );
+});
+
+test('schema-2 manifest defaults missing legacy guard mode to git', () => {
+  const text = formatManifestV2(makeManifest()).replace('Guard mode: git\n', '');
+  const parsed = parseManifestV2(text);
+  assert.equal(parsed.guardMode, 'git');
+  assert.match(formatManifestV2(parsed), /Guard mode: git/);
 });
 
 test('schema-2 manifest rejects illegal mode and assurance combinations', () => {
@@ -193,6 +206,7 @@ test('workflowJson includes stable blocker and reason fields', () => {
     strictness: 'normal',
     requestedMode: 'review-and-fix',
     mode: 'read-only',
+    guardMode: 'snapshot',
     modeSource: 'explicit',
     modeNormalizedFrom: 'review-and-fix',
     requestedAssurance: 'strict-verified',
@@ -218,6 +232,7 @@ test('workflowJson includes stable blocker and reason fields', () => {
   assert.equal(output.ledgerPath, null);
   assert.equal(output.requestedMode, 'review-and-fix');
   assert.equal(output.mode, 'read-only');
+  assert.equal(output.guardMode, 'snapshot');
   assert.equal(output.requestedAssurance, 'strict-verified');
   assert.equal(output.assurance, 'advisory');
   assert.equal(output.descriptorPlatform, 'codex');

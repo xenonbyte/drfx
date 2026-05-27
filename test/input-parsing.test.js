@@ -56,7 +56,12 @@ test('preserves v1 parser behavior when options are omitted', () => {
 });
 
 test('parses workflow metadata when includeMetadata is true', () => {
-  const parsed = parseInvocation('review-fix-spec', ['target=docs/spec.md', 'read-only', 'assurance=practical'], {
+  const parsed = parseInvocation('review-fix-spec', [
+    'target=docs/spec.md',
+    'read-only',
+    'assurance=practical',
+    'guard=snapshot'
+  ], {
     defaultMode: 'read-only',
     defaultAssurance: 'practical',
     includeMetadata: true
@@ -67,6 +72,7 @@ test('parses workflow metadata when includeMetadata is true', () => {
   assert.equal(parsed.modeNormalizedFrom, null);
   assert.equal(parsed.requestedAssurance, 'practical');
   assert.equal(parsed.assuranceSource, 'explicit');
+  assert.equal(parsed.guardMode, 'snapshot');
 });
 
 test('workflow metadata keeps strictness separate from assurance', () => {
@@ -77,6 +83,21 @@ test('workflow metadata keeps strictness separate from assurance', () => {
   });
   assert.equal(parsed.strictness, 'strict');
   assert.equal(parsed.requestedAssurance, 'advisory');
+  assert.equal(parsed.guardMode, 'git');
+});
+
+test('parses guard token with git default and rejects invalid or duplicate guard mode', () => {
+  assert.equal(parseInvocation('review-fix-spec', ['target=docs/spec.md']).guardMode, 'git');
+  assert.equal(parseInvocation('review-fix-spec', ['target=docs/spec.md', 'guard=git']).guardMode, 'git');
+  assert.equal(parseInvocation('review-fix-spec', ['target=docs/spec.md', 'guard=snapshot']).guardMode, 'snapshot');
+  assert.throws(
+    () => parseInvocation('review-fix-spec', ['target=docs/spec.md', 'guard=none']),
+    /guard/i
+  );
+  assert.throws(
+    () => parseInvocation('review-fix-spec', ['target=docs/spec.md', 'guard=git', 'guard=snapshot']),
+    /duplicate guard/i
+  );
 });
 
 test('rejects duplicate target and duplicate root', () => {

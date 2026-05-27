@@ -56,6 +56,13 @@ const FIX_REPORT = [
 ].join('\n');
 
 const DIFF_OK = 'DIFF-OK\nSummary: Target-only edit addresses ISSUE-001.\n';
+const DIFF_FAIL = [
+  'DIFF-FAIL',
+  'Findings:',
+  '- issue_id: ISSUE-001',
+  '  problem: The change still leaves ambiguous wording.',
+  '  required_action: Rewrite the sentence again.'
+].join('\n');
 const REVIEW_PASS = 'PASS\nSummary: No blocking findings.\n';
 
 const FINAL_PASS = [
@@ -125,13 +132,31 @@ function makeWorkflowRepo(t) {
   };
 }
 
-function workflowStartArgs(fixture, mode, assurance, runtimePlatform) {
+function makeNonGitWorkflowFixture(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-e2e-non-git-'));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-e2e-home-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  fs.copyFileSync(path.join(FIXTURE_ROOT, 'practical-target.md'), path.join(root, 'docs', 'practical-target.md'));
+  fs.copyFileSync(path.join(FIXTURE_ROOT, 'reference.md'), path.join(root, 'docs', 'reference.md'));
+  return {
+    root,
+    homeDir,
+    target: path.join(root, 'docs', 'practical-target.md'),
+    reference: path.join(root, 'docs', 'reference.md')
+  };
+}
+
+function workflowStartArgs(fixture, mode, assurance, runtimePlatform, options = {}) {
+  const guardToken = options.guardMode ? [`guard=${options.guardMode}`] : [];
   return [
     'review-fix-design',
     `root=${fixture.root}`,
     `target=${fixture.target}`,
     `ref=${fixture.reference}`,
     mode,
+    ...guardToken,
     '--assurance',
     assurance,
     '--runtime-platform',
@@ -201,7 +226,7 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
   const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], workflowOptions(fixture, {
     now: new Date('2026-05-21T00:00:00.000Z')
   }));
-  assert.equal(beginFix.ok, true);
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
   assert.equal(beginFix.status, 'begin-fix');
   assertFileExists(beginFix.fixGuardReportPath);
 
@@ -334,6 +359,7 @@ test('persistent start uses stale project RULE.md as root marker before falling 
     `target=${path.join(docsDir, 'practical-target.md')}`,
     `ref=${path.join(docsDir, 'reference.md')}`,
     'review-and-fix',
+    'guard=snapshot',
     '--assurance',
     'practical',
     '--runtime-platform',
@@ -409,6 +435,158 @@ test('persistent start rejects unknown markdown file under project rules', async
   assert.equal(result.blockingReason, 'state-validation-failed');
   assert.match(result.message, /unknown custom rule file|SPEC-RULE\.md/i);
   assert.equal(fs.existsSync(path.join(fixture.root, '.docs-review-fix', 'targets')), false);
+});
+
+test('persistent start rejects default git guard outside a git worktree', async (t) => {
+  const fixture = makeNonGitWorkflowFixture(t);
+
+  const result = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'unsupported');
+  assert.equal(result.statusReason, 'git-guard-unavailable');
+  assert.equal(result.blockingReason, 'none');
+  assert.equal(fs.existsSync(path.join(fixture.root, '.docs-review-fix')), false);
+});
+
+test('non-git snapshot guard workflow reaches pass with target-only diff', async (t) => {
+  const fixture = makeNonGitWorkflowFixture(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'snapshot' });
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  assert.equal(start.ok, true);
+  assert.equal(start.status, 'review');
+  assert.equal(start.guardMode, 'snapshot');
+  assertManifestPhase(start.manifestPath, 'review', 'review');
+  assert.equal(manifestAt(start.manifestPath).guardMode, 'snapshot');
+
+  assert.equal((await runWorkflowCommand('context', startArgs, workflowOptions(fixture))).ok, true);
+  assert.equal((await runWorkflowCommand('record-review', [
+    ...startArgs,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], workflowOptions(fixture, { stdin: REVIEW_FAIL }))).ok, true);
+  assert.equal((await runWorkflowCommand('record-triage', [
+    ...startArgs,
+    '--triage-stdin'
+  ], workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }))).ok, true);
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], workflowOptions(fixture, {
+    now: new Date('2026-05-27T00:00:00.000Z')
+  }));
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+  assertFileExists(path.join(start.targetStateDir, 'snapshots', 'round-001', 'target.body'));
+
+  fs.writeFileSync(
+    fixture.target,
+    [
+      '# Practical Workflow Target',
+      '',
+      'The document now states the expected behavior directly for implementers.',
+      '',
+      '## Acceptance',
+      '',
+      '- The final wording names the expected behavior.',
+      ''
+    ].join('\n')
+  );
+
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], workflowOptions(fixture, { stdin: FIX_REPORT }));
+  assert.equal(endFix.ok, true);
+  assert.equal(endFix.status, 'end-fix');
+  assertManifestPhase(start.manifestPath, 'diff-review', 'diff-review');
+
+  assert.equal((await runWorkflowCommand('record-diff-review', [
+    start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], workflowOptions(fixture, { stdin: DIFF_OK }))).ok, true);
+  assert.equal((await runWorkflowCommand('context', [
+    ...startArgs,
+    '--phase',
+    'full-re-review'
+  ], workflowOptions(fixture))).ok, true);
+  assert.equal((await runWorkflowCommand('record-review', [
+    ...startArgs,
+    '--phase',
+    'full-re-review',
+    '--result-stdin'
+  ], workflowOptions(fixture, { stdin: REVIEW_PASS }))).ok, true);
+
+  const final = await runWorkflowCommand('finalize', [
+    start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], workflowOptions(fixture, { stdin: FINAL_PASS }));
+  assert.equal(final.ok, true);
+  assert.equal(final.status, 'pass');
+  assert.equal(assertManifestPhase(start.manifestPath, 'pass', 'final').guardMode, 'snapshot');
+});
+
+test('non-git snapshot guard abort-fix restores the second fix attempt snapshot', async (t) => {
+  const fixture = makeNonGitWorkflowFixture(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'snapshot' });
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  assert.equal((await runWorkflowCommand('context', startArgs, workflowOptions(fixture))).ok, true);
+  assert.equal((await runWorkflowCommand('record-review', [
+    ...startArgs,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], workflowOptions(fixture, { stdin: REVIEW_FAIL }))).ok, true);
+  assert.equal((await runWorkflowCommand('record-triage', [
+    ...startArgs,
+    '--triage-stdin'
+  ], workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }))).ok, true);
+
+  {
+    const begin = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], workflowOptions(fixture));
+    assert.equal(begin.ok, true, JSON.stringify(begin));
+  }
+  const firstFixedBody = [
+    '# Practical Workflow Target',
+    '',
+    'First fix still needs another pass.',
+    ''
+  ].join('\n');
+  fs.writeFileSync(fixture.target, firstFixedBody);
+  assert.equal((await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], workflowOptions(fixture, { stdin: FIX_REPORT }))).ok, true);
+
+  const diffFail = await runWorkflowCommand('record-diff-review', [
+    start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], workflowOptions(fixture, { stdin: DIFF_FAIL }));
+  assert.equal(diffFail.ok, true);
+  assert.equal(diffFail.currentPhase, 'fix');
+
+  const secondBegin = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], workflowOptions(fixture));
+  assert.equal(secondBegin.ok, true, JSON.stringify(secondBegin));
+  fs.writeFileSync(fixture.target, '# Practical Workflow Target\n\nSecond attempt should be reverted.\n');
+
+  const aborted = await runWorkflowCommand('abort-fix', [
+    start.targetStateDir,
+    '--status',
+    'blocked',
+    '--reason',
+    'diff-review-failed',
+    '--next-action',
+    'manual repair',
+    '--json'
+  ], workflowOptions(fixture));
+
+  assert.equal(aborted.ok, true);
+  assert.equal(aborted.status, 'blocked');
+  assert.equal(fs.readFileSync(fixture.target, 'utf8'), firstFixedBody);
+  assert.equal(readLease({ projectRoot: fixture.root, targetKey: start.targetKey }), null);
 });
 
 test('no-state read-only fixture finalizes read-only-clean without state', async (t) => {
