@@ -578,10 +578,11 @@ test('generated route text materializes defaults before workflow commands', () =
   const claudeTemplate = read('templates/claude-command.md.tmpl');
 
   for (const template of [codexTemplate, claudeTemplate]) {
-    assert.match(template, /materialize effective `<selectedMode>` and `<selectedAssurance>`/i);
-    assert.match(template, /never pass omitted mode or assurance through to `drfx workflow`/i);
+    assert.match(template, /materialize effective `<selectedMode>`, `<selectedAssurance>`, and `<selectedGuard>`/i);
+    assert.match(template, /never pass omitted mode, assurance, or guard through to `drfx workflow`/i);
     assert.match(template, /compute `<selectedMode>` from explicit mode, defaults, and advisory override/i);
     assert.match(template, /compute `<selectedAssurance>` from explicit assurance or platform default/i);
+    assert.match(template, /compute `<selectedGuard>` from explicit guard or default `git`/i);
     assert.doesNotMatch(template, /Let `<selectedMode>` be the user's explicit mode/i);
     assert.doesNotMatch(template, /pass the user's raw invocation to `drfx workflow`/i);
   }
@@ -590,7 +591,7 @@ test('generated route text materializes defaults before workflow commands', () =
     renderPlatformRoute('codex', 'review-fix-spec', { packageVersion: '0.0.0-test' }),
     renderPlatformRoute('claude', 'review-fix-spec', { packageVersion: '0.0.0-test' })
   ]) {
-    assert.match(rendered, /generated route must materialize effective mode and assurance before workflow calls/i);
+    assert.match(rendered, /generated route must materialize effective mode, assurance, and guard before workflow calls/i);
     assert.match(rendered, /never pass omitted values through to `drfx workflow`/i);
   }
 });
@@ -633,16 +634,16 @@ test('generated route text separates advisory no-state read-only commands', () =
     assert.match(template, /Do not use the practical\/strict-verified ready-probe commands for advisory read-only/i);
     assert.match(
       template,
-      new RegExp(`drfx workflow context --no-state ${routeName} target=<path> read-only --assurance advisory --runtime-platform ${platform} --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json`)
+      new RegExp(`drfx workflow context --no-state ${routeName} target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform ${platform} --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json`)
     );
     assert.match(
       template,
-      new RegExp(`drfx workflow record-review --no-state ${routeName} target=<path> read-only --assurance advisory --runtime-platform ${platform} --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none`)
+      new RegExp(`drfx workflow record-review --no-state ${routeName} target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform ${platform} --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none`)
     );
     assert.match(template, /Practical read-only no-state path/i);
     assert.match(
       template,
-      new RegExp(`--assurance <selectedAssurance> --runtime-platform ${platform} --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none`)
+      new RegExp(`read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform ${platform} --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none`)
     );
     assert.match(template, /Strict-verified read-only is state-backed/i);
   }
@@ -701,6 +702,26 @@ test('codex and claude routes run write eligibility preflight before semantic re
     assert.match(template, /drfx workflow preflight/i);
     assert.match(template, /before runtime readiness probe, semantic reviewer dispatch, semantic document review, and target-local workflow state creation/i);
     assert.match(template, /cannot be auto-fixed because it lacks a clean rollback anchor/i);
+  }
+});
+
+test('generated route workflow commands pass the materialized guard token', () => {
+  const renderedRoutes = [
+    renderPlatformRoute('codex', 'review-fix-spec', { packageVersion: '0.0.0-test' }),
+    renderPlatformRoute('claude', 'review-fix-spec', { packageVersion: '0.0.0-test' }),
+    renderPlatformRoute('gemini', 'review-fix-spec', { packageVersion: '0.0.0-test' })
+  ];
+
+  for (const route of renderedRoutes) {
+    assert.match(route, /<selectedGuard>/);
+    const routedWorkflowCommands = route
+      .split('\n')
+      .filter((line) => /drfx workflow /.test(line))
+      .filter((line) => /review-fix-spec target=<path>/.test(line));
+    assert.ok(routedWorkflowCommands.length > 0);
+    for (const command of routedWorkflowCommands) {
+      assert.match(command, /guard=<selectedGuard>/, command);
+    }
   }
 });
 

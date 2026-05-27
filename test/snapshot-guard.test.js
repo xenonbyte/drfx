@@ -18,16 +18,19 @@ function makeWorkspace(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-snapshot-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'docs', 'nested'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'other'), { recursive: true });
   const target = path.join(root, 'docs', 'target.md');
   const sibling = path.join(root, 'docs', 'sibling.md');
   const nested = path.join(root, 'docs', 'nested', 'nested.md');
+  const other = path.join(root, 'other', 'file.md');
   const reference = path.join(root, 'refs.md');
   fs.writeFileSync(target, '# Target\n\nOriginal.\n');
   fs.writeFileSync(sibling, '# Sibling\n');
   fs.writeFileSync(nested, '# Nested\n');
+  fs.writeFileSync(other, '# Other\n');
   fs.writeFileSync(reference, '# Reference\n');
   const targetStateDir = path.join(root, '.docs-review-fix', 'targets', 'target-md-aaaaaaaaaaaa');
-  return { root, target, sibling, nested, reference, targetStateDir };
+  return { root, target, sibling, nested, other, reference, targetStateDir };
 }
 
 test('snapshot rollback anchor rejects missing and symlink targets', (t) => {
@@ -58,7 +61,7 @@ test('snapshot rollback anchor rejects missing and symlink targets', (t) => {
   );
 });
 
-test('snapshot target-only guard monitors target directory direct files and explicit refs only', (t) => {
+test('snapshot target-only guard monitors project tree files and explicit refs', (t) => {
   const fixture = makeWorkspace(t);
   const baseline = checkSnapshotTargetOnly({
     projectRoot: fixture.root,
@@ -68,9 +71,11 @@ test('snapshot target-only guard monitors target directory direct files and expl
     referencePaths: [fixture.reference]
   });
   assert.equal(baseline.status, 'passed');
+  assert.equal(baseline.monitorScope, 'project-tree-files-and-references');
+  assert.ok(baseline.entries.some((entry) => entry.path === 'docs/nested/nested.md'));
+  assert.ok(baseline.entries.some((entry) => entry.path === 'other/file.md'));
 
   fs.appendFileSync(fixture.target, '\nFixed.\n');
-  fs.appendFileSync(fixture.nested, '\nOut of scope.\n');
   let actual = inspectActualChangedFilesSnapshot({
     projectRoot: fixture.root,
     targetPath: fixture.target,
@@ -114,6 +119,52 @@ test('snapshot target-only guard blocks reference changes as unexpected worktree
 
   assert.equal(actual.status, 'blocked');
   assert.equal(actual.blockingReason, 'unexpected-worktree-change');
+});
+
+test('snapshot target-only guard blocks nested non-target changes', (t) => {
+  const fixture = makeWorkspace(t);
+  const baseline = checkSnapshotTargetOnly({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+  fs.appendFileSync(fixture.nested, '\nNested non-target change.\n');
+
+  const actual = inspectActualChangedFilesSnapshot({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md',
+    targetOnlyGuard: baseline
+  });
+
+  assert.equal(actual.status, 'blocked');
+  assert.equal(actual.blockingReason, 'unexpected-worktree-change');
+});
+
+test('snapshot target-only guard blocks non-target changes outside target directory', (t) => {
+  const fixture = makeWorkspace(t);
+  const baseline = checkSnapshotTargetOnly({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+  fs.appendFileSync(fixture.target, '\nTarget change.\n');
+  fs.appendFileSync(fixture.other, '\nOther project file change.\n');
+
+  const actual = inspectActualChangedFilesSnapshot({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md',
+    targetOnlyGuard: baseline
+  });
+
+  assert.equal(actual.status, 'blocked');
+  assert.equal(actual.blockingReason, 'unexpected-worktree-change');
+  assert.equal(actual.changedFiles, undefined);
 });
 
 test('snapshot capture rejects symlinked snapshot parent directory', (t) => {
@@ -266,4 +317,36 @@ test('snapshot restore rejects symlinked snapshot parent directory', (t) => {
     }),
     (error) => error && error.blockingReason === 'rollback-unavailable'
   );
+});
+
+test('snapshot restore rejects missing target when parent was replaced by symlink', (t) => {
+  const fixture = makeWorkspace(t);
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-snapshot-parent-symlink-'));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  const snapshot = captureSnapshot({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    targetStateDir: fixture.targetStateDir,
+    round: 5,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+
+  fs.rmSync(path.join(fixture.root, 'docs'), { recursive: true, force: true });
+  fs.symlinkSync(outside, path.join(fixture.root, 'docs'));
+
+  assert.throws(
+    () => restoreSnapshot({
+      projectRoot: fixture.root,
+      targetPath: fixture.target,
+      targetStateDir: fixture.targetStateDir,
+      round: 5,
+      expectedNormalizedTarget: 'docs/target.md',
+      rollbackAnchor: snapshot
+    }),
+    (error) => {
+      assert.equal(error.blockingReason, 'rollback-unavailable');
+      return true;
+    }
+  );
+  assert.equal(fs.existsSync(path.join(outside, 'target.md')), false);
 });

@@ -39,6 +39,8 @@ If a valid target invocation omits mode, missing mode selects read-only. If it o
 
 Help-style or invalid invocations explain usage only. Do not read the target or reference bodies, do not run workflow commands, do not run probes, do not create state, and do not declare a review result.
 
+Before any drfx workflow command, materialize <selectedGuard> from explicit guard or default git, and pass guard=<selectedGuard> to the workflow command.
+
 Route output:
 
 Default output is concise. It must not print `Goal / Now / Next / Open Questions`, the 14-line final-response machine block, raw workflow JSON, runtime probe transcripts, reviewer/fixer prompt text, or raw subagent transcripts.
@@ -97,7 +99,7 @@ When debug is present, generated routes may print the final-response machine blo
 
 review-and-fix is unsupported on Gemini. Before reading target/reference bodies or generating any semantic payload, return the unsupported result through no-state preflight:
 
-drfx workflow preflight --no-state {{ROUTE_NAME}} target=<path> review-and-fix --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --terminal-status unsupported --blocking-reason none --status-reason unsupported-runtime-capability --json
+drfx workflow preflight --no-state {{ROUTE_NAME}} target=<path> review-and-fix guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --terminal-status unsupported --blocking-reason none --status-reason unsupported-runtime-capability --json
 
 If the user requests strict verified assurance, explain that Gemini remains advisory-only and do not issue a strict verified workflow command.
 
@@ -106,15 +108,15 @@ Read-only advisory flow:
 2. On stdin handoff failure, fail closed as unsafe-handoff-file before semantic handoff. Do not use shell pipes, heredocs, herestrings, command substitution, argv, environment variables, env vars, or raw temp files for semantic payloads.
 3. Start review-backed no-state context:
 
-drfx workflow context --no-state {{ROUTE_NAME}} target=<path> read-only --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
+drfx workflow context --no-state {{ROUTE_NAME}} target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
 
 4. Keep reviewGuard and stateToken in coordinator memory only. Never write tokens to the filesystem and never hand-edit tokens.
 5. Build the reviewer prompt in memory from the context skeleton plus target/reference reads. Gemini produces advisory review content; it must not claim workflow PASS.
 6. Submit review, triage, and final response by repeating the same runtime fields:
 
-drfx workflow record-review --no-state {{ROUTE_NAME}} target=<path> read-only --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
-drfx workflow record-triage --no-state {{ROUTE_NAME}} target=<path> read-only --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
-drfx workflow finalize --no-state {{ROUTE_NAME}} target=<path> read-only --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
+drfx workflow record-review --no-state {{ROUTE_NAME}} target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
+drfx workflow record-triage --no-state {{ROUTE_NAME}} target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
+drfx workflow finalize --no-state {{ROUTE_NAME}} target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
 
 No-state final status is read-only-clean, read-only-findings, blocked, or unsupported; never pass.
 
