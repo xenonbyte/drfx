@@ -15,6 +15,12 @@
 - Downgraded unknown `.md` custom rules to warnings in `normal` strictness (still blocking in `strict`).
 - Shared Codex runtime-flag documentation through `shared/runtime-flags.md`.
 
+### Fixed
+
+- Propagated `guard=snapshot` through generated Claude, Codex, and Gemini workflow commands.
+- Hardened snapshot guard restore and target-only checks against symlink parent replacement and cross-directory non-target edits.
+- Removed package lifecycle hooks that hid tracked localized README files during `npm pack`.
+
 ### Internal
 
 - Archived `design/DESIGN-v1.md` and `design/DESIGN-v2.md` to `design/archive/`.
