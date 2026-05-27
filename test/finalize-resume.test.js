@@ -441,7 +441,7 @@ test('record-diff-review DIFF-OK enters full re-review without pass', async (t) 
   assert.equal(manifest.lastDiffReviewReportPath, 'reports/diff-review-round-001.md');
 });
 
-test('record-diff-review DIFF-FAIL returns to fix and uses attempt suffixes', async (t) => {
+test('record-diff-review DIFF-FAIL returns to fix and advances the round', async (t) => {
   const fixture = makeFixture(t, {
     ledgerIssues: [
       {
@@ -472,20 +472,8 @@ test('record-diff-review DIFF-FAIL returns to fix and uses attempt suffixes', as
   let manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
   assert.equal(manifest.status, 'fix');
   assert.equal(manifest.currentPhase, 'fix');
+  assert.equal(manifest.currentRound, 2);
   assert.equal(manifest.lastDiffReviewReportPath, 'reports/diff-review-round-001.md');
-
-  fs.writeFileSync(fixture.manifestPath, formatManifestV2({
-    ...manifest,
-    status: 'diff-review',
-    currentPhase: 'diff-review'
-  }));
-  const second = await runWorkflowCommand('record-diff-review', [fixture.targetDir, '--result-stdin', '--json'], {
-    cwd: fixture.root,
-    stdin: payload
-  });
-  assert.equal(second.ok, true);
-  manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
-  assert.equal(manifest.lastDiffReviewReportPath, 'reports/diff-review-round-001-attempt-002.md');
 });
 
 test('persistent finalize validates response before persisting pass', async (t) => {

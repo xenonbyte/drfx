@@ -118,6 +118,7 @@ test('snapshot target-only guard blocks reference changes as unexpected worktree
 
 test('snapshot capture and restore round target body without touching non-target files', (t) => {
   const fixture = makeWorkspace(t);
+  const snapshotPath = path.join(fixture.targetStateDir, 'snapshots', 'round-002', 'target.body');
   const snapshot = captureSnapshot({
     projectRoot: fixture.root,
     targetPath: fixture.target,
@@ -126,7 +127,7 @@ test('snapshot capture and restore round target body without touching non-target
     expectedNormalizedTarget: 'docs/target.md'
   });
   assert.equal(snapshot.status, 'passed');
-  assert.equal(fs.existsSync(path.join(fixture.targetStateDir, 'snapshots', 'round-002', 'target.body')), true);
+  assert.equal(fs.existsSync(snapshotPath), true);
 
   fs.writeFileSync(fixture.target, '# Target\n\nChanged.\n');
   fs.writeFileSync(fixture.sibling, '# Sibling changed outside restore.\n');
@@ -142,4 +143,21 @@ test('snapshot capture and restore round target body without touching non-target
   assert.equal(restored.status, 'passed');
   assert.equal(fs.readFileSync(fixture.target, 'utf8'), '# Target\n\nOriginal.\n');
   assert.equal(fs.readFileSync(fixture.sibling, 'utf8'), '# Sibling changed outside restore.\n');
+  assert.equal(fs.existsSync(snapshotPath), false);
+});
+
+test('snapshot restore returns missing when snapshot body is absent', (t) => {
+  const fixture = makeWorkspace(t);
+  fs.writeFileSync(fixture.target, '# Target\n\nChanged.\n');
+
+  const restored = restoreSnapshot({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    targetStateDir: fixture.targetStateDir,
+    round: 3,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+
+  assert.equal(restored.status, 'missing');
+  assert.equal(fs.readFileSync(fixture.target, 'utf8'), '# Target\n\nChanged.\n');
 });

@@ -570,6 +570,9 @@ test('non-git snapshot guard abort-fix restores the second fix attempt snapshot'
 
   const secondBegin = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], workflowOptions(fixture));
   assert.equal(secondBegin.ok, true, JSON.stringify(secondBegin));
+  assert.equal(secondBegin.round, 2);
+  const round2SnapshotPath = path.join(start.targetStateDir, 'snapshots', 'round-002', 'target.body');
+  assertFileExists(round2SnapshotPath);
   fs.writeFileSync(fixture.target, '# Practical Workflow Target\n\nSecond attempt should be reverted.\n');
 
   const aborted = await runWorkflowCommand('abort-fix', [
@@ -586,6 +589,7 @@ test('non-git snapshot guard abort-fix restores the second fix attempt snapshot'
   assert.equal(aborted.ok, true);
   assert.equal(aborted.status, 'blocked');
   assert.equal(fs.readFileSync(fixture.target, 'utf8'), firstFixedBody);
+  assert.equal(fs.existsSync(round2SnapshotPath), false);
   assert.equal(readLease({ projectRoot: fixture.root, targetKey: start.targetKey }), null);
 });
 
