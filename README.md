@@ -1,4 +1,4 @@
-English | [简体中文](./README.zh-CN.md)
+English | [简体中文](https://github.com/xenonbyte/document-review-fix/blob/main/README.zh-CN.md)
 
 # document-review-fix
 
@@ -8,7 +8,7 @@ English | [简体中文](./README.zh-CN.md)
 
 - Node.js 20 or newer.
 - One or more supported agent platforms: Claude Code, Codex, or Gemini.
-- For automatic fixes, the target document must be inside a Git worktree and must be tracked, clean, and backed by `HEAD`.
+- For automatic fixes, use `guard=git` with a tracked clean `HEAD` target, or use `guard=snapshot` with a valid snapshot rollback anchor.
 
 ## Install
 
@@ -341,12 +341,10 @@ Reference documents are read-only. Fixes must modify only the target document.
 
 Automatic target writes require:
 
-- a Git worktree with `HEAD`;
-- a tracked target document;
-- no staged or unstaged changes in the target;
-- no deleted, renamed, or copied target state;
-- a target-only guard that can prove writes stayed target-only;
-- no unsafe non-target worktree changes that would make the guard ambiguous.
+- `review-and-fix` mode;
+- either `guard=git` with a Git worktree `HEAD` + tracked clean target, or `guard=snapshot` with a valid snapshot rollback anchor;
+- a target-only guard that can prove writes stayed target-only within the selected guard mode;
+- no unsafe non-target changes that make guard results ambiguous for the selected guard mode.
 
 Before a fix, the route locks the target state directory and rechecks the target fingerprint. Concurrent edits, external changes, stale unsafe locks, or possible target replacement stop the workflow before a write is trusted.
 

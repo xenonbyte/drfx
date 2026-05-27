@@ -204,7 +204,7 @@ Then coordinate this loop:
 12. Repeat triage, fix, diff review, and full re-review until terminal status.
 13. Finalize only through `drfx workflow finalize <targetStateDir> --final-response-stdin --json`.
 
-Automatic target writes require a tracked, clean, HEAD-backed git target. The target-only guard must remain available and parseable before and after writes.
+Automatic target writes require `review-and-fix` and a selected guard mode: use `guard=git` with a tracked, clean, HEAD-backed git target, or `guard=snapshot` with a valid snapshot rollback anchor. The target-only guard must remain available and parseable before and after writes.
 
 ## No-State Read-Only Flow
 

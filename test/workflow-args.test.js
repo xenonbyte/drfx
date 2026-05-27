@@ -303,6 +303,90 @@ test('workflow start exposes normal rule warnings in json', async (t) => {
   assert.equal(json.warnings[0].code, 'WARN_UNKNOWN_CUSTOM_RULE_FILE');
 });
 
+test('workflow no-state context exposes normal rule warnings in json', async (t) => {
+  const fixture = makeGitFixture(t);
+  fs.mkdirSync(path.join(fixture.root, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.root, '.docs-review-fix', 'rules', 'CHECKLIST.md'), '# Checklist\n');
+
+  const result = await runWorkflowCommand('context', [
+    '--no-state',
+    'review-fix-spec',
+    fixture.target,
+    'read-only',
+    'normal',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--runtime-downgrade-reason',
+    'none'
+  ], {
+    cwd: fixture.root,
+    homeDir: path.join(fixture.root, 'home')
+  });
+  const json = workflowJson(result);
+
+  assert.equal(result.status, 'context');
+  assert.equal(json.warnings.length, 1);
+  assert.equal(json.warnings[0].code, 'WARN_UNKNOWN_CUSTOM_RULE_FILE');
+});
+
+test('workflow persistent context exposes normal rule warnings in json', async (t) => {
+  const fixture = makeGitFixture(t);
+  fs.mkdirSync(path.join(fixture.root, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.root, '.docs-review-fix', 'rules', 'CHECKLIST.md'), '# Checklist\n');
+
+  const start = await runWorkflowCommand('start', [
+    'review-fix-spec',
+    fixture.target,
+    'review-and-fix',
+    'normal',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--runtime-downgrade-reason',
+    'none'
+  ], {
+    cwd: fixture.root,
+    homeDir: path.join(fixture.root, 'home')
+  });
+  assert.equal(start.status, 'review');
+
+  const context = await runWorkflowCommand('context', [
+    'review-fix-spec',
+    fixture.target,
+    'review-and-fix',
+    'normal',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--runtime-downgrade-reason',
+    'none'
+  ], {
+    cwd: fixture.root,
+    homeDir: path.join(fixture.root, 'home')
+  });
+  const json = workflowJson(context);
+
+  assert.equal(context.status, 'context');
+  assert.equal(json.warnings.length, 1);
+  assert.equal(json.warnings[0].code, 'WARN_UNKNOWN_CUSTOM_RULE_FILE');
+});
+
 test('workflow start rejects target outside explicit root before emitting target key', async (t) => {
   const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-workflow-outside-'));
   const outsideTarget = path.join(outsideRoot, 'outside.md');

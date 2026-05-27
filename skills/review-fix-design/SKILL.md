@@ -31,7 +31,7 @@ Practical Mode requires a live reviewer subagent probe that returns exactly `DRF
 
 Strict Verified requires same-flow `drfx check --json` values: `descriptorPath`, `descriptorDirectory`, and `runId`. It does not use cached or installer-default descriptors. The internal workflow command decides whether strict proof is valid.
 
-Automatic writes require `review-and-fix`, a tracked clean HEAD-backed git target, target-only guard success, and target-local lock refresh. Fixers and coordinators may modify only the target document; references remain read-only.
+Automatic writes require `review-and-fix` plus a selected guard mode: use `guard=git` with a tracked clean HEAD-backed git target, or `guard=snapshot` with a valid snapshot rollback anchor. Target-only guard checks and target-local lock refresh must still pass. Fixers and coordinators may modify only the target document; references remain read-only.
 
 Persistent state lives under `.docs-review-fix/targets/<target-key>/`. One-shot read-only without `ledger=` and without `resume` is no-state and keeps tokens in memory only.
 
