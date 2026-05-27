@@ -8,6 +8,6 @@
     "test": "node --test"
   },
   "engines": { "node": ">=20.0.0" },
-  "files": ["bin/", "lib/", "skills/", "shared/", "templates/", "test/", "README.md"],
+  "files": ["bin/", "lib/", "skills/", "shared/", "templates/", "test/", "README.md", "README.zh-CN.md"],
   "license": "UNLICENSED"
 }

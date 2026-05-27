@@ -277,25 +277,36 @@ test('source skills templates generated routes and README avoid runtime memory c
   assert.match(sourceText, /\.docs-review-fix\/targets\/<target-key>\//);
 });
 
-test('package file list excludes README-zh, project-local state, and local design drafts', () => {
+test('package file list excludes project-local state and ignored planning directories', () => {
   const packageJson = JSON.parse(read('package.json'));
 
-  assert.deepEqual(packageJson.files, ['bin/', 'lib/', 'skills/', 'shared/', 'templates/', 'test/', 'README.md']);
+  assert.deepEqual(packageJson.files, [
+    'bin/',
+    'lib/',
+    'skills/',
+    'shared/',
+    'templates/',
+    'test/',
+    'README.md',
+    'README.zh-CN.md'
+  ]);
   assert.equal(packageJson.files.includes('README-zh.md'), false);
-  assert.equal(packageJson.files.includes('README.zh-CN.md'), false);
   assert.equal(packageJson.files.some((entry) => entry.includes('.docs-review-fix')), false);
+  assert.equal(packageJson.files.some((entry) => entry === 'docs/' || entry.startsWith('docs/')), false);
   assert.equal(packageJson.files.some((entry) => entry === 'design/' || entry.startsWith('design/')), false);
+  assert.equal(packageJson.files.includes('CONTINUITY.md'), false);
 });
 
-test('package avoids lifecycle hooks that hide tracked localized README files', () => {
+test('localized README is root-level without package lifecycle hooks', () => {
   const packageJson = JSON.parse(read('package.json'));
 
   assert.equal(packageJson.scripts.prepack, undefined);
   assert.equal(packageJson.scripts.postpack, undefined);
   assert.equal(fs.existsSync(path.join(ROOT, 'scripts', 'pack-readme-zh.js')), false);
-  assert.equal(fs.existsSync(path.join(ROOT, 'README.zh-CN.md')), false);
-  assert.equal(fs.existsSync(path.join(ROOT, 'docs', 'README.zh-CN.md')), true);
-  assert.match(read('README.md'), /docs\/README\.zh-CN\.md/);
+  assert.equal(fs.existsSync(path.join(ROOT, 'README.zh-CN.md')), true);
+  assert.equal(fs.existsSync(path.join(ROOT, 'docs', 'README.zh-CN.md')), false);
+  assert.match(read('README.md'), /\[简体中文\]\(README\.zh-CN\.md\)/);
+  assert.match(read('README.zh-CN.md'), /\[English\]\(README\.md\)/);
 });
 
 test('usage examples prefer bare target paths while preserving target form and guard tokens', () => {
@@ -364,9 +375,8 @@ test('codex route template uses shared runtime flags placeholder', () => {
   assert.doesNotMatch(rendered, /\{\{RUNTIME_PLATFORM\}\}/);
 });
 
-test('README stays usage-focused and manual smoke receipt records runtime limitations without placeholders', () => {
+test('README stays usage-focused', () => {
   const readme = read('README.md');
-  const receipt = read('docs/manual-smoke-v2.md');
 
   assert.match(readme, /## Quick Start/);
   assert.match(readme, /## Output/);
@@ -376,16 +386,6 @@ test('README stays usage-focused and manual smoke receipt records runtime limita
   assert.doesNotMatch(readme, /## Runtime Capability Behavior/);
   assert.doesNotMatch(readme, /Manual smoke expectations/i);
   assert.doesNotMatch(readme, /Final response requirements/i);
-  assert.match(receipt, /## Codex Practical/);
-  assert.match(receipt, /## Claude Code/);
-  assert.match(receipt, /installed: codex/);
-  assert.match(receipt, /installed: claude/);
-  assert.match(receipt, /ACCEPTED-FAIL-CLOSED-LIMITED/);
-  assert.doesNotMatch(receipt, /\bobserved\s+\S+/i);
-  assert.doesNotMatch(receipt, /\bTODO\b|TBD|<[^>]+>/i);
-  assert.doesNotMatch(receipt, /BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY/i);
-  assert.doesNotMatch(receipt, /\bBearer\s+[A-Za-z0-9._-]+/i);
-  assert.doesNotMatch(receipt, /\bCookie:/i);
 });
 
 test('README documents reference conformance and non-mandatory upstream chains', () => {

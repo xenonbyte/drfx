@@ -1,4 +1,4 @@
-English | [简体中文](https://github.com/xenonbyte/document-review-fix/blob/main/docs/README.zh-CN.md)
+English | [简体中文](README.zh-CN.md)
 
 # document-review-fix
 

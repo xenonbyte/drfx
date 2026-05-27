@@ -1,4 +1,6 @@
-docs/superpowers/
+docs/
+design/
+CONTINUITY.md
 .docs-review-fix/
 .DS_Store
 *.tgz

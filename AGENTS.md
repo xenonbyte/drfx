@@ -11,7 +11,6 @@ This repository is a Node.js 20 CommonJS package for installing document review-
 - `shared/` stores reusable workflow text, prompts, rubrics, and long-task protocol content.
 - `templates/` contains generated route templates for supported platforms.
 - `test/` contains Node test files and fixtures.
-- `design/` contains design documents and review rules.
 
 ## Build, Test, and Development Commands
 
