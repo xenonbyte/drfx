@@ -47,6 +47,16 @@ function topLevelRunFunctions(source) {
   return [...source.matchAll(/^function (run[A-Z][A-Za-z0-9_]*)\(/gm)].map((match) => match[1]);
 }
 
+function helperImportsFrom(fileName) {
+  const source = readModule(fileName);
+  const match = source.match(/const\s*\{([\s\S]*?)\}\s*=\s*require\('\.\/helpers'\);/);
+  if (!match) return [];
+  return match[1]
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
 test('workflow submodules keep only task-boundary run functions', () => {
   for (const [fileName, allowed] of Object.entries(MODULE_RULES)) {
     const source = readModule(fileName);
@@ -71,4 +81,20 @@ test('workflow submodules stay below the task split size ceiling', () => {
 
     assert.ok(lineCount < 1000, `${fileName} has ${lineCount} lines`);
   }
+});
+
+test('workflow helpers exports match only what submodules import', () => {
+  const expected = new Set();
+  for (const fileName of Object.keys(MODULE_RULES)) {
+    for (const name of helperImportsFrom(fileName)) expected.add(name);
+  }
+  const actual = Object.keys(require('../lib/workflow/helpers'));
+
+  assert.deepEqual(actual.sort(), [...expected].sort());
+});
+
+test('workflow helpers stays below boundary ceiling', () => {
+  const lineCount = readModule('helpers.js').split('\n').length;
+
+  assert.ok(lineCount < 2500, `helpers.js has ${lineCount} lines`);
 });
