@@ -182,6 +182,70 @@ test('snapshot restore returns missing when snapshot body is absent', (t) => {
   assert.equal(fs.readFileSync(fixture.target, 'utf8'), '# Target\n\nChanged.\n');
 });
 
+test('snapshot capture leaves no .tmp file in the snapshot directory', (t) => {
+  const fixture = makeWorkspace(t);
+  captureSnapshot({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    targetStateDir: fixture.targetStateDir,
+    round: 4,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+  const snapshotDir = path.join(fixture.targetStateDir, 'snapshots', 'round-004');
+  const residual = fs.readdirSync(snapshotDir).filter((name) => name.endsWith('.tmp'));
+  assert.deepEqual(residual, []);
+});
+
+test('snapshot target-only guard rejects references outside the project root', (t) => {
+  const fixture = makeWorkspace(t);
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-snapshot-extref-'));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  const externalReference = path.join(outside, 'external-ref.md');
+  fs.writeFileSync(externalReference, '# External\n');
+
+  assert.throws(
+    () => checkSnapshotTargetOnly({
+      projectRoot: fixture.root,
+      targetPath: fixture.target,
+      allowedStateDir: fixture.targetStateDir,
+      expectedNormalizedTarget: 'docs/target.md',
+      referencePaths: [externalReference]
+    }),
+    (error) => {
+      assert.equal(error.blockingReason, 'target-only-guard-unavailable');
+      assert.equal(error.message.includes(outside), false);
+      assert.equal(error.message.includes(externalReference), false);
+      return true;
+    }
+  );
+});
+
+test('snapshot guard ignores mtime-only touches when content is unchanged', (t) => {
+  const fixture = makeWorkspace(t);
+  const baseline = checkSnapshotTargetOnly({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+  assert.equal(baseline.status, 'passed');
+
+  const future = new Date(Date.now() + 60_000);
+  fs.utimesSync(fixture.target, future, future);
+  fs.utimesSync(fixture.sibling, future, future);
+
+  const actual = inspectActualChangedFilesSnapshot({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md',
+    targetOnlyGuard: baseline
+  });
+
+  assert.equal(actual.status, 'passed');
+  assert.deepEqual(actual.changedFiles, []);
+});
+
 test('snapshot restore rejects symlinked snapshot parent directory', (t) => {
   const fixture = makeWorkspace(t);
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-snapshot-outside-restore-'));
