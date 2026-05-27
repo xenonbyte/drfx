@@ -33,6 +33,12 @@ function git(root, args) {
   });
 }
 
+function isolateGitFixture(root) {
+  const excludesFile = path.join(root, '.git', 'drfx-empty-excludes');
+  fs.writeFileSync(excludesFile, '');
+  git(root, `config core.excludesFile ${JSON.stringify(excludesFile)}`);
+}
+
 function makeGitRepo(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-fix-guard-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -40,6 +46,7 @@ function makeGitRepo(t) {
   const target = path.join(root, 'docs', 'target.md');
   fs.writeFileSync(target, '# Target\n');
   git(root, 'init');
+  isolateGitFixture(root);
   git(root, 'add docs/target.md');
   git(root, 'commit -m init');
   return { root, target };
