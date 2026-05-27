@@ -1,6 +1,6 @@
 {
   "name": "@xenonbyte/document-review-fix",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "Review and fix document workflows for SPEC, PLAN, DESIGN, and COMMON documents.",
   "type": "commonjs",
   "bin": { "drfx": "bin/drfx.js" },
