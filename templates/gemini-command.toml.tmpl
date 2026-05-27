@@ -31,7 +31,9 @@ Route contract:
 - Gemini must not edit target files, reference files, or workflow state except through no-state workflow outputs.
 
 Invocation:
-{{ROUTE_NAME}} target=<path> [ref=<path>...] [read-only] [strict|normal] [assurance=advisory] [root=<project-root>] [debug]
+{{ROUTE_NAME}} <path> [ref=<path>...] [read-only] [strict|normal] [assurance=advisory] [guard=git|snapshot] [root=<project-root>] [debug]
+
+Full form: {{ROUTE_NAME}} target=<path> ... . A bare path is shorthand for target=<path>. When target= is used, unlabeled paths are rejected.
 
 If a valid target invocation omits mode, missing mode selects read-only. If it omits assurance, missing assurance selects advisory.
 
@@ -88,6 +90,8 @@ Unfixed:
 Next: <one concrete action>
 State: <target-state-dir when persistent state exists>
 ```
+
+Blocked wording must distinguish normalized blocker codes. For `rollback-unavailable`, say the target lacks a clean rollback anchor. For `target-only-guard-unavailable`, say the target-only guard is unavailable or unparseable. For `unexpected-worktree-change`, say non-target worktree changes make automatic fixing unsafe.
 
 When debug is present, generated routes may print the final-response machine block, target state directory, receipt paths, normalized blocker/status reason, runtime probe results, relevant drfx workflow --json outputs, report paths, and issue IDs. Debug output must still redact sensitive values and must not print raw target body, must not print raw reference body, must not print raw prompts, must not print raw subagent transcripts, and must not print secrets, tokens, or raw logs. Debug must not change final status, effective mode, assurance, validation behavior, or persisted state.
 

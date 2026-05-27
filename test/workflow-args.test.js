@@ -274,6 +274,35 @@ test('workflow start returns canonical target key from target-state', async () =
   assert.equal(result.targetKey, deriveTargetKey(ROOT, REAL_TARGET).targetKey);
 });
 
+test('workflow start exposes normal rule warnings in json', async (t) => {
+  const fixture = makeGitFixture(t);
+  fs.mkdirSync(path.join(fixture.root, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.root, '.docs-review-fix', 'rules', 'CHECKLIST.md'), '# Checklist\n');
+
+  const result = await runWorkflowCommand('start', [
+    'review-fix-spec',
+    fixture.target,
+    'review-and-fix',
+    'normal',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready'
+  ], {
+    cwd: fixture.root,
+    homeDir: path.join(fixture.root, 'home')
+  });
+  const json = workflowJson(result);
+
+  assert.equal(result.status, 'review');
+  assert.equal(json.warnings.length, 1);
+  assert.equal(json.warnings[0].code, 'WARN_UNKNOWN_CUSTOM_RULE_FILE');
+});
+
 test('workflow start rejects target outside explicit root before emitting target key', async (t) => {
   const outsideRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-workflow-outside-'));
   const outsideTarget = path.join(outsideRoot, 'outside.md');

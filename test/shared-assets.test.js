@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const { renderPlatformRoute } = require('../lib/generator');
+const { buildFinalResponseChecklist } = require('../lib/final-response');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -281,9 +282,75 @@ test('package file list excludes README-zh, project-local state, and local desig
 
   assert.deepEqual(packageJson.files, ['bin/', 'lib/', 'skills/', 'shared/', 'templates/', 'test/', 'README.md']);
   assert.equal(packageJson.files.includes('README-zh.md'), false);
-  assert.equal(fs.existsSync(path.join(ROOT, 'README-zh.md')), false);
+  assert.equal(packageJson.files.includes('README.zh-CN.md'), false);
   assert.equal(packageJson.files.some((entry) => entry.includes('.docs-review-fix')), false);
   assert.equal(packageJson.files.some((entry) => entry === 'design/' || entry.startsWith('design/')), false);
+});
+
+test('usage examples prefer bare target paths while preserving target form and guard tokens', () => {
+  const readme = read('README.md');
+  const core = read('shared/core.md');
+  const coordinator = read('shared/prompts/coordinator.md');
+  const templates = [
+    read('templates/codex-skill.md.tmpl'),
+    read('templates/claude-command.md.tmpl'),
+    read('templates/gemini-command.toml.tmpl')
+  ].join('\n\n');
+
+  assert.match(readme, /review-fix-spec docs\/spec\.md/);
+  assert.match(readme, /bare path is shorthand for `target=<path>`/i);
+  assert.match(readme, /`guard=git\|snapshot`/);
+  assert.match(templates, /\{\{ROUTE_NAME\}\} <path> \[ref=<path>\.\.\.\]/);
+  assert.match(templates, /full form/i);
+  assert.match(templates, /target=<path>/);
+  assert.match(templates, /guard=git\|snapshot/);
+  assert.match(core, /bare path/i);
+  assert.match(core, /guard=git\|snapshot/);
+  assert.match(coordinator, /bare path/i);
+});
+
+test('public docs and route templates distinguish guard blocker wording', () => {
+  const sourceText = [
+    'README.md',
+    'shared/core.md',
+    'shared/prompts/coordinator.md',
+    'templates/codex-skill.md.tmpl',
+    'templates/claude-command.md.tmpl',
+    'templates/gemini-command.toml.tmpl'
+  ].map(read).join('\n\n');
+
+  assert.match(sourceText, /`rollback-unavailable`[\s\S]{0,160}rollback anchor/i);
+  assert.match(sourceText, /`target-only-guard-unavailable`[\s\S]{0,180}target-only guard/i);
+  assert.match(sourceText, /`unexpected-worktree-change`[\s\S]{0,180}non-target worktree changes/i);
+
+  const checklist = buildFinalResponseChecklist();
+  assert.match(checklist, /`rollback-unavailable`[\s\S]{0,160}rollback anchor/i);
+  assert.match(checklist, /`target-only-guard-unavailable`[\s\S]{0,180}target-only guard/i);
+  assert.match(checklist, /`unexpected-worktree-change`[\s\S]{0,180}non-target worktree changes/i);
+});
+
+test('unknown markdown custom rules are warnings in normal mode docs', () => {
+  const readme = read('README.md');
+  const sharedText = [read('shared/core.md'), read('shared/prompts/coordinator.md')].join('\n\n');
+
+  assert.match(readme, /Unknown Markdown files under `rules\/`/);
+  assert.match(readme, /normal[^\n]*warning/i);
+  assert.match(readme, /strict[^\n]*block/i);
+  assert.match(sharedText, /unknown Markdown rule files/i);
+  assert.match(sharedText, /normal[^\n]*warning/i);
+});
+
+test('codex route template uses shared runtime flags placeholder', () => {
+  const sharedRuntimeFlags = read('shared/runtime-flags.md');
+  const codexTemplate = read('templates/codex-skill.md.tmpl');
+  const rendered = renderPlatformRoute('codex', 'review-fix-spec', { packageVersion: '0.0.0-test' });
+
+  assert.match(codexTemplate, /\{\{RUNTIME_FLAGS\}\}/);
+  assert.doesNotMatch(codexTemplate, /Use the materialized `<selectedAssurance>` to choose runtime fields/);
+  assert.match(sharedRuntimeFlags, /Use the materialized `<selectedAssurance>` to choose runtime fields/);
+  assert.match(rendered, /Use the materialized `<selectedAssurance>` to choose runtime fields/);
+  assert.doesNotMatch(rendered, /\{\{RUNTIME_FLAGS\}\}/);
+  assert.doesNotMatch(rendered, /\{\{RUNTIME_PLATFORM\}\}/);
 });
 
 test('README stays usage-focused and manual smoke receipt records runtime limitations without placeholders', () => {
@@ -546,20 +613,20 @@ test('source skills and generated routes document reference conformance behavior
 
 test('generated route text separates advisory no-state read-only commands', () => {
   const cases = [
-    [read('templates/codex-skill.md.tmpl'), 'codex'],
-    [read('templates/claude-command.md.tmpl'), 'claude-code']
+    [renderPlatformRoute('codex', 'review-fix-spec', { packageVersion: '0.0.0-test' }), 'codex', 'review-fix-spec'],
+    [renderPlatformRoute('claude', 'review-fix-spec', { packageVersion: '0.0.0-test' }), 'claude-code', 'review-fix-spec']
   ];
 
-  for (const [template, platform] of cases) {
+  for (const [template, platform, routeName] of cases) {
     assert.match(template, /Advisory read-only no-state path/i);
     assert.match(template, /Do not use the practical\/strict-verified ready-probe commands for advisory read-only/i);
     assert.match(
       template,
-      new RegExp(`drfx workflow context --no-state \\{\\{ROUTE_NAME\\}\\} target=<path> read-only --assurance advisory --runtime-platform ${platform} --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json`)
+      new RegExp(`drfx workflow context --no-state ${routeName} target=<path> read-only --assurance advisory --runtime-platform ${platform} --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json`)
     );
     assert.match(
       template,
-      new RegExp(`drfx workflow record-review --no-state \\{\\{ROUTE_NAME\\}\\} target=<path> read-only --assurance advisory --runtime-platform ${platform} --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none`)
+      new RegExp(`drfx workflow record-review --no-state ${routeName} target=<path> read-only --assurance advisory --runtime-platform ${platform} --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none`)
     );
     assert.match(template, /Practical read-only no-state path/i);
     assert.match(
@@ -622,7 +689,7 @@ test('codex and claude routes run write eligibility preflight before semantic re
     assert.match(template, /Review-And-Fix Write Eligibility Preflight/i);
     assert.match(template, /drfx workflow preflight/i);
     assert.match(template, /before runtime readiness probe, semantic reviewer dispatch, semantic document review, and target-local workflow state creation/i);
-    assert.match(template, /cannot be auto-fixed because it is not a clean tracked Git target/i);
+    assert.match(template, /cannot be auto-fixed because it lacks a clean rollback anchor/i);
   }
 });
 
@@ -696,13 +763,14 @@ test('README documents typed scoped custom rule reads', () => {
   assert.match(readme, /a COMMON document review reads only `COMMON\.md`/);
 });
 
-test('README documents unknown markdown rule files block before target state', () => {
+test('README documents unknown markdown rule file strictness behavior', () => {
   const readme = read('README.md');
 
   assert.match(readme, /Unknown Markdown files under `rules\/`/);
   assert.match(readme, /`SPEC-RULE\.md`/);
   assert.match(readme, /`REQUIREMENTS\.md`/);
-  assert.match(readme, /block before target state is written/);
+  assert.match(readme, /normal[^\n]*warning/i);
+  assert.match(readme, /strict[^\n]*block before target state is written/i);
 });
 
 test('long-task keeps project-root rules outside target state', () => {

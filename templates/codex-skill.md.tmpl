@@ -32,8 +32,10 @@ Package version: {{PACKAGE_VERSION}}
 Invocation syntax:
 
 ```text
-{{ROUTE_NAME}} target=<path> [ref=<path>...] [read-only|review-and-fix] [strict|normal] [assurance=practical|strict-verified|advisory] [resume] [ledger=<target-local path>] [root=<project-root>] [debug]
+{{ROUTE_NAME}} <path> [ref=<path>...] [read-only|review-and-fix] [strict|normal] [assurance=practical|strict-verified|advisory] [guard=git|snapshot] [resume] [ledger=<target-local path>] [root=<project-root>] [debug]
 ```
+
+Full form: `{{ROUTE_NAME}} target=<path> ...`. A bare path is shorthand for `target=<path>`. When `target=` is used, unlabeled paths are rejected.
 
 If a valid target invocation omits both mode and assurance, missing mode selects `review-and-fix` and missing assurance selects `practical`.
 
@@ -133,10 +135,12 @@ This command accepts `assurance=practical` and `assurance=strict-verified` befor
 If preflight blocks, do not dispatch the semantic reviewer and do not create target state. Render concise default output:
 
 ```text
-Blocked: <target> cannot be auto-fixed because it is not a clean tracked Git target.
+Blocked: <target> cannot be auto-fixed because it lacks a clean rollback anchor.
 
-Next: commit or restore the target, or rerun with read-only.
+Next: commit or restore the target, rerun with read-only, or use guard=snapshot when Git rollback is unavailable.
 ```
+
+If the normalized blocking reason is `target-only-guard-unavailable`, render that the target-only guard is unavailable or unparseable and ask the user to restore guard inputs or rerun after guard data can be read. If it is `unexpected-worktree-change`, render that non-target worktree changes make automatic fixing unsafe and ask the user to commit, stash, or restore unrelated worktree changes before retrying.
 
 When `debug` is present, include the redacted normalized blocker reason returned by preflight. Do not create target-local state for debug output on this path.
 
@@ -212,39 +216,7 @@ For one-shot `read-only` without `ledger=` and without `resume`, keep `reviewGua
 
 Preflight terminal paths must run before reading target/reference bodies, before semantic payload generation, and before any state token exists. They must use `workflow preflight --no-state`, must not call `workflow context`, and must not pass semantic stdin flags.
 
-Use the materialized `<selectedAssurance>` to choose runtime fields:
-
-- Advisory read-only no-state path uses `--assurance advisory --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none`. Do not use the practical/strict-verified ready-probe commands for advisory read-only. Advisory skips the subagent probe, but review-backed semantic payload commands still require proven stdin handoff.
-- Practical read-only no-state path uses `<selectedAssurance>` set to `practical` with `--runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none`.
-- Strict-verified read-only is state-backed: use the Strict Verified Proof workflow start with ready probe/handoff fields. Do not use no-state commands for `strict-verified`.
-
-Advisory read-only no-state path starts with:
-
-```text
-drfx workflow context --no-state {{ROUTE_NAME}} target=<path> read-only --assurance advisory --runtime-platform codex --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
-```
-
-Submit advisory review, triage, and final response by repeating the same advisory runtime fields:
-
-```text
-drfx workflow record-review --no-state {{ROUTE_NAME}} target=<path> read-only --assurance advisory --runtime-platform codex --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
-drfx workflow record-triage --no-state {{ROUTE_NAME}} target=<path> read-only --assurance advisory --runtime-platform codex --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
-drfx workflow finalize --no-state {{ROUTE_NAME}} target=<path> read-only --assurance advisory --runtime-platform codex --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
-```
-
-Practical read-only no-state path starts with:
-
-```text
-drfx workflow context --no-state {{ROUTE_NAME}} target=<path> read-only --assurance <selectedAssurance> --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
-```
-
-Submit practical review, triage, and final response by repeating the same practical runtime fields:
-
-```text
-drfx workflow record-review --no-state {{ROUTE_NAME}} target=<path> read-only --assurance <selectedAssurance> --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
-drfx workflow record-triage --no-state {{ROUTE_NAME}} target=<path> read-only --assurance <selectedAssurance> --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
-drfx workflow finalize --no-state {{ROUTE_NAME}} target=<path> read-only --assurance <selectedAssurance> --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
-```
+{{RUNTIME_FLAGS}}
 
 No-state final status is `read-only-clean`, `read-only-findings`, `blocked`, or `unsupported`; never `pass`.
 

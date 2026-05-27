@@ -12,8 +12,10 @@ Users must not pass type. This entry skill always treats the target as a `DESIGN
 Invocation syntax:
 
 ```text
-review-fix-design target=<path> [ref=<path>...] [read-only|review-and-fix] [strict|normal] [assurance=practical|strict-verified|advisory] [resume] [ledger=<target-local path>] [root=<project-root>] [debug]
+review-fix-design <path> [ref=<path>...] [read-only|review-and-fix] [strict|normal] [assurance=practical|strict-verified|advisory] [guard=git|snapshot] [resume] [ledger=<target-local path>] [root=<project-root>] [debug]
 ```
+
+Full form: `review-fix-design target=<path> ...`. A bare path is shorthand for `target=<path>`.
 
 Valid target invocations may omit mode. Codex and Claude Code generated routes select `review-and-fix assurance=practical` by default when mode and assurance are omitted; missing mode selects `review-and-fix` and missing assurance selects `practical`. Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code. Gemini generated routes select `read-only assurance=advisory` by default. Help-style or invalid invocations explain usage only and do not read files, run workflow commands, run probes, create state, or declare review results.
 

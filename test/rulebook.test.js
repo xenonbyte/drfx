@@ -281,7 +281,8 @@ test('missing rules directories and files return empty custom rule sets', (t) =>
     {
       user: {},
       project: {},
-      contentPaths: []
+      contentPaths: [],
+      warnings: []
     }
   );
 
@@ -297,7 +298,8 @@ test('missing rules directories and files return empty custom rule sets', (t) =>
     {
       user: {},
       project: {},
-      contentPaths: []
+      contentPaths: [],
+      warnings: []
     }
   );
 });
@@ -396,6 +398,41 @@ test('rejects unknown markdown files in custom rules directory', (t) => {
       projectRoot: fixture.projectRoot,
       documentType: 'PLAN',
       homeDir: fixture.homeDir
+    }),
+    /unknown custom rule file/i
+  );
+});
+
+test('warns for unknown markdown rule files under normal strictness', (t) => {
+  const fixture = makeRulesFixture(t);
+  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'CHECKLIST.md'), 'No aliases\n');
+
+  const loaded = loadCustomRuleFiles({
+    projectRoot: fixture.projectRoot,
+    documentType: 'PLAN',
+    homeDir: fixture.homeDir,
+    strictness: 'normal'
+  });
+
+  assert.deepEqual(loaded.user, {});
+  assert.deepEqual(loaded.project, {});
+  assert.deepEqual(loaded.contentPaths, []);
+  assert.equal(loaded.warnings.length, 1);
+  assert.equal(loaded.warnings[0].code, 'WARN_UNKNOWN_CUSTOM_RULE_FILE');
+  assert.match(loaded.warnings[0].message, /Unknown custom rule file/i);
+  assert.match(loaded.warnings[0].filePath, /CHECKLIST\.md$/);
+});
+
+test('rejects unknown markdown rule files under strict strictness', (t) => {
+  const fixture = makeRulesFixture(t);
+  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'CHECKLIST.md'), 'No aliases\n');
+
+  assert.throws(
+    () => loadCustomRuleFiles({
+      projectRoot: fixture.projectRoot,
+      documentType: 'PLAN',
+      homeDir: fixture.homeDir,
+      strictness: 'strict'
     }),
     /unknown custom rule file/i
   );

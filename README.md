@@ -1,3 +1,5 @@
+English | [简体中文](./README.zh-CN.md)
+
 # document-review-fix
 
 `@xenonbyte/document-review-fix` installs document review routes for SPEC, PLAN, DESIGN, and COMMON Markdown documents. The routes can run a read-only review or a review-and-fix loop that edits only the target document.
@@ -64,56 +66,63 @@ The route name selects the document type. Do not pass `type=`.
 Review and automatically fix a SPEC document on Codex or Claude Code:
 
 ```text
+review-fix-spec docs/spec.md
+```
+
+Bare path is shorthand for `target=<path>`. The full form remains supported:
+
+```text
 review-fix-spec target=docs/spec.md
 ```
 
 Review without editing:
 
 ```text
-review-fix-design target=docs/design.md read-only
+review-fix-design docs/design.md read-only
 ```
 
 Review with reference documents:
 
 ```text
-review-fix-plan target=docs/plan.md ref=docs/spec.md ref=docs/design.md
+review-fix-plan docs/plan.md ref=docs/spec.md ref=docs/design.md
 ```
 
 Run strict review-and-fix:
 
 ```text
-review-fix-plan target=docs/plan.md review-and-fix strict
+review-fix-plan docs/plan.md review-and-fix strict guard=git
 ```
 
 Resume from target-local workflow state:
 
 ```text
-review-fix-doc target=docs/notes.md read-only resume
+review-fix-doc docs/notes.md read-only resume
 ```
 
 Print redacted workflow details for debugging:
 
 ```text
-review-fix-design target=docs/design.md debug
+review-fix-design docs/design.md debug
 ```
 
 Use explicit practical assurance:
 
 ```text
-review-fix-spec target=docs/spec.md review-and-fix assurance=practical
+review-fix-spec docs/spec.md review-and-fix assurance=practical guard=snapshot
 ```
 
 Use advisory read-only review:
 
 ```text
-review-fix-design target=docs/design.md ref=docs/requirements.md read-only assurance=advisory
+review-fix-design docs/design.md ref=docs/requirements.md read-only assurance=advisory
 ```
 
 ## Invocation Syntax
 
 Supported tokens:
 
-- `target=<path>` selects the one document being reviewed. In `review-and-fix` mode, this is the only file the route may edit.
+- A bare `<path>` is the recommended target form and is shorthand for `target=<path>`.
+- `target=<path>` is the full target form. In `review-and-fix` mode, this is the only file the route may edit.
 - `ref=<path>` adds a read-only reference document. Repeat `ref=` for multiple references.
 - `read-only` reviews and triages without editing.
 - `review-and-fix` reviews, triages, fixes accepted issues, checks the diff, and re-reviews.
@@ -126,6 +135,7 @@ Supported tokens:
 - `debug` prints redacted workflow audit details. Default output is concise.
 - `root=<path>` sets the project root used for containment and state layout.
 - `ledger=<path>` selects a custom issue ledger path inside the target state directory.
+- `guard=git|snapshot` selects the rollback and target-only guard family. `git` is the default; `snapshot` uses file snapshots when a Git rollback anchor is unavailable.
 
 Parsing is strict:
 
@@ -204,12 +214,14 @@ Files changed:
 - docs/spec.md
 ```
 
-Blocked run:
+Blocked run when the target lacks a rollback anchor:
 
 ```text
-Blocked: target or worktree is not write-eligible.
-Next: Commit or restore the target and resolve unsafe non-target worktree changes, then rerun.
+Blocked: docs/spec.md cannot be auto-fixed because it lacks a clean rollback anchor.
+Next: Commit or restore the target, rerun with read-only, or use guard=snapshot when Git rollback is unavailable.
 ```
+
+Other guard blockers use different wording: `target-only-guard-unavailable` means the target-only guard is unavailable or unparseable, while `unexpected-worktree-change` means non-target worktree changes make automatic fixing unsafe.
 
 `debug` may include redacted state paths, blocker codes, runtime probe status, and workflow audit details. It must not print raw target bodies, raw prompts, subagent transcripts, secrets, or unredacted sensitive logs.
 
@@ -264,7 +276,7 @@ For a typed review, the loader reads only `COMMON.md` plus the current document 
 
 Legacy `RULE.md` is stale configuration. If `~/.docs-review-fix/RULE.md` or `.docs-review-fix/RULE.md` exists, workflow start blocks with `state-validation-failed` before writing target state.
 
-Unknown Markdown files under `rules/`, such as `Spec.md`, `SPEC-RULE.md`, or `REQUIREMENTS.md`, also block before target state is written.
+Unknown Markdown files under `rules/`, such as `Spec.md`, `SPEC-RULE.md`, or `REQUIREMENTS.md`, produce a normal-mode warning and continue. In strict mode, they block before target state is written.
 
 Rule precedence:
 
@@ -348,9 +360,15 @@ For sensitive findings, store location anchors and secret kind, not raw values, 
 
 Commit or restore the target document, then resolve unsafe non-target worktree changes. Rerun after `git status --short` shows the target is clean and the remaining worktree state is safe for a target-only guard.
 
+Guard blocker wording:
+
+- `rollback-unavailable`: the target lacks a clean rollback anchor. Commit or restore the target, rerun read-only, or use `guard=snapshot` when Git rollback is unavailable.
+- `target-only-guard-unavailable`: the target-only guard is unavailable or unparseable. Restore guard inputs or rerun after guard data can be read.
+- `unexpected-worktree-change`: non-target worktree changes make automatic fixing unsafe. Commit, stash, or restore unrelated changes before retrying.
+
 `Blocked: state-validation-failed.`
 
-Remove stale `RULE.md` files or unknown Markdown files under `.docs-review-fix/rules/` and `~/.docs-review-fix/rules/`.
+Remove stale `RULE.md` files. Unknown Markdown files under `.docs-review-fix/rules/` and `~/.docs-review-fix/rules/` warn in normal mode but block strict runs.
 
 `Unsupported: review-and-fix or strict-verified is unavailable on Gemini.`
 

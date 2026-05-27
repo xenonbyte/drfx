@@ -393,7 +393,9 @@ test('persistent start rejects symlinked target state directory before outside w
   fs.mkdirSync(path.dirname(targetStateDir), { recursive: true });
   fs.symlinkSync(outside, targetStateDir, 'dir');
 
-  const result = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
+  const args = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex');
+  args.splice(4, 0, 'strict');
+  const result = await runWorkflowCommand('start', args, workflowOptions(fixture));
 
   assert.equal(result.ok, false);
   assert.equal(result.status, 'blocked');
@@ -428,7 +430,9 @@ test('persistent start rejects unknown markdown file under project rules', async
   fs.mkdirSync(rulesDir, { recursive: true });
   fs.writeFileSync(path.join(rulesDir, 'SPEC-RULE.md'), 'Wrong filename\n');
 
-  const result = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
+  const strictArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex');
+  strictArgs.splice(4, 0, 'strict');
+  const result = await runWorkflowCommand('start', strictArgs, workflowOptions(fixture));
 
   assert.equal(result.ok, false);
   assert.equal(result.status, 'blocked');

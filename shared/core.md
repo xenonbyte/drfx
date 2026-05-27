@@ -18,6 +18,8 @@ The generated route coordinates host LLM work with deterministic `drfx workflow 
 
 Generated Codex and Claude Code routes default a valid target invocation to `review-and-fix assurance=practical` when mode and assurance are omitted. Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code. Generated Gemini routes default a valid target invocation to `read-only assurance=advisory`. Help-style or invalid invocations explain usage only and must not read target/reference bodies, run workflow commands, run probes, create state, or declare a review result.
 
+Usage prefers a bare path target: `review-fix-spec docs/spec.md`. The full form `target=<path>` remains supported; a bare path is shorthand for `target=<path>`. `guard=git|snapshot` selects the rollback and target-only guard family.
+
 Default user output uses concise Route Output and is user-focused. It must not print handoff blocks, raw workflow JSON, probe transcripts, prompt text, raw subagent transcripts, internal issue IDs, or the final-response machine block. The explicit `debug` route token may surface redacted workflow audit details and the redacted final-response machine block after validation, but it must not print raw document bodies, raw prompts, raw transcripts, secrets, tokens, or raw logs.
 
 `assurance=practical|strict-verified|advisory` selects runtime assurance. `strict` and `normal` select review strictness only.
@@ -87,6 +89,10 @@ The loop stops only at one of these states:
 - `checkpoint`: the task pauses with durable target-local state and a concrete next action.
 
 Blocking reasons include `reviewer-mutated-file`, `lock-held`, `corrupt-lock`, `lock-release-failed`, `reviewer-output-unparseable`, `fingerprint-guard-unavailable`, `fingerprint-guard-output-invalid`, `state-validation-failed`, `state-token-too-large`, `final-validation-failed`, `target-only-guard-unavailable`, `unexpected-worktree-change`, `reference-mutated-file`, `fix-report-mismatch`, `diff-review-failed`, `rollback-unavailable`, and `unsafe-handoff-file`. Status reasons include `none`, `strict-proof-validation-failed`, `target-fingerprint-mismatch`, `manifest-fingerprint-mismatch`, `stale-fingerprint-mismatch`, `same-path-replacement-suspected`, `read-only-blocking-findings`, `deferred-findings`, `unsupported-runtime-capability`, and `checkpoint-requested`.
+
+Blocker wording must distinguish guard failures: `rollback-unavailable` means the target lacks a clean rollback anchor, `target-only-guard-unavailable` means the target-only guard is unavailable or unparseable, and `unexpected-worktree-change` means non-target worktree changes make automatic fixing unsafe.
+
+Unknown Markdown rule files under `.docs-review-fix/rules/` or `~/.docs-review-fix/rules/` are a normal-mode warning and a strict-mode blocker before target state is written.
 
 ## Reviewer Guard
 

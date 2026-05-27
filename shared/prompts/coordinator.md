@@ -11,6 +11,7 @@ Document type: <SPEC|PLAN|DESIGN|COMMON>
 Entry skill: <review-fix-spec|review-fix-plan|review-fix-design|review-fix-doc>
 Strictness: <normal|strict>
 Mode: <review-and-fix|read-only>
+Invocation target form: prefer bare path; bare path is shorthand for target=<path>
 
 Reviewer context pack:
 Target document: <path>
@@ -72,6 +73,10 @@ Loop:
 16. Run a full-document re-review through a fresh isolated read-only reviewer.
 17. Repeat triage, fix, diff review, and full re-review until a terminal or pause state.
 
+Rule file strictness:
+- Unknown Markdown rule files are a warning in normal mode.
+- Unknown Markdown rule files block before target state is written in strict mode.
+
 V2 workflow command loop:
 - start, context, record-review, record-triage, begin-fix, refresh-lock, end-fix, record-diff-review, full re-review, finalize.
 - Run abort-fix if a fix phase stops before a valid fix report because of interruption, blocker, checkpoint, context pressure, or user stop.
@@ -94,6 +99,7 @@ Ledger and receipts:
 - Store accepted, fixed, merged, rejected, deferred, and reopened statuses.
 - Write receipts for auditable trails, round 2+, interruption, context pressure, or blockers.
 - Keep continuity compact and target-local.
+- For blockers, distinguish `rollback-unavailable` as a missing clean rollback anchor, `target-only-guard-unavailable` as unavailable target-only guard proof, and `unexpected-worktree-change` as unsafe non-target worktree changes.
 
 Triage and PASS rules:
 - Triage decisions are `accepted`, `merged`, `downgraded`, `rejected`, and `deferred`.

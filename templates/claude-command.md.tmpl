@@ -28,8 +28,10 @@ Package version: {{PACKAGE_VERSION}}
 Invocation syntax:
 
 ```text
-{{ROUTE_NAME}} target=<path> [ref=<path>...] [read-only|review-and-fix] [strict|normal] [assurance=practical|strict-verified|advisory] [resume] [ledger=<target-local path>] [root=<project-root>] [debug]
+{{ROUTE_NAME}} <path> [ref=<path>...] [read-only|review-and-fix] [strict|normal] [assurance=practical|strict-verified|advisory] [guard=git|snapshot] [resume] [ledger=<target-local path>] [root=<project-root>] [debug]
 ```
+
+Full form: `{{ROUTE_NAME}} target=<path> ...`. A bare path is shorthand for `target=<path>`. When `target=` is used, unlabeled paths are rejected.
 
 If a valid target invocation omits both mode and assurance, missing mode selects `review-and-fix` and missing assurance selects `practical`.
 
@@ -129,10 +131,12 @@ This command accepts `assurance=practical` and `assurance=strict-verified` befor
 If preflight blocks, do not dispatch the semantic reviewer and do not create target state. Render concise default output:
 
 ```text
-Blocked: <target> cannot be auto-fixed because it is not a clean tracked Git target.
+Blocked: <target> cannot be auto-fixed because it lacks a clean rollback anchor.
 
-Next: commit or restore the target, or rerun with read-only.
+Next: commit or restore the target, rerun with read-only, or use guard=snapshot when Git rollback is unavailable.
 ```
+
+If the normalized blocking reason is `target-only-guard-unavailable`, render that the target-only guard is unavailable or unparseable and ask the user to restore guard inputs or rerun after guard data can be read. If it is `unexpected-worktree-change`, render that non-target worktree changes make automatic fixing unsafe and ask the user to commit, stash, or restore unrelated worktree changes before retrying.
 
 When `debug` is present, include the redacted normalized blocker reason returned by preflight. Do not create target-local state for debug output on this path.
 
