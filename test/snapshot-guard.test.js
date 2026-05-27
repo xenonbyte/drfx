@@ -116,6 +116,26 @@ test('snapshot target-only guard blocks reference changes as unexpected worktree
   assert.equal(actual.blockingReason, 'unexpected-worktree-change');
 });
 
+test('snapshot capture rejects symlinked snapshot parent directory', (t) => {
+  const fixture = makeWorkspace(t);
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-snapshot-outside-round-'));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(outside, 'real-round'), { recursive: true });
+  fs.mkdirSync(path.join(fixture.targetStateDir, 'snapshots'), { recursive: true });
+  fs.symlinkSync(path.join(outside, 'real-round'), path.join(fixture.targetStateDir, 'snapshots', 'round-001'));
+
+  assert.throws(
+    () => captureSnapshot({
+      projectRoot: fixture.root,
+      targetPath: fixture.target,
+      targetStateDir: fixture.targetStateDir,
+      round: 1,
+      expectedNormalizedTarget: 'docs/target.md'
+    }),
+    (error) => error && error.blockingReason === 'rollback-unavailable'
+  );
+});
+
 test('snapshot capture and restore round target body without touching non-target files', (t) => {
   const fixture = makeWorkspace(t);
   const snapshotPath = path.join(fixture.targetStateDir, 'snapshots', 'round-002', 'target.body');
@@ -160,4 +180,26 @@ test('snapshot restore returns missing when snapshot body is absent', (t) => {
 
   assert.equal(restored.status, 'missing');
   assert.equal(fs.readFileSync(fixture.target, 'utf8'), '# Target\n\nChanged.\n');
+});
+
+test('snapshot restore rejects symlinked snapshot parent directory', (t) => {
+  const fixture = makeWorkspace(t);
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-snapshot-outside-restore-'));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  const realRound = path.join(outside, 'real-round');
+  fs.mkdirSync(realRound, { recursive: true });
+  fs.writeFileSync(path.join(realRound, 'target.body'), '# Outside body\n');
+  fs.mkdirSync(path.join(fixture.targetStateDir, 'snapshots'), { recursive: true });
+  fs.symlinkSync(realRound, path.join(fixture.targetStateDir, 'snapshots', 'round-001'));
+
+  assert.throws(
+    () => restoreSnapshot({
+      projectRoot: fixture.root,
+      targetPath: fixture.target,
+      targetStateDir: fixture.targetStateDir,
+      round: 1,
+      expectedNormalizedTarget: 'docs/target.md'
+    }),
+    (error) => error && error.blockingReason === 'rollback-unavailable'
+  );
 });
