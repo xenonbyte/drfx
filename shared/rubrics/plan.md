@@ -15,7 +15,13 @@ Review for:
 - Compatibility: runtime, API, schema, dependency, platform, and backwards-compatibility impacts are acknowledged.
 - Blast radius: affected files, services, users, data, and external systems are visible.
 - Handoff readiness: another agent or engineer can pick up the plan with context, working set, checks, and expected outcomes.
+- Source authority: the PLAN identifies the source it is executing from, such as a SPEC, DESIGN, issue, approved user plan, Superpowers-generated plan, task prompt, or acceptance notes.
+- Task source fit: material execution steps are grounded in a declared source of authority without requiring a specific ID format.
+- Reference Conformance: when references are provided, the PLAN does not violate their material behavior, scope, constraints, non-goals, safety rules, acceptance expectations, or risk boundaries.
+- Stop conditions: the PLAN says when execution should stop instead of inventing a new requirement, design decision, external-state mutation, or verification shortcut.
 
-Blocking findings include missing execution order, missing prerequisites, unverifiable steps, hidden external state changes, no rollback for risky operations, and unresolved architecture or product decisions embedded in execution steps.
+A PLAN does not require a SPEC reference. SPEC-to-task mapping is optional and is not blocking by default. Missing SPEC IDs, stable IDs, trace tables, or coverage matrices is not blocking unless the PLAN claims complete coverage of a reference, custom rules require that structure, or the missing structure makes the PLAN unsafe or unverifiable for its stated purpose.
+
+Blocking findings include missing execution order, missing prerequisites, unverifiable steps, hidden external state changes, no rollback for risky operations, material reference conflict, unsupported new requirement embedded in execution steps, and unresolved architecture or product decisions embedded in execution steps.
 
 PASS for `PLAN` means the document is ordered, executable, verifiable, rollback-aware where needed, and ready to hand to another agent or engineer.

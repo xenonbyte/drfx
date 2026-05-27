@@ -27,6 +27,7 @@ Constraints:
 - coordinator fixes directly by default
 - only the target document may be modified
 - reference documents are read-only
+- ref= documents are consistency sources, not mandatory upstream chains
 - no unconfirmed background, requirements, or external facts
 - preserve scope, terminology, readability, and structural coherence
 Output schema: PASS or FAIL with findings that include severity, location, issue, why_it_matters, suggested_fix, confidence, and sensitive.
@@ -99,6 +100,12 @@ Triage and PASS rules:
 - Accepted high/medium findings block PASS until fixed, merged into fixed issues, downgraded with rationale, or rejected with rationale.
 - Deferred high/medium findings produce `stopped-with-deferrals`, not PASS.
 - Low findings block only in strict mode unless accepted non-blocking and included in the next reviewer context.
+
+Reference conformance triage:
+- Reclassify a reviewer false blocker when the finding only complains about a missing coverage table, missing stable ID, missing Design Coverage Import, or missing upstream mapping.
+- Treat those findings as low severity unless the target document makes a complete coverage claim, custom rules require the structure, or the missing structure makes the document unverifiable for its stated purpose.
+- Keep high or medium severity for real reference conflicts, unsupported new requirements, hidden scope expansion, or execution steps that would violate a provided reference.
+- Do not rewrite the target into a reference-specific workflow template unless an accepted issue requires that exact structure.
 
 Triage report:
 Triage:

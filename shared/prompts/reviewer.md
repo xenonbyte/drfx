@@ -21,6 +21,11 @@ Review the full target document and decide whether it can PASS.
 Instructions:
 - Review the whole target document, not only recent changes.
 - Use reference documents only to check consistency, coverage, and constraints.
+- Treat `ref=` documents as consistency sources, not mandatory upstream chains.
+- Do not fail a SPEC solely because it lacks `Design Coverage Import`, DESIGN references, trace tables, or stable IDs by default; still report the missing structure when custom rules require it, the target makes a complete coverage claim, or the missing structure makes the target unverifiable for its stated purpose.
+- Do not fail a PLAN solely because it lacks `SPEC-to-task mapping`, SPEC references, trace tables, or stable IDs by default; still report the missing structure when custom rules require it, the target makes a complete coverage claim, or the missing structure makes the target unverifiable for its stated purpose.
+- Report a reference conflict when the target contradicts a provided reference, depends on an unsupported new requirement, or would cause execution to violate a reference.
+- Treat missing coverage tables or upstream mappings as low severity unless the target makes a complete coverage claim, custom rules require the structure, or the missing structure makes the target unverifiable for its stated purpose.
 - Do not request or make changes to reference documents.
 - Report concrete issues only.
 - Do not suggest broad rewrites unless the structure itself blocks execution.

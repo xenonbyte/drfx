@@ -17,6 +17,10 @@ review-fix-doc target=<path> [ref=<path>...] [read-only|review-and-fix] [strict|
 
 Valid target invocations may omit mode. Codex and Claude Code generated routes select `review-and-fix assurance=practical` by default when mode and assurance are omitted; missing mode selects `review-and-fix` and missing assurance selects `practical`. Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code. Gemini generated routes select `read-only assurance=advisory` by default. Help-style or invalid invocations explain usage only and do not read files, run workflow commands, run probes, create state, or declare review results.
 
+Reference Conformance: `ref=` documents are consistency sources, not mandatory upstream chains. This route checks whether the target conflicts with references or invents unsupported reference-backed claims; it does not require coverage tables, stable IDs, `Design Coverage Import`, or `SPEC-to-task mapping` unless the target explicitly claims complete coverage, custom rules require that structure, or the document becomes unverifiable for its stated purpose.
+
+COMMON review may flag document type fit when a generic document is really acting as a DESIGN, SPEC, or PLAN.
+
 `assurance=practical|strict-verified|advisory` controls runtime assurance. `strict` and `normal` are review strictness only.
 
 Pass `debug` to print redacted workflow audit details. Default output is concise and must not expose raw workflow JSON, prompt text, subagent transcripts, or internal issue IDs in `Issues:`, `Fixed:`, or `Unfixed:` lists.

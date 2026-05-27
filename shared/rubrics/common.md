@@ -15,7 +15,11 @@ Review for:
 - Terminology: terms are used consistently where differences would change meaning.
 - Placeholders: required sections contain no blocking `TBD`, `TODO`, `later`, "to be discussed", or equivalent placeholder text.
 - External facts: unstable or external facts are verified with authoritative sources, or marked `UNCONFIRMED`.
+- Document type fit: if the document is functioning as a DESIGN, SPEC, or PLAN, flag that the user may get a better review from the matching route.
+- Reference Conformance: when references are provided, the document remains consistent with their material facts, constraints, terminology, scope, non-goals, and risks.
 
 Blocking findings include missing purpose, missing required context, ambiguity that affects execution or acceptance, unresolved questions that block use, unsupported project claims, and risk omissions that make the document unsafe to rely on.
+
+Missing DESIGN, SPEC, or PLAN-specific structure is not blocking for `COMMON` unless the document's stated purpose depends on that structure.
 
 PASS for `COMMON` means the document has sufficient background and objective context, is coherent, is aligned with known project facts, is actionable for its stated purpose, and has no unresolved high or medium issues.

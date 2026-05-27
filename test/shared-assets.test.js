@@ -108,6 +108,24 @@ test('coordinator prompt includes final response contract text', () => {
   assert.match(coordinator, /deferrals?[^\n]*issue IDs[^\n]*reason[^\n]*owner[^\n]*next action/i);
 });
 
+test('reviewer and coordinator distinguish reference conflicts from coverage gaps', () => {
+  const reviewer = read('shared/prompts/reviewer.md');
+  const coordinator = read('shared/prompts/coordinator.md');
+
+  assert.match(reviewer, /ref=.*consistency/i);
+  assert.match(reviewer, /Do not fail/i);
+  assert.match(reviewer, /Design Coverage Import/i);
+  assert.match(reviewer, /SPEC-to-task mapping/i);
+  assert.match(reviewer, /complete coverage claim/i);
+  assert.match(reviewer, /reference conflict/i);
+
+  assert.match(coordinator, /false blocker/i);
+  assert.match(coordinator, /coverage table/i);
+  assert.match(coordinator, /upstream mapping/i);
+  assert.match(coordinator, /reclassify/i);
+  assert.match(coordinator, /do not rewrite/i);
+});
+
 test('fixer prompt keeps writes target-only and issue-bounded', () => {
   const fixer = read('shared/prompts/fixer.md');
 
@@ -153,6 +171,69 @@ test('type rubrics contain required explicit coverage terms', () => {
 
   assert.match(spec, /implementation fit/i);
   assert.match(design, /implementation detail/i);
+});
+
+test('stage-aware rubrics use reference conformance without mandatory upstream chains', () => {
+  const core = read('shared/core.md');
+  const common = read('shared/rubrics/common.md');
+  const design = read('shared/rubrics/design.md');
+  const spec = read('shared/rubrics/spec.md');
+  const plan = read('shared/rubrics/plan.md');
+  const sharedText = [core, common, design, spec, plan].join('\n\n');
+  const publicAndPromptText = [
+    'README.md',
+    'shared/prompts/reviewer.md',
+    'shared/prompts/coordinator.md',
+    'templates/codex-skill.md.tmpl',
+    'templates/claude-command.md.tmpl',
+    'templates/gemini-command.toml.tmpl',
+    'skills/review-fix-spec/SKILL.md',
+    'skills/review-fix-plan/SKILL.md',
+    'skills/review-fix-design/SKILL.md',
+    'skills/review-fix-doc/SKILL.md'
+  ].map(read).join('\n\n');
+  const renderedRoutes = [
+    renderPlatformRoute('codex', 'review-fix-spec', { packageVersion: '0.0.0-test' }),
+    renderPlatformRoute('claude', 'review-fix-plan', { packageVersion: '0.0.0-test' }),
+    renderPlatformRoute('gemini', 'review-fix-design', { packageVersion: '0.0.0-test' })
+  ].join('\n\n');
+  const allReviewText = [sharedText, publicAndPromptText, renderedRoutes].join('\n\n');
+
+  assert.match(core, /Reference Conformance/);
+  assert.match(core, /reference documents/i);
+  assert.match(core, /consistency sources/i);
+  assert.match(core, /not mandatory upstream chains/i);
+  assert.match(core, /complete coverage claim/i);
+  assert.match(core, /reference conflict/i);
+  assert.match(core, /unsupported new requirement/i);
+
+  assert.match(common, /document type fit/i);
+  assert.match(common, /Reference Conformance/i);
+
+  assert.match(design, /stage-aware/i);
+  assert.match(design, /does not require downstream SPEC or PLAN handoff tables/i);
+  assert.match(design, /reference documents/i);
+
+  assert.match(spec, /A SPEC does not require a DESIGN reference/i);
+  assert.match(spec, /Design Coverage Import is optional/i);
+  assert.match(spec, /reference conflict/i);
+
+  assert.match(plan, /A PLAN does not require a SPEC reference/i);
+  assert.match(plan, /SPEC-to-task mapping is optional/i);
+  assert.match(plan, /stop condition/i);
+
+  for (const forbidden of [
+    /Every PLAN task must reference at least one SPEC/i,
+    /PLAN requires a SPEC reference/i,
+    /SPEC requires a DESIGN reference/i,
+    /SPEC must include Design Coverage Import/i,
+    /Design Coverage Import is required/i,
+    /SPEC-to-task mapping is required/i,
+    /must include `?Design Coverage Import`?/i,
+    /must include `?SPEC-to-task mapping`?/i
+  ]) {
+    assert.doesNotMatch(allReviewText, forbidden);
+  }
 });
 
 test('all source skills exist with fixed document types', () => {
@@ -227,6 +308,17 @@ test('README stays usage-focused and manual smoke receipt records runtime limita
   assert.doesNotMatch(receipt, /BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY/i);
   assert.doesNotMatch(receipt, /\bBearer\s+[A-Za-z0-9._-]+/i);
   assert.doesNotMatch(receipt, /\bCookie:/i);
+});
+
+test('README documents reference conformance and non-mandatory upstream chains', () => {
+  const readme = read('README.md');
+
+  assert.match(readme, /Reference Conformance/i);
+  assert.match(readme, /ref=.*consistency/i);
+  assert.match(readme, /SPEC does not require a DESIGN reference/i);
+  assert.match(readme, /PLAN does not require a SPEC reference/i);
+  assert.match(readme, /Design Coverage Import/i);
+  assert.match(readme, /SPEC-to-task mapping/i);
 });
 
 test('generated route text contains v2 operational workflow commands', () => {
@@ -422,6 +514,33 @@ test('generated route text materializes defaults before workflow commands', () =
   ]) {
     assert.match(rendered, /generated route must materialize effective mode and assurance before workflow calls/i);
     assert.match(rendered, /never pass omitted values through to `drfx workflow`/i);
+  }
+});
+
+test('source skills and generated routes document reference conformance behavior', () => {
+  const sourceSkills = [
+    'skills/review-fix-spec/SKILL.md',
+    'skills/review-fix-plan/SKILL.md',
+    'skills/review-fix-design/SKILL.md',
+    'skills/review-fix-doc/SKILL.md'
+  ];
+  const platforms = ['codex', 'claude', 'gemini'];
+  const routeNames = ['review-fix-spec', 'review-fix-plan', 'review-fix-design', 'review-fix-doc'];
+
+  for (const sourceSkill of sourceSkills) {
+    const sourceSkillText = read(sourceSkill);
+    assert.match(sourceSkillText, /Reference Conformance/i, sourceSkill);
+    assert.match(sourceSkillText, /ref=.*consistency source/i, sourceSkill);
+    assert.match(sourceSkillText, /does not require/i, sourceSkill);
+  }
+
+  for (const platform of platforms) {
+    for (const routeName of routeNames) {
+      const routeText = renderPlatformRoute(platform, routeName, { packageVersion: '0.0.0-test' });
+      assert.match(routeText, /Reference Conformance/i, `${platform}:${routeName}`);
+      assert.match(routeText, /reference documents are consistency sources/i, `${platform}:${routeName}`);
+      assert.match(routeText, /not mandatory upstream chains/i, `${platform}:${routeName}`);
+    }
   }
 });
 

@@ -229,6 +229,18 @@ Built-in rubrics:
 - PLAN: implementation steps, prerequisites, tooling, verification, rollback, failure handling, data safety, compatibility, and handoff readiness.
 - DESIGN: UX, UI, product workflows, system or architecture design, states, transitions, contracts, data flow, accessibility, responsiveness, localization, constraints, and risks.
 
+### Reference Conformance
+
+`ref=` documents are consistency sources, not mandatory upstream chains.
+
+- SPEC does not require a DESIGN reference.
+- PLAN does not require a SPEC reference.
+- `Design Coverage Import` is optional unless the SPEC claims complete coverage of a reference, custom rules require it, or the SPEC becomes unverifiable without it.
+- `SPEC-to-task mapping` is optional unless the PLAN claims complete coverage of a reference, custom rules require it, or the PLAN becomes unsafe or unverifiable without it.
+- Missing trace tables, stable IDs, or coverage tables are not blocking by default.
+
+Blocking reference findings are conflicts, unsupported new requirements presented as reference-backed, omitted reference constraints required for the target's stated purpose, or execution steps that would violate a reference.
+
 Reviewer findings include enough detail for triage: severity, location, problem, why it matters, suggested fix, confidence, and sensitive-content metadata when relevant.
 
 ## Custom Rules

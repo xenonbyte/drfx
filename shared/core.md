@@ -22,6 +22,32 @@ Default user output uses concise Route Output and is user-focused. It must not p
 
 `assurance=practical|strict-verified|advisory` selects runtime assurance. `strict` and `normal` select review strictness only.
 
+## Reference Conformance
+
+Reference documents supplied through `ref=` are consistency sources, not mandatory upstream chains. A `ref=design.md` does not require a SPEC target to include `Design Coverage Import`; a `ref=spec.md` does not require a PLAN target to include `SPEC-to-task mapping`.
+
+Use references to check whether the target contradicts declared facts, scope, non-goals, behavior, constraints, risks, acceptance expectations, terminology, or safety boundaries.
+
+Blocking reference conflict findings are limited to:
+
+- the target directly conflicts with a reference on a material point;
+- the target introduces an unsupported new requirement, product decision, design decision, or execution decision while presenting it as reference-backed;
+- the target omits a reference constraint that is required for the target document's stated purpose;
+- execution or implementation following the target would violate a reference;
+- the target makes a complete coverage claim for a reference but materially omits required referenced content.
+
+These are not blocking by default:
+
+- missing trace tables;
+- missing stable IDs;
+- missing coverage matrices;
+- missing `Design Coverage Import`;
+- missing `SPEC-to-task mapping`;
+- missing DESIGN references in SPEC documents;
+- missing SPEC references in PLAN documents.
+
+Treat those structural items as low-severity improvements unless the target document itself makes a complete coverage claim, the user's custom rules require them, or their absence makes the document unverifiable for its own stated purpose.
+
 ## Roles
 
 - Coordinator: owns the loop, reads instructions and rules, dispatches reviewer work, triages findings, manages target state, applies fixes by default, performs diff review, and decides terminal status.
@@ -41,6 +67,7 @@ General PASS requires:
 - Deferred high or medium issues are not treated as PASS; they stop as `stopped-with-deferrals`.
 - Required sections contain no blocking placeholders such as `TBD`, `TODO`, `later`, or "to be discussed".
 - Scope, constraints, assumptions, risks, and verification path are clear enough for the selected document type.
+- Reference documents, when provided, have been checked for material conformance without treating them as mandatory upstream chains.
 
 Strict PASS additionally requires unresolved low issues to be fixed or explicitly accepted as non-blocking and carried into later reviewer context.
 
