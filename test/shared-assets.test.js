@@ -854,3 +854,44 @@ test('public docs and source skills omit stale v2 rule and mode wording', () => 
   assert.doesNotMatch(publicText, /`read-only` or `review-and-fix` is required to start workflow/i);
   assert.doesNotMatch(publicText, /If no mode is provided, explain usage only/i);
 });
+
+test('diff review requires fix-effectiveness verification (no new machine fields)', () => {
+  const core = read('shared/core.md');
+  const coordinator = read('shared/prompts/coordinator.md');
+  const fixer = read('shared/prompts/fixer.md');
+
+  // G1: effectiveness is a prompt discipline folded into the existing DIFF-FAIL fields.
+  assert.match(core, /resolves the original finding|actually resolve|does not resolve/i);
+  assert.match(coordinator, /resolves the original finding|does not resolve/i);
+  assert.match(fixer, /how (the|this) (change|fix) resolves|how it resolves the/i);
+
+  // Must NOT introduce a machine field for it.
+  assert.doesNotMatch(core, /^\s*resolves:\s*(yes|no|partial)/im);
+});
+
+test('common rubric defines severity anchors; reviewer states coverage in Summary (no machine line)', () => {
+  const common = read('shared/rubrics/common.md');
+  const reviewer = read('shared/prompts/reviewer.md');
+  const coordinator = read('shared/prompts/coordinator.md');
+
+  assert.match(common, /^## Severity anchors$/m);
+  assert.match(common, /high:.*blocks/i);
+  assert.match(common, /medium:.*materially/i);
+  assert.match(common, /low:.*clarity|low:.*does not block/i);
+
+  // Coverage is stated inside the existing Summary line, NOT a new machine line.
+  assert.match(reviewer, /state[^.]*coverage[^.]*Summary|within the Summary/i);
+  assert.doesNotMatch(reviewer, /^Coverage:/m);
+  assert.match(coordinator, /coverage|exercised the required/i);
+});
+
+test('reviewer must not narrow the review when given changed-since-last-review', () => {
+  const core = read('shared/core.md');
+  const reviewer = read('shared/prompts/reviewer.md');
+  const coordinator = read('shared/prompts/coordinator.md');
+  assert.match(core, /Changed since last review|changed-since-last-review/i);
+  assert.match(reviewer, /Changed since last review/i);
+  assert.match(coordinator, /Changed since last review/i);
+  assert.match(reviewer, /still review the (whole|full) document|do not narrow/i);
+  assert.match(coordinator, /still review the (whole|full) document|do not narrow/i);
+});

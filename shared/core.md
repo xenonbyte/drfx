@@ -153,8 +153,15 @@ After each fix round, the coordinator reviews the changed target and confirms:
 - Terminology and structure remain coherent.
 - No required-section placeholder was added.
 - Sensitive values were not copied into workflow state or responses.
+- Every claimed fix actually resolves the original finding's `why_it_matters`, not merely that an edit was made at its location. If a claimed fix does not resolve its finding, record it as a `DIFF-FAIL` using the existing fields (`problem` = why the change does not resolve the original finding; `required_action` = the concrete next step). Do not add new fields.
 
 Diff review is not sufficient for PASS. It only allows the next full re-review.
+
+## Full Re-Review Context Pack
+
+When a context pack includes `Changed since last review`, it carries a redacted hint for regression hunting: the fixed issue IDs and section anchors from the latest fix round. It is not a scope limiter. The reviewer must still review the whole document; the hint directs additional focus on those sections and issue IDs for regressions or new contradictions introduced by the last fix, but it must not replace whole-document re-review.
+
+The `changedSinceLastReview` field is populated only when the target has already been fixed this session (i.e., the persisted content fingerprint differs from the initial fingerprint and a latest fix report exists). It is absent on first review. It carries only issue IDs and redacted section anchors — never document body text.
 
 Diff review contract:
 

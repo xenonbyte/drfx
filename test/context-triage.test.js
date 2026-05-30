@@ -554,3 +554,117 @@ test('review-and-fix triage with only non-blocking low does not persist read-onl
   assert.equal(manifest.status, 'full-re-review');
   assert.equal(manifest.currentPhase, 'full-re-review');
 });
+
+test('buildContextPack omits changedSinceLastReview by default and includes it when provided', () => {
+  const base = buildContextPack({ target: 'docs/spec.md', documentType: 'SPEC', phase: 'full-re-review' });
+  assert.equal(base.changedSinceLastReview, null);
+
+  const withHint = buildContextPack({
+    target: 'docs/spec.md',
+    documentType: 'SPEC',
+    phase: 'full-re-review',
+    changedSinceLastReview: { fixedIssueIds: ['ISSUE-001'], sections: ['Requirements'] }
+  });
+  assert.deepEqual(withHint.changedSinceLastReview, { fixedIssueIds: ['ISSUE-001'], sections: ['Requirements'] });
+});
+
+test('runPersistentContext populates changedSinceLastReview from latest fix report only', async (t) => {
+  // Build a fixture with two ledger issues fixed across two fix rounds, but only the
+  // LATEST fix report references the second issue.  The context command must surface
+  // only the latest fix report's issue ID, not the older one.
+  const fixture = makePersistentFixture(t);
+
+  // Write a two-issue ledger (both previously fixed by separate rounds).
+  fs.mkdirSync(path.dirname(fixture.ledgerPath), { recursive: true });
+  fs.writeFileSync(fixture.ledgerPath, formatLedger({
+    issues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'fixed',
+        location: 'docs/spec.md:3',
+        summary: 'Old issue fixed in round 1',
+        resolution: 'Fixed: round 1 fix'
+      },
+      {
+        id: 'ISSUE-002',
+        severity: 'high',
+        status: 'fixed',
+        location: 'docs/spec.md:Section B',
+        summary: 'New issue fixed in round 2',
+        resolution: 'Fixed: round 2 fix'
+      }
+    ]
+  }));
+
+  // Write a "round 1" fix report that only fixed ISSUE-001.
+  const reportsDir = path.join(fixture.targetDir, 'reports');
+  fs.mkdirSync(reportsDir, { recursive: true });
+  const round1FixReport = {
+    round: 1,
+    normalized: {
+      fixed: [{ issue_id: 'ISSUE-001', summary: 'round 1 fix' }],
+      filesChanged: ['docs/spec.md'],
+      notFixed: [],
+      residualRisk: 'none'
+    }
+  };
+  const round1ReportPath = path.join(reportsDir, 'fix-round-001.md');
+  fs.writeFileSync(round1ReportPath, [
+    '# Fix Report',
+    '',
+    'Round: 1',
+    '',
+    '```json',
+    JSON.stringify(round1FixReport, null, 2),
+    '```',
+    ''
+  ].join('\n'));
+
+  // Write a "round 2" fix report (the latest) that only fixed ISSUE-002.
+  const round2FixReport = {
+    round: 2,
+    normalized: {
+      fixed: [{ issue_id: 'ISSUE-002', summary: 'round 2 fix' }],
+      filesChanged: ['docs/spec.md'],
+      notFixed: [],
+      residualRisk: 'none'
+    }
+  };
+  const round2ReportPath = path.join(reportsDir, 'fix-round-002.md');
+  fs.writeFileSync(round2ReportPath, [
+    '# Fix Report',
+    '',
+    'Round: 2',
+    '',
+    '```json',
+    JSON.stringify(round2FixReport, null, 2),
+    '```',
+    ''
+  ].join('\n'));
+
+  // Update the manifest: lastKnownContentSha256 differs from initialContentSha256
+  // (indicating the file was changed by a fix), and lastFixReportPath points to the
+  // latest (round 2) fix report only.
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  const alteredSha = 'b'.repeat(64);
+  fs.writeFileSync(fixture.manifestPath, formatManifestV2({
+    ...manifest,
+    status: 'full-re-review',
+    currentPhase: 'full-re-review',
+    initialContentSha256: manifest.initialContentSha256,
+    lastKnownContentSha256: alteredSha,
+    lastFixReportPath: 'reports/fix-round-002.md'
+  }));
+
+  const result = await runWorkflowCommand('context', workflowArgs({ ...fixture, phase: 'full-re-review' }), { cwd: fixture.root });
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'context');
+
+  const hint = result.contextPackSkeleton.changedSinceLastReview;
+  assert.ok(hint !== null, 'changedSinceLastReview should be populated');
+  assert.deepEqual(hint.fixedIssueIds, ['ISSUE-002'], 'should include only the latest fix report issue');
+  assert.ok(!hint.fixedIssueIds.includes('ISSUE-001'), 'must not include older fixed issue');
+  assert.ok(Array.isArray(hint.sections), 'sections should be an array');
+  assert.ok(hint.sections.some((s) => /Section B/i.test(s)), 'sections should include location of ISSUE-002');
+});

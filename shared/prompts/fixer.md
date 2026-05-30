@@ -24,7 +24,7 @@ Constraints:
 
 Output:
 Fixed:
-- ISSUE-001: <summary>
+- ISSUE-001: <summary; state briefly how the change resolves the original finding, for diff-review verification>
 
 Files changed:
 - <path>

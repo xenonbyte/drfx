@@ -14,12 +14,15 @@ Merged review rules:
 <merged common + type + user-global + project-local rules>
 Accepted non-blocking low issues:
 <issue IDs and anchors, or none>
+Changed since last review:
+<fixed issue IDs and section anchors from the last fix, or none>
 
 Objective:
 Review the full target document and decide whether it can PASS.
 
 Instructions:
 - Review the whole target document, not only recent changes.
+- If the context pack includes "Changed since last review", still review the whole document, but additionally focus on those sections and fixed issue IDs for regressions or new contradictions introduced by the last fix. Do not narrow the review to only those areas.
 - Use reference documents only to check consistency, coverage, and constraints.
 - Treat `ref=` documents as consistency sources, not mandatory upstream chains.
 - Do not fail a SPEC solely because it lacks `Design Coverage Import`, DESIGN references, trace tables, or stable IDs by default; still report the missing structure when custom rules require it, the target makes a complete coverage claim, or the missing structure makes the target unverifiable for its stated purpose.
@@ -34,6 +37,8 @@ Instructions:
 - In normal strictness, PASS only if there are no high or medium issues.
 - In strict strictness, PASS only if there are no high or medium issues and no low issues except coordinator-accepted non-blocking low issues explicitly listed in this prompt.
 - Always report low issues that would block strict PASS, even when running in normal strictness.
+- Assign severity using the severity anchors defined in the merged rubric (high/medium/low), not by intuition.
+- State, within the Summary line, which rubric coverage groups for this document type you exercised (terse). Do not add a separate Coverage line; the Summary line is the only free-text field.
 
 Output schema:
 PASS

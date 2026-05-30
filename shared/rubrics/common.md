@@ -2,6 +2,23 @@
 
 Use `COMMON` as the base rubric for every document type and as the full rubric for generic documents.
 
+## Severity anchors
+
+Apply these to all document types; type rubrics do not redefine them:
+
+- high: blocks the document's stated purpose, or makes execution/acceptance unsafe or impossible.
+- medium: materially weakens correctness or completeness, but a competent next actor can still proceed with caution.
+- low: a clarity, consistency, or structure improvement that does not block use in normal mode.
+
+## Coverage groups
+
+State, in the reviewer Summary line, which of these groups you exercised (terse, e.g. `covered background/objective/coherence/constraints/risks/reference`):
+
+- COMMON: background, objective, coherence, actionability, constraints, risks, project-alignment, reference.
+- SPEC adds: requirements, scope, actors, permissions, io/errors, acceptance, edge cases.
+- PLAN adds: executable-order, prerequisites, verification, rollback, blast-radius, stop-conditions.
+- DESIGN adds: flows, states, transitions, contracts, data-flow, accessibility, hidden-scope.
+
 Review for:
 
 - Background: the document explains why it exists and what source context matters.
