@@ -882,6 +882,9 @@ test('common rubric defines severity anchors; reviewer states coverage in Summar
   // Coverage is stated inside the existing Summary line, NOT a new machine line.
   assert.match(reviewer, /state[^.]*coverage[^.]*Summary|within the Summary/i);
   assert.doesNotMatch(reviewer, /^Coverage:/m);
+  // Coverage statement is limited to the PASS Summary; FAIL must not gain a Summary line.
+  assert.match(reviewer, /On PASS|PASS Summary/);
+  assert.match(reviewer, /FAIL report has no Summary|no Summary.*Findings:|do not add a Summary line/i);
   assert.match(coordinator, /coverage|exercised the required/i);
 });
 

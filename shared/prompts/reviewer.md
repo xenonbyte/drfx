@@ -38,7 +38,7 @@ Instructions:
 - In strict strictness, PASS only if there are no high or medium issues and no low issues except coordinator-accepted non-blocking low issues explicitly listed in this prompt.
 - Always report low issues that would block strict PASS, even when running in normal strictness.
 - Assign severity using the severity anchors defined in the merged rubric (high/medium/low), not by intuition.
-- State, within the Summary line, which rubric coverage groups for this document type you exercised (terse). Do not add a separate Coverage line; the Summary line is the only free-text field.
+- On PASS, state the rubric coverage groups you exercised within the Summary line (terse), for this document type. This applies only to the PASS Summary line; do not add a Summary line or a Coverage line to a FAIL report (a FAIL report has no Summary — its second line must be `Findings:`).
 
 Output schema:
 PASS

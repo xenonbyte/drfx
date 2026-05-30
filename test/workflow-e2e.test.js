@@ -842,6 +842,22 @@ test('guard=git second fix still rejects a non-target worktree change', async (t
   assert.equal(beginFix2.blockingReason, 'unexpected-worktree-change');
 });
 
+test('guard=git second fix rejects an empty fix that did not change the target this round', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const { start, opts } = await driveToSecondFixPhase(fixture);
+  // Second begin-fix succeeds; the target is still the (dirty vs HEAD) first-fix output.
+  const beginFix2 = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  assert.equal(beginFix2.ok, true, JSON.stringify(beginFix2));
+
+  // The fixer changes nothing this round, but submits a fix report claiming ISSUE-001 fixed.
+  const endFix = await runWorkflowCommand('end-fix', [start.targetStateDir, '--fix-report-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FIX_REPORT }));
+  // It must be rejected: relative to HEAD the target looks changed, but it is identical
+  // to this round's pre-fix snapshot, so no real fix happened.
+  assert.equal(endFix.ok, false, JSON.stringify(endFix));
+  assert.equal(endFix.blockingReason, 'fix-report-mismatch');
+});
+
 test('guard=git abort-fix without a snapshot anchor still completes (legacy fix state)', async (t) => {
   const fixture = makeWorkflowRepo(t);
   const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git' });
