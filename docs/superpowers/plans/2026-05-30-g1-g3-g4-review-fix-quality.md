@@ -134,7 +134,7 @@ test('common rubric defines severity anchors; reviewer states coverage in Summar
   const reviewer = read('shared/prompts/reviewer.md');
   const coordinator = read('shared/prompts/coordinator.md');
 
-  assert.match(common, /Severity anchors:/);
+  assert.match(common, /^## Severity anchors$/m);
   assert.match(common, /high:.*blocks/i);
   assert.match(common, /medium:.*materially/i);
   assert.match(common, /low:.*clarity|low:.*does not block/i);
@@ -215,7 +215,9 @@ Run: `npm test`. Expected: all pass. `git status --short`; leave uncommitted.
 **Files:**
 - Modify: `lib/context-pack.js` (function `buildContextPack`)
 - Modify: `lib/workflow/persistent-context.js` (function `runPersistentContext`)
+- Modify: `shared/core.md` (full re-review / context-pack contract wording)
 - Modify: `shared/prompts/reviewer.md` (Instructions)
+- Modify: `shared/prompts/coordinator.md` (reviewer context-pack field list / no-narrowing handoff)
 - Test: `test/context-triage.test.js` (or a new `test/context-pack.test.js` if no suitable home exists) + `test/shared-assets.test.js`
 
 - [ ] **Step 1: Write the failing tests**
@@ -224,17 +226,20 @@ In `test/shared-assets.test.js`, append:
 
 ```js
 test('reviewer must not narrow the review when given changed-since-last-review', () => {
+  const core = read('shared/core.md');
   const reviewer = read('shared/prompts/reviewer.md');
+  const coordinator = read('shared/prompts/coordinator.md');
+  assert.match(core, /Changed since last review|changed-since-last-review/i);
   assert.match(reviewer, /Changed since last review/i);
+  assert.match(coordinator, /Changed since last review/i);
   assert.match(reviewer, /still review the (whole|full) document|do not narrow/i);
+  assert.match(coordinator, /still review the (whole|full) document|do not narrow/i);
 });
 ```
 
-In a context-pack test file (prefer `test/context-triage.test.js`; mirror its existing `buildContextPack` usage), append a unit test:
+In a context-pack test file, prefer `test/context-triage.test.js` and reuse its existing top-level `buildContextPack` import. If you instead create a new `test/context-pack.test.js`, add the import there. Append a unit test:
 
 ```js
-const { buildContextPack } = require('../lib/context-pack');
-
 test('buildContextPack omits changedSinceLastReview by default and includes it when provided', () => {
   const base = buildContextPack({ target: 'docs/spec.md', documentType: 'SPEC', phase: 'full-re-review' });
   assert.equal(base.changedSinceLastReview, null);
@@ -273,29 +278,46 @@ and add it to the returned object (next to `acceptedNonBlockingLowIssueIds: norm
 
 - [ ] **Step 4: Populate it in `lib/workflow/persistent-context.js`**
 
-In `lib/workflow/persistent-context.js` `runPersistentContext`, after `ledger` is read and before `buildContextPack` is called, compute the hint for review phases only when the target has already been fixed this session:
+In `lib/workflow/persistent-context.js` `runPersistentContext`, after `ledger` is read and before `buildContextPack` is called, compute the hint for review phases only when the target has already been fixed this session. The hint must be scoped to the **latest persisted fix**, not every fixed/reopened ledger issue:
 
 ```js
     const priorFix = Boolean(
       metadata.manifest.lastKnownContentSha256 &&
       metadata.manifest.initialContentSha256 &&
-      metadata.manifest.lastKnownContentSha256 !== metadata.manifest.initialContentSha256
+      metadata.manifest.lastKnownContentSha256 !== metadata.manifest.initialContentSha256 &&
+      metadata.manifest.lastFixReportPath &&
+      metadata.manifest.lastFixReportPath !== 'none'
     );
-    const changedSinceLastReview = (phase !== 'fix' && priorFix)
+    const latestFix = priorFix
+      ? readManifestReport(metadata, metadata.manifest.lastFixReportPath, 'Last fix report path')
+      : null;
+    // Reuse the existing reportIssueIds helper (helpers.js) instead of re-deriving the
+    // map: it safely handles a missing normalized block and is already how fix-report IDs
+    // are read elsewhere in helpers.js.
+    const latestFixedIssueIds = latestFix ? reportIssueIds(latestFix.report) : [];
+    const issueById = new Map((ledger.issues || []).map((issue) => [issue.id, issue]));
+    const changedSinceLastReview = (phase !== 'fix' && latestFixedIssueIds.length > 0)
       ? {
-        fixedIssueIds: (ledger.issues || [])
-          .filter((issue) => issue.status === 'fixed' || issue.status === 'reopened')
-          .map((issue) => issue.id),
-        sections: [...new Set((ledger.issues || [])
-          .filter((issue) => (issue.status === 'fixed' || issue.status === 'reopened') && issue.location)
+        fixedIssueIds: latestFixedIssueIds,
+        sections: [...new Set(latestFixedIssueIds
+          .map((id) => issueById.get(id))
+          .filter((issue) => issue && issue.location)
           .map((issue) => redactSensitive(String(issue.location))))]
       }
       : null;
 ```
 
-Then pass `changedSinceLastReview` into the `buildContextPack({ ... })` call (add the property alongside `acceptedNonBlockingLowIssueIds`). Confirm `redactSensitive` is already imported in this file; if not, import it from `../redaction` (it is used in `lib/context-pack.js` and likely available — verify and add the require if missing).
+Then pass `changedSinceLastReview` into the `buildContextPack({ ... })` call (add the property alongside `acceptedNonBlockingLowIssueIds`).
 
-- [ ] **Step 5: Update reviewer Instructions in `shared/prompts/reviewer.md`**
+**Imports required for this step (verified against current code):**
+- `readManifestReport` and `reportIssueIds` are defined in `lib/workflow/helpers.js` but are NOT yet exported (confirmed: they are absent from its `module.exports`). Add both to `helpers.js` `module.exports` (alphabetical), then add both to the `require('./helpers')` destructure at the top of `persistent-context.js`.
+- `redactSensitive` is NOT in scope in `helpers.js` (it has no `redaction` require). Do NOT re-export it through helpers. Import it directly in `persistent-context.js`: `const { redactSensitive } = require('../redaction');` (same source `lib/context-pack.js` uses).
+
+The `sections` hint is a redacted anchor list for the latest fixed issue IDs. With the current normalized fix-report schema, the safest source is the ledger location for each ID in the latest fix report; do not include all `fixed`/`reopened` ledger issues, and do not claim exact touched line ranges unless a future report schema records them.
+
+Add a persistent-context test for stale ledger entries: create a manifest where `lastKnownContentSha256 !== initialContentSha256`, a ledger with multiple `fixed` issues, and a latest `lastFixReportPath` whose normalized `fixed` list contains only the most recent issue. Assert `contextPackSkeleton.changedSinceLastReview.fixedIssueIds` and `sections` include only the latest fix report's issue IDs and matching ledger locations, not older fixed issues.
+
+- [ ] **Step 5: Update reviewer/coordinator/core instructions**
 
 In `shared/prompts/reviewer.md` `Instructions:`, add:
 
@@ -309,6 +331,10 @@ And in the reviewer context pack field list (the lines beginning `Target documen
 Changed since last review:
 <fixed issue IDs and section anchors from the last fix, or none>
 ```
+
+In `shared/prompts/coordinator.md`, add the same `Changed since last review:` field to the reviewer context pack block, and state that it is an additional regression focus only: the reviewer must still review the whole document and must not narrow the review to those sections.
+
+In `shared/core.md`, document the same contract in the full re-review guidance: when the context pack includes `changedSinceLastReview`, it is a redacted hint for regression hunting, not a scope limiter, and it must not replace whole-document re-review.
 
 - [ ] **Step 6: Run to verify they pass**
 
@@ -342,4 +368,4 @@ Run: `npm test`. Expected: all pass; existing context/persistent-context asserti
 - **Spec coverage:** G1 effectiveness folded into existing DIFF-FAIL (Task 1, no machine field); G3-a severity anchors + G3-b coverage-in-Summary (Task 2, no Coverage line); G4 context-pack `changedSinceLastReview` populated from the ledger when `lastKnown != initial`, reviewer told not to narrow (Task 3). All three gaps map to a task.
 - **No-machine-schema invariant:** Task 1 asserts `doesNotMatch(/^resolves:/)`; Task 2 asserts `doesNotMatch(/^Coverage:/)`; Step 6/7 re-run `semantic-parsers`/`reviewer-report` tests to confirm parsers are untouched.
 - **Type consistency:** `changedSinceLastReview` shape `{ fixedIssueIds: string[], sections: string[] }` is produced in persistent-context.js (Task 3 Step 4) and consumed/defaulted in context-pack.js (Step 3); the prior-fix signal mirrors G5's exactly (`lastKnown != initial`).
-- **Open verification (resolve during execution):** confirm `test/context-triage.test.js` already imports/uses `buildContextPack` or `runPersistentContext`; if not, put the unit test in a new `test/context-pack.test.js`. Confirm `redactSensitive` import in `persistent-context.js`.
+- **Verified (no longer open):** `test/context-triage.test.js` already imports `buildContextPack` at top (`const { buildContextPack } = require('../lib/context-pack')`), so the Task 3 unit test goes there. `readManifestReport`/`reportIssueIds` exist in `helpers.js` but are unexported — Task 3 Step 4 adds the exports; `redactSensitive` is imported directly from `../redaction` in `persistent-context.js` (not via helpers).
