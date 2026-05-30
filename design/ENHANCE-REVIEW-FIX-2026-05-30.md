@@ -19,8 +19,8 @@
 
 | 项 | 现状 | 证据 |
 |---|---|---|
-| 收敛/防震荡机制 | **完全没有** | grep `no-progress\|max-round\|oscillat\|converge\|recurr` 全仓 `lib/ shared/ templates/ skills/` 零命中 |
-| `currentRound` 上限 | 无界自增 | `lib/workflow/diff-review.js:121` 每次 DIFF-FAIL 回 fix 即 `+1`，无封顶 |
+| 收敛/防震荡机制 | **完全没有** | grep `no-progress\|max-round\|max-fix-attempt\|oscillat\|converge\|recurr` 全仓 `lib/ shared/ templates/ skills/` 零命中 |
+| loop/fix-attempt 上限 | 无可靠计数 | `currentRound` 仅在 `lib/workflow/diff-review.js:121` 的 DIFF-FAIL 回 fix 路径 `+1`，覆盖不了 DIFF-OK 后复审再修 |
 | diff review 校验范围 | 只验"映射/范围/术语/占位符/脱敏" | `shared/core.md:149-157`；**不含**"fix 是否真的解决 finding" |
 | fix 有效性判定 | 不存在 | `shared/prompts/fixer.md:25-39` 只报 Fixed/Not fixed，无 resolves 判定 |
 | reviewer severity 锚 | 无定义 | `shared/rubrics/*` + `reviewer.md:34-36` 只说"normal 下 high/medium 阻塞"，未定义何为 high/medium/low |
@@ -59,11 +59,12 @@ fixer 报 `Fixed: ISSUE-001`（`fixer.md:26-27`），diff review 契约（`core.
 ### G2 — 没有收敛/防震荡上限（loop 鲁棒性，唯一碰状态机）
 
 **问题**
-`currentRound` 无界自增，`STATUS_VALUES`（`lib/workflow-state.js:8-22`）无 `stopped-no-progress`。LLM fixer 可能震荡（修 A 引入 B、修 B 又引入 A）或对同一 finding 反复无效"修复"。今天**除用户手动停外，没有任何东西能终止 loop**。一个自动修复 loop 缺收敛保证是结构性风险。
+当前没有可靠的 loop/fix-attempt 上限：`currentRound` 只在 DIFF-FAIL 路径递增，不能覆盖常见的 `DIFF-OK → full-re-review → FAIL → begin-fix` 再修路径；`STATUS_VALUES`（`lib/workflow-state.js:8-22`）也无 `stopped-no-progress`。LLM fixer 可能震荡（修 A 引入 B、修 B 又引入 A）或对同一 finding 反复无效"修复"。今天**除用户手动停外，没有任何东西能终止 loop**。一个自动修复 loop 缺收敛保证是结构性风险。
 
 **最小修法（语义检测为主 + CLI 兜底封顶）**
 - 语义侧（coordinator 规则，写进 `core.md`/`coordinator.md`）：同一 issue（按稳定 `location` + 类别）在某轮被标记 `fixed` 后，于后续轮被 reviewer 以同口径重新提出 ≥1 次 → 判定为 no-progress；停为新 pause 状态 `stopped-no-progress`，携带复发 findings 的 redacted IDs/locations 与 next action。
-- CLI 兜底（`lib/workflow-state.js` + `lib/workflow/diff-review.js` 或 finalize）：`currentRound` 超过阈值（默认 5，可后续做成 `max-rounds=` token，但本期写死）→ 同样落 `stopped-no-progress`。
+- CLI 兜底：新增持久 `fixAttemptCount`（或等价 manifest 字段），初始化为 0，每次成功进入 `begin-fix` 前检查、进入后递增。阈值语义统一为**封顶 5 次 fix attempt**（`fixAttemptCount` 已达 5 时，第 6 次 begin-fix 前检查拒绝、不再写目标，直接落 `stopped-no-progress`；默认 5 可后续做成 `max-fix-attempts=` token，本期写死）。该计数**独立于 `currentRound`**；`currentRound` 继续只服务现有 round/report/snapshot 命名，不作为收敛封顶信号。
+- **向后兼容（必须）**：`target-state.js:464` 对 `MANIFEST_FIELDS` 每个字段都 `requireManifestValue`（必填）。`fixAttemptCount` 读取时若旧 manifest 缺该字段须**默认 0**——即**不**加入 `requireManifestValue` 强制集、读取端兜底缺省，保持 manifest schema 仍为 `2`、不引入 migration。否则 `resume` 一份升级前创建的 manifest 会 `state-validation-failed`。
 - 新增枚举：`STATUS_VALUES` 加 `stopped-no-progress`；`STATUS_REASONS`（`workflow-state.js:62-75`）加 `no-progress-detected`。finalize 把它当 pause 状态处理（同 `stopped-with-deferrals` 一类：非 PASS，可恢复，记录未解决项）。
 
 **落点（2026-05-30 核实补全——状态/原因枚举分散在多处，漏一处即在解析/校验/receipt 路径炸）**
@@ -76,15 +77,15 @@ fixer 报 `Fixed: ISSUE-001`（`fixer.md:26-27`），diff review 契约（`core.
 - `lib/receipts.js:8 RECEIPT_STOP_REASONS`（核对/按需新增 finalize receipt 的 stop reason）。
 - `shared/long-task.md:50` Status 列表 + `shared/core.md`（Terminal And Pause States 节）。
 
-加封顶/复发判定与状态落地：`lib/workflow/finalize.js` 与/或 `lib/workflow/diff-review.js`。
+加封顶/复发判定与状态落地：`lib/workflow/start.js`（初始化计数字段）、`lib/workflow/fix-lifecycle.js`（begin-fix 检查/递增 attempt）、`lib/workflow-state.js`/`lib/target-state.js`（manifest 字段读写校验）、`lib/workflow/finalize.js` 与/或 `lib/workflow/diff-review.js`（复发检测与终态落地）。
 
 文案与终态列表：`shared/prompts/coordinator.md`（Loop/Terminal 段）、四套 `skills/*/SKILL.md` 终态列表、三套 `templates/*` 终态列表。
 
 测试：新增 `test/`（见 §6）。
 
-**为什么不做"diff issue-graph 引擎"**：检测复发只需"同 location+类别在 fixed 后重现"这一启发式，加 round 封顶兜底即可。构建完整 issue 依赖图属于过度设计，违反"smallest safe change"。
+**为什么不做"diff issue-graph 引擎"**：检测复发只需"同 location+类别在 fixed 后重现"这一启发式，加 fix-attempt 封顶兜底即可。构建完整 issue 依赖图属于过度设计，违反"smallest safe change"。
 
-**最脆弱前提**：reviewer 跨轮对"同一问题"的 location 措辞稳定到能被识别为复发。若 reviewer 每轮换措辞，语义检测会漏判——这正是 round 封顶作为**确定性兜底**存在的理由：即使语义检测漏了，第 5 轮也会硬停。
+**最脆弱前提**：reviewer 跨轮对"同一问题"的 location 措辞稳定到能被识别为复发。若 reviewer 每轮换措辞，语义检测会漏判——这正是 fix-attempt 封顶作为**确定性兜底**存在的理由：即使语义检测漏了，封顶 5 次后第 6 次 fix attempt 也会硬停。
 
 **风险**：中（唯一改状态机）。缓解：新状态走与 `stopped-with-deferrals` 同构的 finalize 分支，最大化复用；新增端到端测试断言"复发触发停机"与"封顶触发停机"。
 
@@ -164,7 +165,7 @@ reviewer context pack 是 `lib/context-pack.js:97 buildContextPack` 产出的 `c
 **绝不是"第二轮自动切 `guard=snapshot`"**
 静默把 `guardMode` 从 git 切到 snapshot 会违反 D1「不静默回退」（`OPTIMIZATION-2026-05-27.md` §7）——等于把守卫保证从"全仓 porcelain + 未推送提交保护"悄悄降级成"仅目标邻域快照"。G5 全程保持 `guardMode=git`，只**借用** `captureSnapshot` 机制做逐轮锚点，**保留** git porcelain 非目标检测。（旁证：单看阻塞，literal 切 snapshot 确实不再卡 dirty 目标，但 round1 走 git、round2 走 snapshot 会造成跨轮回滚故事不一致，故不可采纳。）
 
-**begin-fix 在 git 模式下有两道守卫，必须同时 round-gate（2026-05-30 核实补充）**
+**begin-fix 在 git 模式下有两道守卫，必须同时按后续-fix 信号分流（2026-05-30 核实补充）**
 `lib/workflow/fix-lifecycle.js:88-115` 的 begin-fix，git 分支按序跑两道，**两道都会卡第二次 fix 的 dirty 目标**：
 
 1. 第 97 行 `checkGitRollbackAnchor` → dirty 目标 → 抛 `rollback-unavailable`（先抛，用户当前命中的就是这道）。
@@ -207,11 +208,11 @@ clean-HEAD 在**首个 fix** 有真实安全价值：它保证回滚锚点 HEAD 
 |----|------|------|
 | D1 | G1/G3 为 prompt/rubric-only（**刻意不加机器 schema 字段**，避开严格 parser）；G4 需 context-pack CLI 改动 + prompt；均零状态机 | 严格 parser（`semantic-parsers.js`/`reviewer-report.js`）拒绝新机器行，故 G1/G3 折进既有 DIFF-FAIL 与 `Summary:` 自由文本；G4 的 context pack 由 CLI 生成、必须落 CLI |
 | D2 | G1 复用既有 `reopenDiffFailedIssues` 通道，不新增状态 | "未真正解决"本质就是一种 diff 失败，归入现成路径最小改动 |
-| D3 | G2 用"语义复发检测 + round 封顶兜底"双保险，不建 issue-graph | 启发式 + 确定性兜底足够；完整依赖图属过度设计 |
+| D3 | G2 用"语义复发检测 + fix-attempt 封顶兜底"双保险，不建 issue-graph | 启发式 + 确定性兜底足够；完整依赖图属过度设计；计数信号独立于 `currentRound`，覆盖 DIFF-OK→re-review→再 fix 路径 |
 | D4 | G2 新状态 `stopped-no-progress` 走与 `stopped-with-deferrals` 同构的 finalize 分支 | 二者都是"非 PASS、可恢复、记录未解决项"，复用最大化 |
 | D5 | G3 severity 锚只在 COMMON 定义一次，type rubric 引用不重复 | 避免四处漂移；COMMON 本就是所有类型的基底 |
 | D6 | G4 改动提示 gate 在"会话内已有上一轮 fix"（`lastKnown != initial`，**非 `currentRound`**）且显式禁止窄化审查范围 | currentRound 在 DIFF-OK→再 fix 路径不递增（见 G5 Finding 1）；首个 review 保持精简；防止"定向"退化成"只看改动区" |
-| D7 | round 封顶本期写死默认 5，不引入 `max-rounds=` token | 先验证收敛价值，token 化留待后续按需；遵守 smallest safe change |
+| D7 | fix-attempt 封顶本期写死默认 5，不引入 `max-fix-attempts=` token | 先验证收敛价值，token 化留待后续按需；遵守 smallest safe change；`currentRound` 仅保留现有 round/report/snapshot 命名语义 |
 | D8 | G5 区分首个 fix（clean-HEAD 保护预存编辑）与后续 fix（指纹匹配 + 逐 fix 快照），判定用 `lastKnown != initial`（**非 `currentRound`**），不简单删 clean-HEAD | 直接放宽会让回滚抹掉用户预存未提交编辑；currentRound 不可靠（见 G5 Finding 1）；区分后 git 模式既能多 fix 又不降级安全 |
 | D9 | G5 复用 `captureSnapshot`/`restoreSnapshot` 把 git 与 snapshot 锚点统一，仅保留 porcelain 非目标检测差异 | 不新建机制、不加状态/manifest 字段；git 模式独有价值（全仓非目标检测）保留 |
 
@@ -235,9 +236,9 @@ clean-HEAD 在**首个 fix** 有真实安全价值：它保证回滚锚点 HEAD 
   - `test/reviewer-report.test.js` / `test/semantic-parsers.test.js`：确认 reviewer 输出仍**恰好** PASS 两行 / FAIL `Findings:`、diff review 仍只 DIFF-OK 两行 / DIFF-FAIL 三字段——G1/G3 **未新增任何机器行**（防回归断言）。
   - `test/context-triage.test.js`（或新增 context-pack 测试）：有上一轮 fix（`lastKnown != initial`）→ context pack 含 `changedSinceLastReview`；首个 review（`lastKnown == initial`）→ 字段为 `null`。
   - `test/workflow-state-v2.test.js` + `test/finalize-resume.test.js` + `test/semantic-parsers.test.js`：`stopped-no-progress` + `no-progress-detected` 在 manifest 校验、final-response 解析、resume/receipt 路径均合法，且 finalize 当 pause 处理。
-  - 新增端到端断言（仿 `test/workflow-e2e.test.js`）：(a) 复发或 fix 次数超 5 → `stopped-no-progress`；(b) 无效 fix → coordinator 产出**标准 DIFF-FAIL** → issue 回 `reopened`（无新机器字段）。
+  - 新增端到端断言（仿 `test/workflow-e2e.test.js`）：(a) 复发或 `fixAttemptCount` 超 5 → `stopped-no-progress`，且覆盖 `DIFF-OK→full-re-review→FAIL→begin-fix` 路径中 `currentRound` 仍为 1 但 attempt 递增；(b) 无效 fix → coordinator 产出**标准 DIFF-FAIL** → issue 回 `reopened`（无新机器字段）。
   - G5（仿 `test/workflow-e2e.test.js` / `test/fix-guard.test.js`）：`guard=git` 完整跑 ≥2 次 fix 至 PASS，**第二次 fix 走 `DIFF-OK→full-re-review→FAIL→begin-fix` 路径**（`currentRound` 仍为 1，验证不靠 round 判定）；该 begin-fix 既不 `rollback-unavailable` 也不 `unexpected-worktree-change`；其间外部改目标 → 仍 `externally-changed`；改**非目标**文件 → 仍 `unexpected-worktree-change`；git abort 从逐 fix 快照还原；**首个 fix 行为零变化**（既有 git fixtures 断言全绿）。
-- **手动 smoke**：对一份故意"改不对"的 SPEC 跑一轮，确认 diff review 抓到无效 fix；对一份故意"反复震荡"的目标确认第 5 轮硬停；在 git 仓库里对一份需 ≥2 轮的 PLAN 跑 `guard=git`，确认第二轮不再阻塞。
+- **手动 smoke**：对一份故意"改不对"的 SPEC 跑一轮，确认 diff review 抓到无效 fix；对一份故意"反复震荡"的目标确认封顶 5 次后第 6 次 fix attempt 硬停；在 git 仓库里对一份需 ≥2 轮的 PLAN 跑 `guard=git`，确认第二轮不再阻塞。
 
 ## 7. 实施顺序（建议，获批后进入 review-fix-plan）
 
@@ -254,6 +255,6 @@ G5 是 bug 修复，应**先于**质量增强发布（建议 `0.2.1`）；G1+G3 
 - 不引入多 reviewer / 多视角并行审查（成本/复杂度不匹配当前用户量）。
 - 不改 SPEC/PLAN/DESIGN/COMMON 四套 rubric 的**审查维度内容**，只加 severity 锚与覆盖维度组清单（写入 rubric、由 reviewer 折进 `Summary:`，**非机器行**）。
 - 不改 isolation 模型、fingerprint guard、lock、**guard 模式选择语义**、manifest 既有字段语义。（G5 仅改 git 模式内部逐轮锚点/非目标检测，不改用户如何选 guard、不静默切换模式、不新增 manifest 字段。）
-- G2 不做 `max-rounds=` 用户 token（本期写死默认 5）。
+- G2 不做 `max-fix-attempts=` 用户 token（本期写死默认 5）。
 - 不引入新外部依赖；不新增平台适配。
 - 不改 reviewer / fixer / coordinator 的**角色边界**（reviewer 仍只读、fixer 仍只改 target、coordinator 仍是唯一 PASS 权威）。
