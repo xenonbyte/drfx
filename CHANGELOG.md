@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.1 - 2026-05-31
+
+### Added
+
+- Review-and-fix convergence controls, including fix-attempt caps and stopped-no-progress outcomes.
+- Fix-effectiveness checks, severity anchors, and re-review regression guidance for generated workflows.
+
+### Fixed
+
+- Rejected no-op subsequent fixes during multi-cycle review-and-fix runs.
+- Scoped coverage wording to PASS Summary output.
+- Preserved `guard=git` rollback behavior across multi-cycle review-and-fix flows.
+
+### Internal
+
+- Added and refined implementation plans for review-fix workflow quality improvements.
+
 ## 0.2.0 - 2026-05-27
 
 ### Added
