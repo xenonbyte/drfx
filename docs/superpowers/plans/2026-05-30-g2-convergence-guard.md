@@ -24,10 +24,10 @@
 **Why:** The cap needs durable per-target state. Mirror `guardMode`'s exact back-compat pattern (added in 0.2.0): listed in both field tables, defaulted to a value when absent, manifest schema stays 2, resume of an older manifest does not fail.
 
 **Files:**
-- Modify: `lib/workflow-state.js` (`MANIFEST_V2_FIELDS` ~line 93-129; default-on-missing block ~line 230-236; normalize ~line 245; the two object assemblies ~line 358 and ~line 408; the text serializer ~line 465)
-- Modify: `lib/target-state.js` (`MANIFEST_FIELDS` ~line 28-44; the two `guardMode: ...` assemblies at ~line 483 and ~line 609)
+- Modify: `lib/workflow-state.js` (`MANIFEST_V2_FIELDS` ~line 93-129; default-on-missing block ~line 230-236; normalize ~line 245; the two `parseManifestV2` defaults/return at ~line 358 and ~line 408). **No serializer edit** — `formatManifestV2` iterates the field table.
 - Modify: `lib/workflow/start.js` (initialize at start, near `lastFixReportPath: 'none'` ~line 139)
 - Test: `test/workflow-state-v2.test.js`
+- (`lib/target-state.js`: not required — see Step 4.)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -89,50 +89,29 @@ with:
   if (normalized.fixAttemptCount < 0) failState('Fix attempt count must be zero or a positive integer');
 ```
 
-(d) In the parse-side object that defaults `guardMode` (the block at ~line 358 `if (!Object.hasOwn(result, 'guardMode')) result.guardMode = 'git';`), add right after it:
+(d) In `parseManifestV2`'s returned object: it defaults `guardMode` at ~line 358 (`if (!Object.hasOwn(result, 'guardMode')) result.guardMode = 'git';`); add right after it:
 
 ```js
   if (!Object.hasOwn(result, 'fixAttemptCount')) result.fixAttemptCount = 0;
 ```
 
-(e) In the assembled return object at ~line 408 (the one with `guardMode: result.guardMode || 'git',`), add:
+(e) Still in `parseManifestV2`, the assembled return object at ~line 408 carries `guardMode: result.guardMode || 'git',`; add alongside it:
 
 ```js
     fixAttemptCount: Number(result.fixAttemptCount || 0),
 ```
 
-(f) In the text serializer (the array of `` `Key: ${...}` `` lines, near `` `Guard mode: ...` `` ~line 465), add a line after the Current round line:
+(f) **No text-serializer change is needed.** Verified: `formatManifestV2` (workflow-state.js:308) does NOT hand-write each line — it iterates `MANIFEST_V2_FIELDS` (`for (const [key, label] of MANIFEST_V2_FIELDS) lines.push(\`${label}: ${normalized[key]}\`)`). Once `fixAttemptCount` is in `MANIFEST_V2_FIELDS` (Step 3a) and normalized (Step 3c), the `Fix attempt count:` line is emitted automatically. Adding a manual serializer line here would duplicate it.
 
-```js
-    `Fix attempt count: ${manifest && Number.isInteger(manifest.fixAttemptCount) ? manifest.fixAttemptCount : 0}`,
-```
+- [ ] **Step 4: target-state — DEFENSIVE ONLY (the workflow does not require this field here)**
 
-- [ ] **Step 4: Add the field in `lib/target-state.js` (do NOT add it to `MANIFEST_FIELDS`)**
+**Context (verified):** The live manifest is written by `formatManifestV2` and read on the main path by `parseManifestV2`. `target-state.js`'s separate `parseManifest`/`formatManifest`/`MANIFEST_FIELDS` are a different, older serializer — but `parseManifest` IS still reached on the V2 begin-fix path via `lock.js` (`readManifest` → `assertPreFixFingerprint` → `manifestLastKnownSha`). However, `parseManifest` **silently ignores unknown lines** (target-state.js:449/452-459: an unrecognized `Label:` line is skipped, no error). So the extra `Fix attempt count:` line that `formatManifestV2` now emits does NOT break `parseManifest`, and `parseManifest` does not need the value.
 
-Verified: `target-state.js` `parseManifest` ends with `for (const [key] of MANIFEST_FIELDS) requireManifestValue(result, key)` (line ~464), which **requires every `MANIFEST_FIELDS` entry**. Adding `fixAttemptCount` there would make legacy manifests (without the line) fail to load — exactly the back-compat we must preserve. So:
+**Therefore this step is optional/defensive, not required for correctness.** Do NOT add `fixAttemptCount` to `MANIFEST_FIELDS` (that array is the `requireManifestValue` required set at line ~464; adding it would make any manifest lacking the line fail to load). If you want `parseManifest` to also surface the value (e.g. for future use), add only the read-side capture below; otherwise skip Step 4 entirely:
 
-(a) Do **not** add `fixAttemptCount` to `MANIFEST_FIELDS` in `target-state.js`. Leave that array unchanged.
+**Recommended: skip Step 4 entirely.** The begin-fix cap (Task 3) reads `fixAttemptCount` from `metadata.manifest`, which is produced by `parseManifestV2` (Task 1 Step 3) — not from target-state's `parseManifest`. The only target-state reach on the begin-fix path (`lock.js` → `readManifest` → `manifestLastKnownSha`) consumes `lastKnownContentSha256`, never `fixAttemptCount`. Since `parseManifest` silently ignores the unknown `Fix attempt count:` line, nothing breaks. Do NOT touch `MANIFEST_FIELDS`, the assembly sites, or `formatManifest`.
 
-(b) Add a reader default just before `assertAllowedStatus(result.status);` (~line 463), so a present line is captured and an absent one defaults to `'0'`:
-
-```js
-  if (!Object.hasOwn(result, 'fixAttemptCount')) result.fixAttemptCount = '0';
-```
-
-To capture the value when the line IS present (since it is not in `MANIFEST_FIELDS`, the label loop won't pick it up), add an explicit branch in the label dispatch (next to the `Created at`/`Updated at` branches at ~line 455-458):
-
-```js
-    } else if (label === 'Fix attempt count') {
-      result.fixAttemptCount = value;
-```
-
-(c) At the two assembly sites that already carry `guardMode: manifest.guardMode || 'git',` (~line 483 and ~line 609), add:
-
-```js
-    fixAttemptCount: Number(manifest.fixAttemptCount || 0),
-```
-
-(d) Confirm `target-state.js` `formatManifest` writes the field. If `formatManifest` iterates `MANIFEST_FIELDS` (which now excludes `fixAttemptCount`), add an explicit `Fix attempt count: ${Number(manifest.fixAttemptCount || 0)}` line to its output next to the Current round line so writer/reader stay symmetric. Verify by reading `formatManifest` during execution; mirror exactly how it emits `Current round`.
+(Optional, only if a future caller needs `parseManifest` to surface the value: add a read-side capture in the label dispatch next to the `Created at`/`Updated at` branches — `} else if (label === 'Fix attempt count') { result.fixAttemptCount = value;` — and a default before `assertAllowedStatus`. Not required by G2.)
 
 - [ ] **Step 5: Initialize at start in `lib/workflow/start.js`**
 
@@ -569,4 +548,9 @@ Run: `npm test` (all pass). Run: `npm pack --dry-run` (succeeds; file list uncha
 - **Back-compat invariant:** Task 1 Step 1 explicitly tests a legacy manifest missing the line → defaults to 0; cap uses `Number(manifest.fixAttemptCount || 0)` so absent = 0.
 - **Enum-copy completeness:** Task 2 covers `workflow-state.js` (×2), `semantic-parsers.js` (×2), `target-state.js`, `helpers.js` `finalizationRequiresReceipt`, `receipts.js`, plus `core.md`/`long-task.md` prose — the exact set the spec's "落点" enumerates.
 - **Type consistency:** `fixAttemptCount` is an integer everywhere (`normalizeInteger` in Task 1c; `Number(...)` reads in Task 3); status string `stopped-no-progress` and reason `no-progress-detected` are identical across all tasks and tests.
-- **Verified (resolved at plan time):** (1) `fixAttemptCount` must NOT go in `target-state.js` `MANIFEST_FIELDS` — that array is the `requireManifestValue` required set (line ~464), so it stays out; the field is handled via an explicit label branch + reader default + assembly lines (Task 1 Step 4). (2) Test fixtures: `test/workflow-state-v2.test.js` has `makeManifest(overrides)` (used in Task 1/2 tests); `test/semantic-parsers.test.js` has no block helper — Task 2 uses an inline 14-line `join('\n')` block. (3) Open at execution only: Task 4 Step 3 — whether `finalize.js` needs any change (expected none; it delegates to the Task-2-extended `finalizationRequiresReceipt` + `validateFinalResponse`). Resolve by running the finalize test; change finalize.js only if it proves necessary.
+- **Verified (resolved at plan time, corrected after a code-grounded plan review):**
+  1. The live manifest is written by `formatManifestV2` and read on the main path by `parseManifestV2`. `formatManifestV2` (workflow-state.js:308) **iterates `MANIFEST_V2_FIELDS`**, so adding `fixAttemptCount` to that table + normalize auto-emits and auto-parses it — **no serializer line** (the original Step 3f manual line would have duplicated the row; removed).
+  2. `lib/target-state.js` has a *separate, older* `parseManifest`/`formatManifest`/`MANIFEST_FIELDS`. The begin-fix cap reads `fixAttemptCount` from `parseManifestV2`, never from `parseManifest`. So **Task 1 Step 4 (target-state write of the field) is optional/defensive and recommended-skip** — `parseManifest` silently ignores the unknown `Fix attempt count:` line (target-state.js:449/452-459). Do NOT add it to `MANIFEST_FIELDS` (the `requireManifestValue` required set, line ~464).
+  3. **Task 2 Step 5 (target-state `ALLOWED_STATUSES`) IS required**, by contrast: begin-fix → `lock.js` `readManifest` → `parseManifest` → `assertAllowedStatus(result.status)` (line ~463) validates the *status value*, so a persisted `stopped-no-progress` would throw on the next read unless listed.
+  4. Test fixtures: `test/workflow-state-v2.test.js` has `makeManifest(overrides)`; `test/semantic-parsers.test.js` has no block helper — Task 2 uses an inline 14-line `join('\n')` block.
+  5. Open at execution only: Task 4 Step 3 — `finalize.js` is expected to need no change (it delegates to the Task-2-extended `finalizationRequiresReceipt` + `validateFinalResponse`); confirm by running the finalize test, change it only if proven necessary.
