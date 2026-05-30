@@ -95,13 +95,7 @@ with:
   if (!Object.hasOwn(result, 'fixAttemptCount')) result.fixAttemptCount = 0;
 ```
 
-(e) Still in `parseManifestV2`, the assembled return object at ~line 408 carries `guardMode: result.guardMode || 'git',`; add alongside it:
-
-```js
-    fixAttemptCount: Number(result.fixAttemptCount || 0),
-```
-
-(f) **No text-serializer change is needed.** Verified: `formatManifestV2` (workflow-state.js:308) does NOT hand-write each line — it iterates `MANIFEST_V2_FIELDS` (`for (const [key, label] of MANIFEST_V2_FIELDS) lines.push(\`${label}: ${normalized[key]}\`)`). Once `fixAttemptCount` is in `MANIFEST_V2_FIELDS` (Step 3a) and normalized (Step 3c), the `Fix attempt count:` line is emitted automatically. Adding a manual serializer line here would duplicate it.
+(e) **No return-object or text-serializer change is needed.** Verified: `parseManifestV2` returns `normalizeManifestV2(result)` directly, so there is no assembled return object to edit. Verified: `formatManifestV2` (workflow-state.js:308) does NOT hand-write each line — it iterates `MANIFEST_V2_FIELDS` (`for (const [key, label] of MANIFEST_V2_FIELDS) lines.push(\`${label}: ${normalized[key]}\`)`). Once `fixAttemptCount` is in `MANIFEST_V2_FIELDS` (Step 3a), defaulted (Step 3d), and normalized (Step 3c), the parsed value is returned and the `Fix attempt count:` line is emitted automatically. Adding a manual return-field or serializer line here would duplicate or drift.
 
 - [ ] **Step 4: target-state — DEFENSIVE ONLY (the workflow does not require this field here)**
 
@@ -142,10 +136,10 @@ Run: `npm test`. Expected: all pass (legacy manifests in `test/finalize-resume.t
 - Modify: `lib/workflow-state.js` (`STATUS_VALUES` ~line 8-23; `STATUS_REASONS` ~line 62-75)
 - Modify: `lib/semantic-parsers.js` (`FINAL_STATUSES` ~line 12-22; `STATUS_REASONS` ~line 46-58)
 - Modify: `lib/target-state.js` (`ALLOWED_STATUSES` ~line 7-22)
-- Modify: `lib/workflow/helpers.js` (`finalizationRequiresReceipt` ~line 1335-1346)
+- Modify: `lib/workflow/helpers.js` (`finalizationRequiresReceipt` ~line 1335-1346; `resumeRequiresReceipt` ~line 1829-1838)
 - Modify: `lib/receipts.js` (`RECEIPT_STOP_REASONS` ~line 8-18)
 - Modify: `shared/long-task.md` (Status list ~line 50) and `shared/core.md` (Terminal And Pause States section)
-- Test: `test/workflow-state-v2.test.js` + `test/semantic-parsers.test.js`
+- Test: `test/workflow-state-v2.test.js` + `test/semantic-parsers.test.js` + `test/finalize-resume.test.js`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -194,10 +188,19 @@ test('final response accepts stopped-no-progress with no-progress-detected', () 
 
 (`parseFinalResponseBlock` validates only the machine-block shape + enum membership; it does not require persistent state, so this stands alone.)
 
+Append to `test/finalize-resume.test.js` (extend the existing helper import from `../lib/workflow/helpers` or add one if absent):
+
+```js
+test('resume requires receipt for stopped-no-progress', () => {
+  const { resumeRequiresReceipt } = require('../lib/workflow/helpers');
+  assert.equal(resumeRequiresReceipt('stopped-no-progress'), true);
+});
+```
+
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `node --test test/workflow-state-v2.test.js test/semantic-parsers.test.js`
-Expected: FAIL — `stopped-no-progress` / `no-progress-detected` rejected by the enums.
+Run: `node --test test/workflow-state-v2.test.js test/semantic-parsers.test.js test/finalize-resume.test.js`
+Expected: FAIL — `stopped-no-progress` / `no-progress-detected` rejected by the enums and `resumeRequiresReceipt` does not yet require a receipt for the new pause state.
 
 - [ ] **Step 3: Add to `lib/workflow-state.js`**
 
@@ -245,6 +248,12 @@ In `finalizationRequiresReceipt`'s array, add after `'stopped-with-deferrals',`:
     'stopped-no-progress',
 ```
 
+In `resumeRequiresReceipt`'s array, add after `'stopped-with-deferrals',`:
+
+```js
+    'stopped-no-progress',
+```
+
 - [ ] **Step 7: Add to `lib/receipts.js`**
 
 In `RECEIPT_STOP_REASONS`, add after `'stopped-with-deferrals',`:
@@ -267,7 +276,7 @@ And in the same file's `Status reasons include` sentence, add `no-progress-detec
 
 - [ ] **Step 9: Run to verify they pass**
 
-Run: `node --test test/workflow-state-v2.test.js test/semantic-parsers.test.js`
+Run: `node --test test/workflow-state-v2.test.js test/semantic-parsers.test.js test/finalize-resume.test.js`
 Expected: PASS.
 
 - [ ] **Step 10: Run the full suite**
@@ -282,7 +291,7 @@ Run: `npm test`. Expected: all pass.
 
 ### Task 3: `begin-fix` enforces the fix-attempt cap
 
-**Why:** This is the deterministic convergence guarantee. `begin-fix` increments `fixAttemptCount` on success, and refuses the attempt that would exceed the cap by finalizing to `stopped-no-progress` instead of writing the target.
+**Why:** This is the deterministic convergence guarantee. `begin-fix` increments `fixAttemptCount` on success, and refuses the attempt that would exceed the cap by returning/persisting a `stopped-no-progress` stop signal instead of writing the target. The route must then finalize that stop signal through the normal final-response path.
 
 **Files:**
 - Modify: `lib/workflow/fix-lifecycle.js` (`runBeginFix` — cap check near the top of the `try`, before guards; increment on the success manifest update ~line 133-140)
@@ -314,8 +323,31 @@ test('begin-fix refuses the attempt past the fix-attempt cap with stopped-no-pro
   assert.equal(beginFix.ok, false, JSON.stringify(beginFix));
   assert.equal(beginFix.status, 'stopped-no-progress');
   assert.equal(beginFix.statusReason, 'no-progress-detected');
-  // The target was not modified by the refused attempt.
+  // The target was not modified by the refused attempt, but the route must still
+  // finalize to write the final receipt/summary through the validated final path.
   assert.equal(manifestAt(manifestPath).status, 'stopped-no-progress');
+
+  const FINAL_NO_PROGRESS = [
+    'Final status: stopped-no-progress',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Mode: review-and-fix',
+    'Target: docs/practical-target.md',
+    'Files changed: none',
+    'Fixed issue IDs: none',
+    'Verification performed: begin-fix cap refusal',
+    'Deferrals or blockers: ISSUE-001 unresolved after fix-attempt cap',
+    'Blocking reason: none',
+    'Status reason: no-progress-detected',
+    'Residual risk: ISSUE-001 remains unresolved',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: none'
+  ].join('\n');
+  const final = await runWorkflowCommand('finalize', [start.targetStateDir, '--final-response-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FINAL_NO_PROGRESS }));
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'stopped-no-progress');
+  assert.equal(fs.existsSync(path.join(start.targetStateDir, 'rounds', '001-final-stopped-no-progress.md')), true);
 });
 
 test('begin-fix increments fixAttemptCount on a successful attempt', async (t) => {
@@ -340,7 +372,7 @@ test('begin-fix increments fixAttemptCount on a successful attempt', async (t) =
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `node --test test/workflow-e2e.test.js`
-Expected: FAIL — the cap is not enforced and the count is not incremented.
+Expected: FAIL — the cap is not enforced, the count is not incremented, and the stopped cap path does not yet have finalized receipt coverage.
 
 - [ ] **Step 3: Add the cap constant and check + increment in `runBeginFix`**
 
@@ -371,6 +403,8 @@ In `runBeginFix`, inside the `try` block, BEFORE `acquireLock(...)` (so a refuse
     }
 ```
 
+This refused `begin-fix` result is a stop signal, not the complete terminal response. The generated route/coordinator must follow it by submitting a `Final status: stopped-no-progress` payload through `drfx workflow finalize <targetStateDir> --final-response-stdin --json`, so final-response validation, receipt writing, and summary generation use the same path as other pause states.
+
 Then, on the SUCCESS manifest update (the existing `updatePersistentManifest(metadata, { status: 'fix', currentPhase: 'fix', ... runtimeFingerprintGuard: 'passed' })` at ~line 133-140), add the increment:
 
 ```js
@@ -399,11 +433,12 @@ Run: `npm test`. Expected: all pass, including the existing G5 two-fix and abort
 **Why:** finalize must treat `stopped-no-progress` as a valid pause finalization (write receipt, persist), and the prompts/routes must list it as a terminal state. Add the coordinator recurrence heuristic (semantic backup to the deterministic cap).
 
 **Files:**
-- Verify/Modify: `lib/workflow/finalize.js` (it delegates status/receipt rules to `finalizationRequiresReceipt` + `validateFinalResponse`, both already extended in Task 2 — confirm no status-specific branch rejects the new status)
+- Verify/Modify: `lib/workflow/finalize.js` (it delegates status/receipt rules to `finalizationRequiresReceipt` + `validateFinalResponse`; confirm no status-specific branch rejects the new status)
+- Modify: `lib/final-response.js` (`validateReadOnly`/status-specific final validation — require `stopped-no-progress` to use `Status reason: no-progress-detected`)
 - Modify: `shared/prompts/coordinator.md` (Terminal states list + recurrence heuristic) and `shared/core.md` (Loop convergence note)
 - Modify: `skills/review-fix-spec/SKILL.md`, `skills/review-fix-plan/SKILL.md`, `skills/review-fix-design/SKILL.md`, `skills/review-fix-doc/SKILL.md` (terminal-state lists)
 - Modify: `templates/claude-command.md.tmpl`, `templates/codex-skill.md.tmpl`, `templates/gemini-command.toml.tmpl` (terminal-state lists)
-- Test: `test/workflow-e2e.test.js` (finalize), `test/shared-assets.test.js` (text)
+- Test: `test/workflow-e2e.test.js` (finalize), `test/finalize-resume.test.js` (final-response validation), `test/shared-assets.test.js` (text)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -472,14 +507,138 @@ test('finalize accepts a stopped-no-progress final response', async (t) => {
 });
 ```
 
+Append a recurrence-stop workflow test to `test/workflow-e2e.test.js`. This test intentionally models the semantic coordinator decision with deterministic payloads: a fixed high/medium issue reappears at the same location/category after `DIFF-OK -> full-re-review`, so the coordinator stops as no-progress instead of starting another fix.
+
+```js
+test('recurring high finding after full re-review finalizes stopped-no-progress', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git' });
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+  await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'],
+    workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') }));
+
+  fs.writeFileSync(
+    fixture.target,
+    [
+      '# Practical Workflow Target',
+      '',
+      'The document now states the expected behavior directly for implementers.',
+      '',
+      '## Acceptance',
+      '',
+      '- The final wording names the expected behavior.',
+      ''
+    ].join('\n')
+  );
+
+  await runWorkflowCommand('end-fix', [start.targetStateDir, '--fix-report-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FIX_REPORT }));
+  await runWorkflowCommand('record-diff-review', [start.targetStateDir, '--result-stdin', '--json'],
+    workflowOptions(fixture, { stdin: DIFF_OK }));
+  await runWorkflowCommand('context', [...startArgs, '--phase', 'full-re-review'], workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'full-re-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_REOPEN }));
+
+  const FINAL_NO_PROGRESS = [
+    'Final status: stopped-no-progress',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Mode: review-and-fix',
+    'Target: docs/practical-target.md',
+    'Files changed: docs/practical-target.md',
+    'Fixed issue IDs: ISSUE-001',
+    'Verification performed: full re-review found recurring ISSUE-001',
+    'Deferrals or blockers: ISSUE-001 recurred at docs/practical-target.md#practical-workflow-target',
+    'Blocking reason: none',
+    'Status reason: no-progress-detected',
+    'Residual risk: ISSUE-001 remains unresolved after recurrence',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: none'
+  ].join('\n');
+
+  const final = await runWorkflowCommand('finalize', [start.targetStateDir, '--final-response-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FINAL_NO_PROGRESS }));
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'stopped-no-progress');
+  const manifest = manifestAt(start.manifestPath);
+  assert.equal(manifest.status, 'stopped-no-progress');
+  assert.equal(manifest.statusReason, 'no-progress-detected');
+  assert.equal(fs.existsSync(path.join(start.targetStateDir, 'rounds', '001-final-stopped-no-progress.md')), true);
+});
+```
+
+Append status-specific final-response validation tests to `test/finalize-resume.test.js`:
+
+```js
+test('final response validation requires no-progress reason for stopped-no-progress', () => {
+  const state = {
+    persistent: true,
+    target: 'docs/spec.md',
+    mode: 'review-and-fix',
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    filesChanged: 'none',
+    unresolvedBlockingIssues: ['ISSUE-001']
+  };
+  const finalResponse = {
+    ...baseBlock,
+    finalStatus: 'stopped-no-progress',
+    filesChanged: 'none',
+    fixedIssueIds: 'none',
+    deferralsOrBlockers: 'ISSUE-001 unresolved after fix-attempt cap',
+    statusReason: 'none',
+    coordinatorAgreement: 'none'
+  };
+
+  assert.throws(
+    () => validateFinalResponse({ finalResponse, state }),
+    /no-progress-detected/i
+  );
+
+  const accepted = validateFinalResponse({
+    finalResponse: { ...finalResponse, statusReason: 'no-progress-detected' },
+    state
+  });
+  assert.equal(accepted.status, 'stopped-no-progress');
+});
+```
+
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `node --test test/shared-assets.test.js test/workflow-e2e.test.js`
-Expected: FAIL — terminal lists lack the status; finalize test may pass already (Task 2 wired the parser/validator) or fail if a finalize branch needs adjustment.
+Run: `node --test test/shared-assets.test.js test/workflow-e2e.test.js test/finalize-resume.test.js`
+Expected: FAIL — terminal lists lack the status, and `validateFinalResponse` does not yet enforce the `stopped-no-progress` / `no-progress-detected` pairing.
 
-- [ ] **Step 3: Confirm finalize handles the status**
+- [ ] **Step 3: Add status-specific final validation; confirm finalize delegates cleanly**
 
-Read `lib/workflow/finalize.js` `runPersistentFinalize`. It builds validation state via `buildFinalValidationState`, calls `validateFinalResponse`, and writes a receipt when `finalizationRequiresReceipt(status)` is true (both extended in Task 2). Confirm there is no status allowlist in finalize.js that excludes `stopped-no-progress`. If the finalize test fails because `validateFinalResponse` rejects it, the gap is an enum from Task 2 — fix there, not with a special-case here. Make NO finalize.js change unless the test proves one is needed; if it does, record exactly what failed and the minimal line changed.
+In `lib/final-response.js`, add a status-specific branch near the existing persistent `stopped-with-deferrals` validation:
+
+```js
+  if (state && state.persistent && finalResponse.finalStatus === 'stopped-no-progress') {
+    const unresolvedIssueIds = normalizeIssueIds([
+      ...(Array.isArray(state.unresolvedBlockingIssues) ? state.unresolvedBlockingIssues : []),
+      ...(Array.isArray(state.deferredBlockingIssueIds) ? state.deferredBlockingIssueIds : []),
+      ...(Array.isArray(state.readOnlyBlockingIssueIds) ? state.readOnlyBlockingIssueIds : [])
+    ]);
+    if ((finalResponse.blockingReason || 'none') !== 'none') {
+      fail('ERR_FINAL_NO_PROGRESS_BLOCKING_REASON', 'stopped-no-progress requires Blocking reason: none');
+    }
+    if (finalResponse.statusReason !== 'no-progress-detected') {
+      fail('ERR_FINAL_NO_PROGRESS_STATUS_REASON', 'stopped-no-progress requires Status reason: no-progress-detected');
+    }
+    if (unresolvedIssueIds.length === 0) {
+      fail('ERR_FINAL_NO_PROGRESS_FINDINGS_EMPTY', 'stopped-no-progress requires unresolved high/medium findings');
+    }
+  }
+```
+
+Then read `lib/workflow/finalize.js` `runPersistentFinalize`. It builds validation state via `buildFinalValidationState`, calls `validateFinalResponse`, and writes a receipt when `finalizationRequiresReceipt(status)` is true (Task 2). Confirm there is no status allowlist in finalize.js that excludes `stopped-no-progress`. Make NO finalize.js change unless the test proves one is needed; if it does, record exactly what failed and the minimal line changed.
 
 - [ ] **Step 4: Add coordinator recurrence heuristic + terminal entry in `shared/prompts/coordinator.md`**
 
@@ -516,7 +675,7 @@ In `templates/claude-command.md.tmpl`, `templates/codex-skill.md.tmpl`, `templat
 
 - [ ] **Step 8: Run to verify they pass**
 
-Run: `node --test test/shared-assets.test.js test/workflow-e2e.test.js`
+Run: `node --test test/shared-assets.test.js test/workflow-e2e.test.js test/finalize-resume.test.js`
 Expected: PASS.
 
 - [ ] **Step 9: Full suite + package check**
@@ -544,13 +703,13 @@ Run: `npm test` (all pass). Run: `npm pack --dry-run` (succeeds; file list uncha
 
 ## Self-Review (run against `design/ENHANCE-REVIEW-FIX-2026-05-30.md` §3 G2)
 
-- **Spec coverage:** `fixAttemptCount` back-compat field (Task 1, mirrors guardMode); `stopped-no-progress` + `no-progress-detected` in all 6 enum copies + prose (Task 2); deterministic cap=5 enforced at begin-fix with increment (Task 3); finalize acceptance + coordinator recurrence heuristic + route/SKILL terminal lists (Task 4). All G2 spec points map to a task.
+- **Spec coverage:** `fixAttemptCount` back-compat field (Task 1, mirrors guardMode); `stopped-no-progress` + `no-progress-detected` in all enum/list copies + prose (Task 2); deterministic cap=5 enforced at begin-fix with increment and finalized receipt coverage (Task 3); finalize acceptance + final-response pairing validation + coordinator recurrence heuristic + route/SKILL terminal lists + recurrence-stop e2e coverage (Task 4). All G2 spec points map to a task.
 - **Back-compat invariant:** Task 1 Step 1 explicitly tests a legacy manifest missing the line → defaults to 0; cap uses `Number(manifest.fixAttemptCount || 0)` so absent = 0.
-- **Enum-copy completeness:** Task 2 covers `workflow-state.js` (×2), `semantic-parsers.js` (×2), `target-state.js`, `helpers.js` `finalizationRequiresReceipt`, `receipts.js`, plus `core.md`/`long-task.md` prose — the exact set the spec's "落点" enumerates.
+- **Enum-copy completeness:** Task 2 covers `workflow-state.js` (×2), `semantic-parsers.js` (×2), `target-state.js`, `helpers.js` `finalizationRequiresReceipt` and `resumeRequiresReceipt`, `receipts.js`, plus `core.md`/`long-task.md` prose — the exact set the spec's "落点" enumerates plus the resume receipt list that mirrors terminal pause handling.
 - **Type consistency:** `fixAttemptCount` is an integer everywhere (`normalizeInteger` in Task 1c; `Number(...)` reads in Task 3); status string `stopped-no-progress` and reason `no-progress-detected` are identical across all tasks and tests.
 - **Verified (resolved at plan time, corrected after a code-grounded plan review):**
-  1. The live manifest is written by `formatManifestV2` and read on the main path by `parseManifestV2`. `formatManifestV2` (workflow-state.js:308) **iterates `MANIFEST_V2_FIELDS`**, so adding `fixAttemptCount` to that table + normalize auto-emits and auto-parses it — **no serializer line** (the original Step 3f manual line would have duplicated the row; removed).
+  1. The live manifest is written by `formatManifestV2` and read on the main path by `parseManifestV2`. `parseManifestV2` returns `normalizeManifestV2(result)` directly, and `formatManifestV2` (workflow-state.js:308) **iterates `MANIFEST_V2_FIELDS`**, so adding `fixAttemptCount` to that table + default + normalize auto-emits and auto-parses it — **no return-object or serializer line** (the original manual return/serializer edits would have been wrong or duplicative; removed).
   2. `lib/target-state.js` has a *separate, older* `parseManifest`/`formatManifest`/`MANIFEST_FIELDS`. The begin-fix cap reads `fixAttemptCount` from `parseManifestV2`, never from `parseManifest`. So **Task 1 Step 4 (target-state write of the field) is optional/defensive and recommended-skip** — `parseManifest` silently ignores the unknown `Fix attempt count:` line (target-state.js:449/452-459). Do NOT add it to `MANIFEST_FIELDS` (the `requireManifestValue` required set, line ~464).
   3. **Task 2 Step 5 (target-state `ALLOWED_STATUSES`) IS required**, by contrast: begin-fix → `lock.js` `readManifest` → `parseManifest` → `assertAllowedStatus(result.status)` (line ~463) validates the *status value*, so a persisted `stopped-no-progress` would throw on the next read unless listed.
   4. Test fixtures: `test/workflow-state-v2.test.js` has `makeManifest(overrides)`; `test/semantic-parsers.test.js` has no block helper — Task 2 uses an inline 14-line `join('\n')` block.
-  5. Open at execution only: Task 4 Step 3 — `finalize.js` is expected to need no change (it delegates to the Task-2-extended `finalizationRequiresReceipt` + `validateFinalResponse`); confirm by running the finalize test, change it only if proven necessary.
+  5. Open at execution only: Task 4 Step 3 — `finalize.js` is expected to need no change (it delegates to the Task-2-extended `finalizationRequiresReceipt` + the Task-4-extended `validateFinalResponse`); confirm by running the finalize test, change it only if proven necessary.
