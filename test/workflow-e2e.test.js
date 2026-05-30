@@ -41,6 +41,20 @@ const TRIAGE_ACCEPT = [
   '  non_blocking: false'
 ].join('\n');
 
+const TRIAGE_REOPEN = [
+  'Triage:',
+  '- reviewer_id: R001',
+  '  issue_id: ISSUE-001',
+  '  decision: reopened',
+  '  severity: high',
+  '  original_severity: high',
+  '  rationale: The re-review shows the issue is not yet resolved.',
+  '  merged_into: none',
+  '  deferred_owner: none',
+  '  deferred_next_action: none',
+  '  non_blocking: false'
+].join('\n');
+
 const FIX_REPORT = [
   'Fixed:',
   '- ISSUE-001: Clarified the target wording.',
@@ -690,5 +704,172 @@ test('begin-fix still blocks if target becomes dirty after route preflight passe
   assert.equal(beginFix.status, 'blocked');
   assert.equal(beginFix.blockingReason, 'rollback-unavailable');
   assertFileExists(path.join(start.targetStateDir, 'reports', 'fix-guard-round-001.md'));
+  assert.equal(readLease({ projectRoot: fixture.root, targetKey: start.targetKey }), null);
+});
+
+test('guard=git allows a second fix after DIFF-OK -> full re-review FAIL', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git' });
+  const opts = () => workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') });
+
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  assert.equal(start.ok, true);
+
+  // --- Round 1: review -> triage -> fix -> DIFF-OK -> full re-review FAIL ---
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+
+  const beginFix1 = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  assert.equal(beginFix1.ok, true, JSON.stringify(beginFix1));
+
+  fs.writeFileSync(fixture.target,
+    '# Practical Workflow Target\n\nFirst fix clarified the wording.\n\n## Acceptance\n\n- Names the expected behavior.\n');
+  await runWorkflowCommand('end-fix', [start.targetStateDir, '--fix-report-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FIX_REPORT }));
+  await runWorkflowCommand('record-diff-review', [start.targetStateDir, '--result-stdin', '--json'],
+    workflowOptions(fixture, { stdin: DIFF_OK }));
+
+  // currentRound is still 1 here (DIFF-OK does not increment it).
+  const afterDiff = manifestAt(start.manifestPath);
+  assert.equal(Number(afterDiff.currentRound), 1);
+
+  await runWorkflowCommand('context', [...startArgs, '--phase', 'full-re-review'], workflowOptions(fixture));
+  const reReview = await runWorkflowCommand('record-review',
+    [...startArgs, '--phase', 'full-re-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  assert.equal(reReview.ok, true);
+
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_REOPEN }));
+  assertManifestPhase(start.manifestPath, 'fix', 'fix');
+
+  // --- The headline: the SECOND begin-fix must NOT be blocked under guard=git ---
+  const beginFix2 = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  assert.equal(beginFix2.ok, true, JSON.stringify(beginFix2));
+  assert.equal(beginFix2.status, 'begin-fix');
+  // currentRound is still 1; the prior-fix path is selected by lastKnown != initial.
+  assert.equal(Number(manifestAt(start.manifestPath).currentRound), 1);
+
+  fs.writeFileSync(fixture.target,
+    '# Practical Workflow Target\n\nSecond fix fully names the expected behavior.\n\n## Acceptance\n\n- Names the expected behavior.\n- Preserves git guard multi-cycle behavior.\n');
+  await runWorkflowCommand('end-fix', [start.targetStateDir, '--fix-report-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FIX_REPORT }));
+  await runWorkflowCommand('record-diff-review', [start.targetStateDir, '--result-stdin', '--json'],
+    workflowOptions(fixture, { stdin: DIFF_OK }));
+  await runWorkflowCommand('context', [...startArgs, '--phase', 'full-re-review'], workflowOptions(fixture));
+  await runWorkflowCommand('record-review',
+    [...startArgs, '--phase', 'full-re-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_PASS }));
+  const final = await runWorkflowCommand('finalize', [start.targetStateDir, '--final-response-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FINAL_PASS }));
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'pass');
+  assert.equal(assertManifestPhase(start.manifestPath, 'pass', 'final').guardMode, 'git');
+});
+
+test('guard=git abort-fix restores the target from the per-fix snapshot', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git' });
+  const opts = () => workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') });
+  const before = fs.readFileSync(fixture.target, 'utf8');
+
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  // Make a partial edit, then abort.
+  fs.writeFileSync(fixture.target, before + '\nPartial, aborted edit.\n');
+  const abort = await runWorkflowCommand('abort-fix', [
+    start.targetStateDir, '--status', 'blocked', '--reason', 'lock-held', '--json'
+  ], opts());
+  assert.equal(abort.ok, true, JSON.stringify(abort));
+
+  // The target is restored to its pre-fix body.
+  assert.equal(fs.readFileSync(fixture.target, 'utf8'), before);
+});
+
+async function driveToSecondFixPhase(fixture) {
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git' });
+  const opts = () => workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') });
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+  await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  fs.writeFileSync(fixture.target, '# Practical Workflow Target\n\nFirst fix output.\n');
+  await runWorkflowCommand('end-fix', [start.targetStateDir, '--fix-report-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FIX_REPORT }));
+  await runWorkflowCommand('record-diff-review', [start.targetStateDir, '--result-stdin', '--json'],
+    workflowOptions(fixture, { stdin: DIFF_OK }));
+  await runWorkflowCommand('context', [...startArgs, '--phase', 'full-re-review'], workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'full-re-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_REOPEN }));
+  return { start, opts };
+}
+
+test('guard=git second fix still rejects an external target change', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const { start, opts } = await driveToSecondFixPhase(fixture);
+  // Simulate an out-of-band edit to the target before the second begin-fix.
+  fs.appendFileSync(fixture.target, '\nUnexpected external edit.\n');
+  const beginFix2 = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  assert.equal(beginFix2.ok, false);
+  // G5 leaves the existing fingerprint-mismatch -> rollback-unavailable mapping unchanged
+  // (re-categorizing it as externally-changed is out of scope for G5 — see "Out of scope").
+  assert.equal(beginFix2.status, 'blocked');
+  assert.equal(beginFix2.blockingReason, 'rollback-unavailable');
+});
+
+test('guard=git second fix still rejects a non-target worktree change', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const { start, opts } = await driveToSecondFixPhase(fixture);
+  // Dirty a NON-target file in the worktree.
+  fs.writeFileSync(path.join(fixture.root, 'docs', 'reference.md'), '# Reference\n\nTampered.\n');
+  const beginFix2 = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  assert.equal(beginFix2.ok, false);
+  assert.equal(beginFix2.blockingReason, 'unexpected-worktree-change');
+});
+
+test('guard=git abort-fix without a snapshot anchor still completes (legacy fix state)', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git' });
+  const opts = () => workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') });
+
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  // Simulate a pre-upgrade git fix-guard report: strip the snapshotPath and drop the snapshot.
+  const reportPath = path.join(start.targetStateDir, 'reports', 'fix-guard-round-001.md');
+  const reportText = fs.readFileSync(reportPath, 'utf8');
+  const report = JSON.parse(reportText.match(/```json\n([\s\S]*?)\n```/)[1]);
+  delete report.rollbackAnchor.snapshotPath;
+  fs.writeFileSync(reportPath,
+    reportText.replace(/```json\n[\s\S]*?\n```/, '```json\n' + JSON.stringify(report, null, 2) + '\n```'));
+  fs.rmSync(path.join(start.targetStateDir, 'snapshots'), { recursive: true, force: true });
+
+  // A partial edit then abort: abort must still complete (write receipt + release lock), no restore.
+  fs.appendFileSync(fixture.target, '\nPartial edit.\n');
+  const abort = await runWorkflowCommand('abort-fix', [
+    start.targetStateDir, '--status', 'blocked', '--reason', 'lock-held', '--json'
+  ], opts());
+  assert.equal(abort.ok, true, JSON.stringify(abort));
   assert.equal(readLease({ projectRoot: fixture.root, targetKey: start.targetKey }), null);
 });

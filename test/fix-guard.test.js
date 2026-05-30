@@ -679,3 +679,41 @@ test('target-only worktree maps unavailable git status to target-only-guard-unav
     (error) => error.blockingReason === 'target-only-guard-unavailable'
   );
 });
+
+test('checkGitRollbackAnchor: priorFix accepts a tracked dirty target', (t) => {
+  const { root, target } = makeGitRepo(t);
+  fs.writeFileSync(target, '# Target\n\nEdited by the previous fix.\n');
+
+  // Default (first fix): a dirty target is still rejected.
+  assert.throws(
+    () => checkGitRollbackAnchor({ projectRoot: root, targetPath: target }),
+    /rollback-unavailable/
+  );
+
+  // Subsequent fix: a dirty tracked target is accepted.
+  const anchor = checkGitRollbackAnchor({ projectRoot: root, targetPath: target, priorFix: true });
+  assert.equal(anchor.status, 'passed');
+  assert.equal(anchor.priorFix, true);
+});
+
+test('checkGitRollbackAnchor: priorFix still requires a tracked target', (t) => {
+  const { root } = makeGitRepo(t);
+  const untracked = path.join(root, 'docs', 'untracked.md');
+  fs.writeFileSync(untracked, '# Untracked\n');
+  assert.throws(
+    () => checkGitRollbackAnchor({ projectRoot: root, targetPath: untracked, priorFix: true }),
+    /rollback-unavailable/
+  );
+});
+
+test('checkGitRollbackAnchor: priorFix rejects a staged target change', (t) => {
+  const { root, target } = makeGitRepo(t);
+  fs.writeFileSync(target, '# Target\n\nStaged change.\n');
+  git(root, 'add docs/target.md');
+  // A subsequent fix may carry a dirty WORKTREE target, but a staged (index) target
+  // change is not validated upstream and must still be rejected.
+  assert.throws(
+    () => checkGitRollbackAnchor({ projectRoot: root, targetPath: target, priorFix: true }),
+    /rollback-unavailable/
+  );
+});
