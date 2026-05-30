@@ -11,7 +11,7 @@
 **Source spec:** `design/ENHANCE-REVIEW-FIX-2026-05-30.md` §3 G5 + D8/D9. This is the 0.2.1 bug-fix batch (first of three).
 
 **Invariants (must hold after every task):**
-- First-fix behavior is byte-for-byte unchanged (existing git fixtures stay green).
+- First-fix safety semantics and existing git fixture compatibility are preserved; the only first-fix-visible addition is the intentional per-fix snapshot metadata required for git abort restore.
 - No new manifest field, no new workflow status, no new guard function, no new external dependency.
 - `npm test` (full `node --test` suite) passes after each task's final step.
 
@@ -122,12 +122,12 @@ function checkGitRollbackAnchor({
 Run: `node --test test/fix-guard.test.js`
 Expected: PASS, including all pre-existing `checkGitRollbackAnchor` tests (first-fix behavior unchanged).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add lib/fix-guard.js test/fix-guard.test.js
-git commit -m "feat(fix-guard): add priorFix mode to checkGitRollbackAnchor"
-```
+Run: `npm test`
+Expected: all tests pass.
+
+Run `git status --short` and leave changes uncommitted unless the user explicitly requested commits for this implementation run.
 
 ---
 
@@ -211,6 +211,22 @@ test('guard=git allows a second fix after DIFF-OK -> full re-review FAIL', async
   assert.equal(beginFix2.status, 'begin-fix');
   // currentRound is still 1; the prior-fix path is selected by lastKnown != initial.
   assert.equal(Number(manifestAt(start.manifestPath).currentRound), 1);
+
+  fs.writeFileSync(fixture.target,
+    '# Practical Workflow Target\n\nSecond fix fully names the expected behavior.\n\n## Acceptance\n\n- Names the expected behavior.\n- Preserves git guard multi-cycle behavior.\n');
+  await runWorkflowCommand('end-fix', [start.targetStateDir, '--fix-report-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FIX_REPORT }));
+  await runWorkflowCommand('record-diff-review', [start.targetStateDir, '--result-stdin', '--json'],
+    workflowOptions(fixture, { stdin: DIFF_OK }));
+  await runWorkflowCommand('context', [...startArgs, '--phase', 'full-re-review'], workflowOptions(fixture));
+  await runWorkflowCommand('record-review',
+    [...startArgs, '--phase', 'full-re-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_PASS }));
+  const final = await runWorkflowCommand('finalize', [start.targetStateDir, '--final-response-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FINAL_PASS }));
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'pass');
+  assert.equal(assertManifestPhase(start.manifestPath, 'pass', 'final').guardMode, 'git');
 });
 ```
 
@@ -286,19 +302,16 @@ Leave the rest of `runBeginFix` unchanged — the existing `if (targetOnlyGuard.
 - [ ] **Step 5: Run the test to verify it passes**
 
 Run: `node --test test/workflow-e2e.test.js`
-Expected: PASS, including the existing single-fix e2e test (first-fix path unchanged).
+Expected: PASS, including the existing single-fix e2e test (first-fix path unchanged) and the new two-fix `guard=git` path through final PASS.
 
 - [ ] **Step 6: Run the full suite (regression gate)**
 
 Run: `npm test`
 Expected: all tests pass. If `inspectActualChangedFiles` was not imported (Step 1), a `ReferenceError` here tells you to add it to the `../fix-guard` require list.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Checkpoint**
 
-```bash
-git add lib/workflow/fix-lifecycle.js test/workflow-e2e.test.js
-git commit -m "feat(begin-fix): support subsequent git fixes via prior-fix guard selection"
-```
+Run `git status --short` and leave changes uncommitted unless the user explicitly requested commits for this implementation run.
 
 ---
 
@@ -333,7 +346,7 @@ test('guard=git abort-fix restores the target from the per-fix snapshot', async 
   // Make a partial edit, then abort.
   fs.writeFileSync(fixture.target, before + '\nPartial, aborted edit.\n');
   const abort = await runWorkflowCommand('abort-fix', [
-    start.targetStateDir, '--status', 'blocked', '--blocking-reason', 'lock-held', '--json'
+    start.targetStateDir, '--status', 'blocked', '--reason', 'lock-held', '--json'
   ], opts());
   assert.equal(abort.ok, true, JSON.stringify(abort));
 
@@ -342,7 +355,7 @@ test('guard=git abort-fix restores the target from the per-fix snapshot', async 
 });
 ```
 
-(If `abort-fix`'s exact flag spelling differs, read `runAbortFix` near `fix-lifecycle.js:375-390` for the accepted `--status` / blocking-reason flags and match them; the blocking reason must be a member of `BLOCKING_REASONS`.)
+`abort-fix` consumes the reason through `--reason`; the value for blocked status must be a member of `BLOCKING_REASONS`.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -377,12 +390,9 @@ Expected: PASS.
 Run: `npm test`
 Expected: all pass. (Snapshot-mode abort behavior is unchanged; git-mode abort now restores.)
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Checkpoint**
 
-```bash
-git add lib/workflow/fix-lifecycle.js test/workflow-e2e.test.js
-git commit -m "feat(abort-fix): restore target from per-fix snapshot in git mode"
-```
+Run `git status --short` and leave changes uncommitted unless the user explicitly requested commits for this implementation run.
 
 ---
 
@@ -428,7 +438,10 @@ test('guard=git second fix still rejects an external target change', async (t) =
   fs.appendFileSync(fixture.target, '\nUnexpected external edit.\n');
   const beginFix2 = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
   assert.equal(beginFix2.ok, false);
-  assert.equal(beginFix2.status, 'externally-changed');
+  // G5 leaves the existing fingerprint-mismatch -> rollback-unavailable mapping unchanged
+  // (re-categorizing it as externally-changed is out of scope for G5 — see "Out of scope").
+  assert.equal(beginFix2.status, 'blocked');
+  assert.equal(beginFix2.blockingReason, 'rollback-unavailable');
 });
 
 test('guard=git second fix still rejects a non-target worktree change', async (t) => {
@@ -447,7 +460,7 @@ Note: `fixture.reference` is `docs/reference.md`, committed at `init`, so editin
 - [ ] **Step 2: Run the tests**
 
 Run: `node --test test/workflow-e2e.test.js`
-Expected: both PASS. The external-change case is caught by `assertPreFixFingerprint` (→ `externally-changed`) before the guard; the non-target case is caught by `inspectActualChangedFiles` (→ `unexpected-worktree-change`). If `externally-changed`'s `status` vs `statusReason` field name differs, read `runBeginFix`'s catch block (`fix-lifecycle.js:150-200`) and assert on the field actually returned (`status` for the externally-changed terminal, `blockingReason` for the worktree case).
+Expected: both PASS. The external-change case is caught by `assertPreFixFingerprint`; its `manifest-fingerprint-mismatch` flows through the existing `runBeginFix` catch block, which maps it to `blocked` / `rollback-unavailable` (G5 leaves that mapping unchanged). The non-target case is caught by `inspectActualChangedFiles` (→ `unexpected-worktree-change`).
 
 - [ ] **Step 3: Full suite + package check**
 
@@ -457,12 +470,9 @@ Expected: all pass.
 Run: `npm pack --dry-run`
 Expected: succeeds; package contents unchanged (no new files shipped — only `lib/` and `test/` edits).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Checkpoint**
 
-```bash
-git add test/workflow-e2e.test.js
-git commit -m "test(begin-fix): lock subsequent-git-fix guard rails (external + non-target)"
-```
+Run `git status --short` and leave changes uncommitted unless the user explicitly requested commits for this implementation run.
 
 ---
 
@@ -472,6 +482,7 @@ git commit -m "test(begin-fix): lock subsequent-git-fix guard rails (external + 
 - G4 (re-review regression hint) — context-pack CLI batch.
 - G2 (convergence / `fixAttemptCount` + `stopped-no-progress`) — state-machine batch.
 - A `max-fix-attempts=` user token (G2 writes the cap as 5).
+- Re-categorizing fingerprint-mismatch (`manifest-fingerprint-mismatch` / `target-fingerprint-mismatch`) from `rollback-unavailable` to `externally-changed`. This is a separate semantic improvement that would change existing behavior and break `test/workflow-e2e.test.js:689-693` and `test/fix-guard.test.js:309-316`; G5 deliberately keeps the existing mapping. Track it on its own if wanted.
 
 ## Release follow-through (after all four tasks are green)
 
@@ -481,7 +492,7 @@ git commit -m "test(begin-fix): lock subsequent-git-fix guard rails (external + 
 
 ## Self-Review (run against `design/ENHANCE-REVIEW-FIX-2026-05-30.md` §3 G5)
 
-- **Spec coverage:** two begin-fix guards round-gated → Task 1 (anchor) + Task 2 (non-target swap + signal); per-fix snapshot anchor → Task 2; git abort restore as new behavior → Task 3; prior-fix signal uses `lastKnown != initial` not `currentRound` → Task 2 (asserted `currentRound===1` in the second-fix test); externally-changed + non-target guard rails + first-fix-unchanged → Task 4 + full-suite gate. All G5 spec points map to a task.
+- **Spec coverage:** two begin-fix guards prior-fix-signal gated → Task 1 (anchor) + Task 2 (non-target swap + signal); per-fix snapshot anchor → Task 2; git abort restore as new behavior → Task 3; prior-fix signal uses `lastKnown != initial` not `currentRound` → Task 2 (asserted `currentRound===1` in the second-fix test); external-change (→ rollback-unavailable, mapping unchanged) + non-target (→ unexpected-worktree-change) guard rails + first-fix-unchanged → Task 4 + full-suite gate; full two-fix `guard=git` flow reaches PASS in Task 2. All G5 spec points map to a task.
 - **Placeholder scan:** every code step contains complete code; every command has expected output. No TBD/TODO.
 - **Type consistency:** `priorFix` (boolean) defined in Task 1 and passed in Task 2; `rollbackAnchor` carries `status:'passed'` + `snapshotPath` (Task 2) consumed by `readLatestFixGuardBaseline`/`restoreSnapshot` (Task 3); `inspectActualChangedFiles`/`checkTargetOnlyWorktree` both return `{status, blockingReason?, ...}` consumed identically by the existing `targetOnlyGuard.status === 'blocked'` branch.
 - **Known edge (call out, do not fix here):** `abort-fix` on a git session that began *before* this change has no captured snapshot, so `restoreSnapshot` returns `missing` → `rollback-unavailable`. This only affects an in-flight fix resumed across the upgrade; acceptable for a transient state. Not introduced by normal new sessions.
