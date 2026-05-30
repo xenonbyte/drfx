@@ -12,6 +12,8 @@ review -> triage -> fix -> diff review -> full re-review -> repeat until PASS or
 
 The initial `review` and every `full re-review` must inspect the whole target document through an isolated read-only reviewer task. A `diff review` after fixes is mandatory, but it is only a gate before the next full-document re-review.
 
+The fix loop is bounded: after a deterministic fix-attempt cap (default 5 fixes per target), or when a previously fixed high/medium finding recurs, the loop stops as `stopped-no-progress` rather than fixing indefinitely.
+
 ## V2 Operational Boundary
 
 The generated route coordinates host LLM work with deterministic `drfx workflow ...` commands. The CLI validates inputs, guards, state, tokens, and machine payload shapes. It does not perform semantic review, semantic triage, target edits, diff judgment, or final coordinator agreement.
@@ -80,6 +82,7 @@ The loop stops only at one of these states:
 - `pass`: the full-document review gate passes and the coordinator agrees.
 - `read-only-clean`: read-only mode found no blocking findings under selected strictness; this is not workflow PASS.
 - `stopped-with-deferrals`: high or medium issues are intentionally deferred with reason and owner; the internal workflow payload may include redacted issue IDs, reasons, owners, and next action. Default user output uses concise Unfixed/Next without internal issue IDs; debug may show redacted internal IDs and audit details.
+- `stopped-no-progress`: the fix loop hit the fix-attempt cap or a recurring unresolved finding; high or medium issues remain. This is a pause state, not PASS.
 - `read-only-findings`: read-only mode found issues that block PASS under the selected strictness.
 - `blocked`: the workflow cannot continue until a concrete blocker is resolved.
 - `unsupported`: the runtime lacks verified reviewer isolation for automatic review-fix work.
@@ -88,7 +91,7 @@ The loop stops only at one of these states:
 - user stop: the user explicitly stops the loop.
 - `checkpoint`: the task pauses with durable target-local state and a concrete next action.
 
-Blocking reasons include `reviewer-mutated-file`, `lock-held`, `corrupt-lock`, `lock-release-failed`, `reviewer-output-unparseable`, `fingerprint-guard-unavailable`, `fingerprint-guard-output-invalid`, `state-validation-failed`, `state-token-too-large`, `final-validation-failed`, `target-only-guard-unavailable`, `unexpected-worktree-change`, `reference-mutated-file`, `fix-report-mismatch`, `diff-review-failed`, `rollback-unavailable`, and `unsafe-handoff-file`. Status reasons include `none`, `strict-proof-validation-failed`, `target-fingerprint-mismatch`, `manifest-fingerprint-mismatch`, `stale-fingerprint-mismatch`, `same-path-replacement-suspected`, `read-only-blocking-findings`, `deferred-findings`, `unsupported-runtime-capability`, and `checkpoint-requested`.
+Blocking reasons include `reviewer-mutated-file`, `lock-held`, `corrupt-lock`, `lock-release-failed`, `reviewer-output-unparseable`, `fingerprint-guard-unavailable`, `fingerprint-guard-output-invalid`, `state-validation-failed`, `state-token-too-large`, `final-validation-failed`, `target-only-guard-unavailable`, `unexpected-worktree-change`, `reference-mutated-file`, `fix-report-mismatch`, `diff-review-failed`, `rollback-unavailable`, and `unsafe-handoff-file`. Status reasons include `none`, `strict-proof-validation-failed`, `target-fingerprint-mismatch`, `manifest-fingerprint-mismatch`, `stale-fingerprint-mismatch`, `same-path-replacement-suspected`, `read-only-blocking-findings`, `deferred-findings`, `no-progress-detected`, `unsupported-runtime-capability`, and `checkpoint-requested`.
 
 Blocker wording must distinguish guard failures: `rollback-unavailable` means the target lacks a clean rollback anchor, `target-only-guard-unavailable` means the target-only guard is unavailable or unparseable, and `unexpected-worktree-change` means non-target worktree changes make automatic fixing unsafe.
 
@@ -198,7 +201,7 @@ Do not print raw secrets, credentials, cookies, tokens, private keys, raw sensit
 Internal workflow final-response payload machine block:
 
 ```text
-Final status: pass | read-only-clean | read-only-findings | stopped-with-deferrals | blocked | unsupported | externally-changed | possible-target-replacement | checkpoint
+Final status: pass | read-only-clean | read-only-findings | stopped-with-deferrals | stopped-no-progress | blocked | unsupported | externally-changed | possible-target-replacement | checkpoint
 Assurance: practical | strict-verified | advisory
 Runtime platform: codex | claude-code | gemini | manual
 Mode: review-and-fix | read-only

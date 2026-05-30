@@ -898,3 +898,30 @@ test('reviewer must not narrow the review when given changed-since-last-review',
   assert.match(reviewer, /still review the (whole|full) document|do not narrow/i);
   assert.match(coordinator, /still review the (whole|full) document|do not narrow/i);
 });
+
+test('routes and prompts list stopped-no-progress as a terminal state', () => {
+  const finalStatusLine = read('shared/core.md').match(/^Final status: (.+)$/m);
+  assert.ok(finalStatusLine, 'shared/core.md must include the final-response status machine line');
+  assert.match(finalStatusLine[1], /stopped-no-progress/);
+  assert.match(buildFinalResponseChecklist(), /stopped-no-progress[\s\S]*no-progress-detected/);
+
+  for (const rel of [
+    'shared/core.md',
+    'shared/prompts/coordinator.md',
+    'skills/review-fix-spec/SKILL.md',
+    'skills/review-fix-plan/SKILL.md',
+    'skills/review-fix-design/SKILL.md',
+    'skills/review-fix-doc/SKILL.md',
+    'templates/claude-command.md.tmpl',
+    'templates/codex-skill.md.tmpl',
+    'templates/gemini-command.toml.tmpl'
+  ]) {
+    assert.match(read(rel), /stopped-no-progress/, `${rel} must list stopped-no-progress`);
+  }
+});
+
+test('coordinator defines a recurrence + fix-attempt-cap convergence rule', () => {
+  const coordinator = read('shared/prompts/coordinator.md');
+  assert.match(coordinator, /fix-attempt cap|recurr/i);
+  assert.match(coordinator, /stopped-no-progress/);
+});

@@ -796,6 +796,38 @@ test('guard=git abort-fix restores the target from the per-fix snapshot', async 
   assert.equal(fs.readFileSync(fixture.target, 'utf8'), before);
 });
 
+test('guard=git abort-fix blocks rollback when the fix guard baseline is missing', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git' });
+  const opts = () => workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') });
+  const before = fs.readFileSync(fixture.target, 'utf8');
+
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  fs.rmSync(path.join(start.targetStateDir, 'reports'), { recursive: true, force: true });
+  fs.writeFileSync(fixture.target, before + '\nPartial edit without readable baseline.\n');
+
+  const abort = await runWorkflowCommand('abort-fix', [
+    start.targetStateDir, '--status', 'blocked', '--reason', 'lock-held', '--json'
+  ], opts());
+
+  assert.equal(abort.ok, false, JSON.stringify(abort));
+  assert.equal(abort.status, 'blocked');
+  assert.equal(abort.blockingReason, 'rollback-unavailable');
+  assert.equal(fs.readFileSync(fixture.target, 'utf8'), before + '\nPartial edit without readable baseline.\n');
+  assert.notEqual(readLease({ projectRoot: fixture.root, targetKey: start.targetKey }), null);
+  const manifest = manifestAt(start.manifestPath);
+  assert.equal(manifest.status, 'blocked');
+  assert.equal(manifest.blockingReason, 'rollback-unavailable');
+});
+
 async function driveToSecondFixPhase(fixture) {
   const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git' });
   const opts = () => workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') });
@@ -888,4 +920,203 @@ test('guard=git abort-fix without a snapshot anchor still completes (legacy fix 
   ], opts());
   assert.equal(abort.ok, true, JSON.stringify(abort));
   assert.equal(readLease({ projectRoot: fixture.root, targetKey: start.targetKey }), null);
+});
+
+test('begin-fix refuses the attempt past the fix-attempt cap with stopped-no-progress', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git' });
+  const opts = () => workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') });
+
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+
+  // Seed the manifest at the cap (5) so the next begin-fix is the refused 6th attempt.
+  const manifestPath = start.manifestPath;
+  const text = fs.readFileSync(manifestPath, 'utf8').replace(/^Fix attempt count: \d+$/m, 'Fix attempt count: 5');
+  fs.writeFileSync(manifestPath, text);
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  assert.equal(beginFix.ok, false, JSON.stringify(beginFix));
+  assert.equal(beginFix.status, 'stopped-no-progress');
+  assert.equal(beginFix.statusReason, 'no-progress-detected');
+  // The target was not modified by the refused attempt, but the route must still
+  // finalize to write the final receipt/summary through the validated final path.
+  assert.equal(manifestAt(manifestPath).status, 'stopped-no-progress');
+
+  const FINAL_NO_PROGRESS = [
+    'Final status: stopped-no-progress',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Mode: review-and-fix',
+    'Target: docs/practical-target.md',
+    'Files changed: none',
+    'Fixed issue IDs: none',
+    'Verification performed: begin-fix cap refusal',
+    'Deferrals or blockers: ISSUE-001 unresolved after fix-attempt cap',
+    'Blocking reason: none',
+    'Status reason: no-progress-detected',
+    'Residual risk: ISSUE-001 remains unresolved',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: none'
+  ].join('\n');
+  const final = await runWorkflowCommand('finalize', [start.targetStateDir, '--final-response-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FINAL_NO_PROGRESS }));
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'stopped-no-progress');
+  assert.equal(fs.existsSync(path.join(start.targetStateDir, 'rounds', '001-final-stopped-no-progress.md')), true);
+});
+
+test('begin-fix at the cap returns the active in-progress fix instead of stopping no-progress', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git' });
+  const opts = () => workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') });
+
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  const text = fs.readFileSync(start.manifestPath, 'utf8').replace(/^Fix attempt count: \d+$/m, 'Fix attempt count: 5');
+  fs.writeFileSync(start.manifestPath, text);
+
+  const duplicateBegin = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  assert.equal(duplicateBegin.ok, true, JSON.stringify(duplicateBegin));
+  assert.equal(duplicateBegin.status, 'begin-fix');
+  assert.equal(duplicateBegin.lockOwnerId, beginFix.lockOwnerId);
+  assert.equal(duplicateBegin.leaseId, beginFix.leaseId);
+  assert.equal(duplicateBegin.fixGuardReportPath, beginFix.fixGuardReportPath);
+  const manifest = manifestAt(start.manifestPath);
+  assert.equal(manifest.status, 'fix');
+  assert.equal(manifest.currentPhase, 'fix');
+  assert.equal(manifest.statusReason, 'none');
+  assert.notEqual(readLease({ projectRoot: fixture.root, targetKey: start.targetKey }), null);
+});
+
+test('finalize accepts a stopped-no-progress final response', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git' });
+
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+
+  // Seed the manifest at the cap so begin-fix is refused
+  const text = fs.readFileSync(start.manifestPath, 'utf8').replace(/^Fix attempt count: \d+$/m, 'Fix attempt count: 5');
+  fs.writeFileSync(start.manifestPath, text);
+  await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'],
+    workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') }));
+
+  const FINAL_NO_PROGRESS = [
+    'Final status: stopped-no-progress',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Mode: review-and-fix',
+    'Target: docs/practical-target.md',
+    'Files changed: none',
+    'Fixed issue IDs: none',
+    'Verification performed: node --test test/workflow-e2e.test.js',
+    'Deferrals or blockers: ISSUE-001 unresolved after fix-attempt cap',
+    'Blocking reason: none',
+    'Status reason: no-progress-detected',
+    'Residual risk: ISSUE-001 remains unresolved',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: none'
+  ].join('\n');
+
+  const final = await runWorkflowCommand('finalize', [start.targetStateDir, '--final-response-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FINAL_NO_PROGRESS }));
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'stopped-no-progress');
+});
+
+test('recurring high finding after full re-review finalizes stopped-no-progress', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git' });
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+  await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'],
+    workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') }));
+
+  fs.writeFileSync(
+    fixture.target,
+    [
+      '# Practical Workflow Target',
+      '',
+      'The document now states the expected behavior directly for implementers.',
+      '',
+      '## Acceptance',
+      '',
+      '- The final wording names the expected behavior.',
+      ''
+    ].join('\n')
+  );
+
+  await runWorkflowCommand('end-fix', [start.targetStateDir, '--fix-report-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FIX_REPORT }));
+  await runWorkflowCommand('record-diff-review', [start.targetStateDir, '--result-stdin', '--json'],
+    workflowOptions(fixture, { stdin: DIFF_OK }));
+  await runWorkflowCommand('context', [...startArgs, '--phase', 'full-re-review'], workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'full-re-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_REOPEN }));
+
+  const FINAL_NO_PROGRESS = [
+    'Final status: stopped-no-progress',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Mode: review-and-fix',
+    'Target: docs/practical-target.md',
+    'Files changed: docs/practical-target.md',
+    'Fixed issue IDs: ISSUE-001',
+    'Verification performed: full re-review found recurring ISSUE-001',
+    'Deferrals or blockers: ISSUE-001 recurred at docs/practical-target.md#practical-workflow-target',
+    'Blocking reason: none',
+    'Status reason: no-progress-detected',
+    'Residual risk: ISSUE-001 remains unresolved after recurrence',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: none'
+  ].join('\n');
+
+  const final = await runWorkflowCommand('finalize', [start.targetStateDir, '--final-response-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FINAL_NO_PROGRESS }));
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'stopped-no-progress');
+  const manifest = manifestAt(start.manifestPath);
+  assert.equal(manifest.status, 'stopped-no-progress');
+  assert.equal(manifest.statusReason, 'no-progress-detected');
+  assert.equal(fs.existsSync(path.join(start.targetStateDir, 'rounds', '001-final-stopped-no-progress.md')), true);
+});
+
+test('begin-fix increments fixAttemptCount on a successful attempt', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git' });
+  const opts = () => workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') });
+
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+
+  assert.equal(Number(manifestAt(start.manifestPath).fixAttemptCount), 0);
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+  assert.equal(Number(manifestAt(start.manifestPath).fixAttemptCount), 1);
 });

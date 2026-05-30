@@ -265,6 +265,20 @@ test('writeReceiptOrBlock maps receipt write failures to state-validation blocke
   assert.equal(result.statusReason, 'none');
 });
 
+test('fixAttemptCount round-trips through format/parse', () => {
+  const text = formatManifestV2(makeManifest({ fixAttemptCount: 3 }));
+  assert.match(text, /^Fix attempt count: 3$/m);
+  const parsed = parseManifestV2(text);
+  assert.equal(parsed.fixAttemptCount, 3);
+});
+
+test('parseManifestV2 defaults fixAttemptCount to 0 when the line is absent (back-compat)', () => {
+  const legacy = formatManifestV2(makeManifest())
+    .split('\n').filter((line) => !line.startsWith('Fix attempt count:')).join('\n');
+  const parsed = parseManifestV2(legacy);
+  assert.equal(parsed.fixAttemptCount, 0);
+});
+
 test('explicit audit trail is enabled only by original ledger token', () => {
   assert.equal(shouldCreatePersistentState({ mode: 'read-only', ledger: null, resume: false, round: 1 }), false);
   assert.equal(shouldCreatePersistentState({ mode: 'read-only', ledger: 'custom/ISSUES.md', resume: false, round: 1 }), true);
@@ -272,4 +286,15 @@ test('explicit audit trail is enabled only by original ledger token', () => {
   assert.equal(shouldWriteRoundReceipt({ auditTrail: true, round: 1, stopReason: null, phaseCompleted: 'review' }), true);
   assert.equal(shouldWriteRoundReceipt({ originalLedgerToken: 'ledger=custom/ISSUES.md', round: 1, stopReason: null, phaseCompleted: 'review' }), true);
   assert.equal(shouldWriteRoundReceipt({ ledgerPath: 'ISSUES.md', round: 1, stopReason: null, phaseCompleted: 'review' }), false);
+});
+
+test('stopped-no-progress is a valid manifest status with no-progress-detected reason', () => {
+  const text = formatManifestV2(makeManifest({
+    status: 'stopped-no-progress',
+    currentPhase: 'final',
+    statusReason: 'no-progress-detected'
+  }));
+  const parsed = parseManifestV2(text);
+  assert.equal(parsed.status, 'stopped-no-progress');
+  assert.equal(parsed.statusReason, 'no-progress-detected');
 });

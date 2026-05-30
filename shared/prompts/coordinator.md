@@ -88,6 +88,7 @@ Terminal and pause states:
 - pass
 - read-only-clean
 - stopped-with-deferrals
+- stopped-no-progress
 - read-only-findings
 - blocked
 - unsupported
@@ -108,6 +109,11 @@ Triage and PASS rules:
 - Accepted high/medium findings block PASS until fixed, merged into fixed issues, downgraded with rationale, or rejected with rationale.
 - Deferred high/medium findings produce `stopped-with-deferrals`, not PASS.
 - Low findings block only in strict mode unless accepted non-blocking and included in the next reviewer context.
+
+Convergence:
+- The workflow enforces a deterministic fix-attempt cap (default 5 fixes per target); the 6th begin-fix is refused as stopped-no-progress.
+- Additionally, if a high or medium finding that was marked fixed in an earlier round is raised again by a later full re-review at the same location/category, treat the loop as not converging: stop as stopped-no-progress with the recurring findings (redacted IDs/locations) and a next action, instead of attempting another fix.
+- stopped-no-progress is a pause state, not PASS; unresolved high/medium findings remain.
 
 Reference conformance triage:
 - Reclassify a reviewer false blocker when the finding only complains about a missing coverage table, missing stable ID, missing Design Coverage Import, or missing upstream mapping.

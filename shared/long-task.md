@@ -47,7 +47,7 @@ Project-root `.docs-review-fix/rules/` is shared project configuration, not targ
 - Runtime subagent probe, stdin handoff, fingerprint guard, downgrade reason, assurance proof, blocking reason, and status reason.
 - Target key.
 - Ledger path, defaulting to `.docs-review-fix/targets/<target-key>/ISSUES.md`.
-- Status: `review`, `triage`, `fix`, `diff-review`, `full-re-review`, `pass`, `stopped-with-deferrals`, `read-only-findings`, `blocked`, `unsupported`, `externally-changed`, `possible-target-replacement`, or `checkpoint`.
+- Status: `review`, `triage`, `fix`, `diff-review`, `full-re-review`, `pass`, `stopped-with-deferrals`, `stopped-no-progress`, `read-only-findings`, `blocked`, `unsupported`, `externally-changed`, `possible-target-replacement`, or `checkpoint`.
 - Read-only clean status: `read-only-clean`.
 - Current round.
 - Current phase.

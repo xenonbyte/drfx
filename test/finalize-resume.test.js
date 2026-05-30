@@ -1541,3 +1541,96 @@ test('no-state finalize rejects blocked response without blocking reason', async
   assert.equal(result.status, 'blocked');
   assert.match(result.errorCode || result.blockingReason, /final-validation|blocked/i);
 });
+
+test('resume requires receipt for stopped-no-progress', () => {
+  const { resumeRequiresReceipt } = require('../lib/workflow/helpers');
+  assert.equal(resumeRequiresReceipt('stopped-no-progress'), true);
+});
+
+test('final response validation requires no-progress reason for stopped-no-progress', () => {
+  const state = {
+    persistent: true,
+    target: 'docs/spec.md',
+    mode: 'review-and-fix',
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    filesChanged: 'none',
+    unresolvedBlockingIssues: ['ISSUE-001']
+  };
+  const finalResponse = {
+    ...baseBlock,
+    finalStatus: 'stopped-no-progress',
+    filesChanged: 'none',
+    fixedIssueIds: 'none',
+    deferralsOrBlockers: 'ISSUE-001 unresolved after fix-attempt cap',
+    statusReason: 'none',
+    coordinatorAgreement: 'none'
+  };
+
+  assert.throws(
+    () => validateFinalResponse({ finalResponse, state }),
+    /no-progress-detected/i
+  );
+
+  const accepted = validateFinalResponse({
+    finalResponse: { ...finalResponse, statusReason: 'no-progress-detected' },
+    state
+  });
+  assert.equal(accepted.status, 'stopped-no-progress');
+});
+
+test('final response validation rejects stopped-no-progress for read-only findings', () => {
+  const state = {
+    persistent: true,
+    target: 'docs/spec.md',
+    mode: 'read-only',
+    assurance: 'advisory',
+    runtimePlatform: 'manual',
+    filesChanged: 'none',
+    readOnlyBlockingIssueIds: ['R001']
+  };
+  const finalResponse = {
+    ...baseBlock,
+    finalStatus: 'stopped-no-progress',
+    assurance: 'advisory',
+    runtimePlatform: 'manual',
+    mode: 'read-only',
+    filesChanged: 'none',
+    fixedIssueIds: 'none',
+    deferralsOrBlockers: 'R001 blocks read-only clean finalization',
+    statusReason: 'no-progress-detected',
+    coordinatorAgreement: 'none'
+  };
+
+  assert.throws(
+    () => validateFinalResponse({ finalResponse, state }),
+    /review-and-fix|read-only-findings/i
+  );
+});
+
+test('final response validation rejects stopped-no-progress for deferred-only findings', () => {
+  const state = {
+    persistent: true,
+    target: 'docs/spec.md',
+    mode: 'review-and-fix',
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    filesChanged: 'none',
+    unresolvedBlockingIssues: [],
+    deferredBlockingIssueIds: ['ISSUE-001']
+  };
+  const finalResponse = {
+    ...baseBlock,
+    finalStatus: 'stopped-no-progress',
+    filesChanged: 'none',
+    fixedIssueIds: 'none',
+    deferralsOrBlockers: 'ISSUE-001 deferred with owner',
+    statusReason: 'no-progress-detected',
+    coordinatorAgreement: 'none'
+  };
+
+  assert.throws(
+    () => validateFinalResponse({ finalResponse, state }),
+    /stopped-with-deferrals|unresolved/i
+  );
+});

@@ -271,3 +271,25 @@ test('rejects semantic payload files under project root', () => {
     /unsafe-handoff-file|project-local/i
   );
 });
+
+test('final response accepts stopped-no-progress with no-progress-detected', () => {
+  const block = [
+    'Final status: stopped-no-progress',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Mode: review-and-fix',
+    'Target: docs/spec.md',
+    'Files changed: none',
+    'Fixed issue IDs: none',
+    'Verification performed: full re-review',
+    'Deferrals or blockers: ISSUE-001 unresolved after fix-attempt cap',
+    'Blocking reason: none',
+    'Status reason: no-progress-detected',
+    'Residual risk: ISSUE-001 remains unresolved',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: none'
+  ].join('\n');
+  const parsed = parseFinalResponseBlock(block);
+  assert.equal(parsed.finalStatus, 'stopped-no-progress');
+  assert.equal(parsed.statusReason, 'no-progress-detected');
+});
