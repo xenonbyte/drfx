@@ -107,9 +107,7 @@ with:
 
 **Context (verified):** The live manifest is written by `formatManifestV2` and read on the main path by `parseManifestV2`. `target-state.js`'s separate `parseManifest`/`formatManifest`/`MANIFEST_FIELDS` are a different, older serializer — but `parseManifest` IS still reached on the V2 begin-fix path via `lock.js` (`readManifest` → `assertPreFixFingerprint` → `manifestLastKnownSha`). However, `parseManifest` **silently ignores unknown lines** (target-state.js:449/452-459: an unrecognized `Label:` line is skipped, no error). So the extra `Fix attempt count:` line that `formatManifestV2` now emits does NOT break `parseManifest`, and `parseManifest` does not need the value.
 
-**Therefore this step is optional/defensive, not required for correctness.** Do NOT add `fixAttemptCount` to `MANIFEST_FIELDS` (that array is the `requireManifestValue` required set at line ~464; adding it would make any manifest lacking the line fail to load). If you want `parseManifest` to also surface the value (e.g. for future use), add only the read-side capture below; otherwise skip Step 4 entirely:
-
-**Recommended: skip Step 4 entirely.** The begin-fix cap (Task 3) reads `fixAttemptCount` from `metadata.manifest`, which is produced by `parseManifestV2` (Task 1 Step 3) — not from target-state's `parseManifest`. The only target-state reach on the begin-fix path (`lock.js` → `readManifest` → `manifestLastKnownSha`) consumes `lastKnownContentSha256`, never `fixAttemptCount`. Since `parseManifest` silently ignores the unknown `Fix attempt count:` line, nothing breaks. Do NOT touch `MANIFEST_FIELDS`, the assembly sites, or `formatManifest`.
+**Recommended: skip Step 4 entirely.** The begin-fix cap (Task 3) reads `fixAttemptCount` from `metadata.manifest`, which is produced by `parseManifestV2` (Task 1 Step 3) — not from target-state's `parseManifest`. The only target-state reach on the begin-fix path (`lock.js` → `readManifest` → `manifestLastKnownSha`) consumes `lastKnownContentSha256`, never `fixAttemptCount`. Since `parseManifest` silently ignores the unknown `Fix attempt count:` line, nothing breaks. Do NOT add `fixAttemptCount` to `MANIFEST_FIELDS` (that array is the `requireManifestValue` required set at line ~464; adding it would make any manifest lacking the line fail to load), and do NOT touch the assembly sites or `formatManifest`.
 
 (Optional, only if a future caller needs `parseManifest` to surface the value: add a read-side capture in the label dispatch next to the `Created at`/`Updated at` branches — `} else if (label === 'Fix attempt count') { result.fixAttemptCount = value;` — and a default before `assertAllowedStatus`. Not required by G2.)
 
@@ -229,13 +227,15 @@ In its `STATUS_REASONS`, add after `'deferred-findings',`:
   'no-progress-detected',
 ```
 
-- [ ] **Step 5: Add to `lib/target-state.js`**
+- [ ] **Step 5: Add to `lib/target-state.js` `ALLOWED_STATUSES` (REQUIRED — not optional)**
 
-In `ALLOWED_STATUSES`, add after `'stopped-with-deferrals',`:
+In `ALLOWED_STATUSES` (~line 7-22), add after `'stopped-with-deferrals',`:
 
 ```js
   'stopped-no-progress',
 ```
+
+**Why required even though Task 1 Step 4 (target-state field) was not:** the begin-fix path reaches `target-state.js` `parseManifest` via `lock.js` (`readManifest` → `assertPreFixFingerprint` → `manifestLastKnownSha`), and `parseManifest` ends with `assertAllowedStatus(result.status)` (target-state.js:463). Once a manifest is persisted with `Status: stopped-no-progress`, any later command whose `assertPreFixFingerprint` re-reads it through `readManifest` throws unless `ALLOWED_STATUSES` includes it. (`parseManifest` ignores unknown *fields* but validates the *status value*.)
 
 - [ ] **Step 6: Add to `lib/workflow/helpers.js`**
 
