@@ -1,4 +1,5 @@
-docs/
+docs/*
+!docs/AUDIT-2026-05-31-code-and-process-review.md
 design/
 CONTINUITY.md
 .docs-review-fix/
