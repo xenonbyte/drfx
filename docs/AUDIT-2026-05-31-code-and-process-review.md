@@ -14,7 +14,7 @@ Three issues are worth fixing because they reduce real user risk or operational 
 | --- | --- | --- | --- | --- |
 | P1 | Uninstall safety | `drfx uninstall` can remove generated files that were modified after install. | Phase it: P1a compares file checksums on uninstall and skips modified files; P1b records Codex directory tree checksums (manifest `schemaVersion` bump). Preserve partial uninstall state when artifacts are skipped. | P1a small, P1b medium |
 | P2 | `guard=snapshot` | Snapshot target-only guard scans the whole project tree, hashes every file, and blocks on any symlink. | Make bounded infrastructure exclusion the primary fix for performance; treat unrelated file symlinks as opaque entries (reject directory symlinks) with an explicit residual-risk note; always disclose the scoped monitor set. | medium–large |
-| P3 | Packaging | The npm package includes `test/`, increasing package size without runtime value. | Remove `test/` from `package.json` `files` and add a pack contents check that pins the allowed top-level set as a whitelist. | small |
+| P3 | Packaging | The npm package includes `test/`, increasing package size without runtime value. | Remove `test/` from `package.json` `files`, update the existing file-list expectation, and add a pack contents check that pins the allowed top-level set as a whitelist. | small |
 
 ## Verification Baseline
 
@@ -90,13 +90,13 @@ Use the manifest checksum as an uninstall precondition. Ship this in two phases 
 
 - New manifests should record the generated child file list for each Codex skill directory, derived from `generatePlatformFiles('codex', { packageVersion })` at install time, plus a deterministic tree checksum.
 - This is a manifest format change: bump `schemaVersion` from `1` to `2`, and keep reading `schemaVersion: 1` manifests written by older installs.
-- Old (`schemaVersion: 1`) manifests have no child file lists or tree checksums. For those, use the conservative path: if an owned directory contains files beyond the known generated names for that package version, skip the directory instead of deleting it.
+- Old (`schemaVersion: 1`) manifests have no child file lists or tree checksums. Do not assume the current package can perfectly reconstruct every older generated tree. For those manifests, delete an owned Codex skill directory only when the current tree is fully explainable by the current recognized generated file set; otherwise skip the directory instead of deleting it.
 - Do not delete a directory when the current tree contains user-added files or when tree ownership cannot be proved.
 
 Recommended user-facing behavior:
 
 - Prefer skip-and-report over failing the whole uninstall. It preserves user data and still removes artifacts that remain package-owned and unchanged.
-- If any artifact is skipped, return a partial uninstall result and keep or update the manifest so ownership and skipped paths are not lost. The CLI should print a visible partial status instead of only `uninstalled: <platform>`.
+- If any artifact is skipped, return a partial uninstall result. Keep the manifest when any generated artifact remains; update its `generated` list to the skipped (retained) artifacts. Remove the capability descriptor only when no generated artifact remains for that platform. The CLI should print a visible partial status instead of only `uninstalled: <platform>`.
 - If all manifest-recorded generated artifacts are removed, remove the manifest as it does today.
 - If a manifest itself is corrupt, keep the current fail-fast behavior.
 
@@ -105,8 +105,10 @@ Recommended user-facing behavior:
 - `uninstall skips modified manifest-recorded Claude command file`.
 - `uninstall skips modified manifest-recorded Gemini command file`.
 - `uninstall skips owned Codex skill directory when it contains an unknown user file`.
+- `schemaVersion: 1 Codex directory uninstall skips when its tree is not fully explainable by recognized generated files`.
 - `uninstall removes unchanged generated files and directories as before`.
 - `partial uninstall preserves manifest ownership for skipped modified artifacts`.
+- `partial uninstall keeps the capability descriptor while any generated artifact remains`.
 
 ## P2 - Snapshot Guard Over-Scans Project Trees
 
@@ -153,9 +155,10 @@ Because the performance problem dominates in real Node repositories (see Impact)
 
 1. Always reject symlink targets.
 2. Always reject symlink `ref=` documents.
-3. Bound the traversal (primary fix): exclude well-known infrastructure directories from recursive monitoring by default, so a populated `node_modules` is not hashed on every guard run. Whenever any directory is excluded, return and persist an explicit `monitorScope` such as `project-tree-files-and-references-excluding-infrastructure`, plus the excluded directory names. Documentation must state that target-only proof is scoped to that monitor set.
-4. For symlinks that remain inside the monitored set, do not follow them. Record file symlinks as opaque monitored entries with lstat-derived metadata and a path hash; if an opaque entry changes between baseline and end-fix inspection, block with `unexpected-worktree-change`. Reject directory symlinks instead of treating them as opaque (see residual risk below).
-5. Keep ordinary non-target project files in the baseline so non-target edits still block automatic fixing.
+3. Resolve the target and explicit references before applying infrastructure exclusions. If a target or `ref=` path sits under a normally excluded directory, either include the necessary ancestor subtree in the monitor set or block as `target-only-guard-unavailable`; do not silently exclude the requested document from proof.
+4. Bound the traversal (primary fix): exclude well-known infrastructure directories from recursive monitoring by default, so a populated `node_modules` is not hashed on every guard run. Whenever any directory is excluded, return and persist an explicit `monitorScope` such as `project-tree-files-and-references-excluding-infrastructure`, plus the excluded directory names. Documentation must state that target-only proof is scoped to that monitor set.
+5. For symlinks that remain inside the monitored set, do not follow them. Record file symlinks as opaque monitored entries with lstat-derived metadata, a redacted path hash, and a hash of the `readlink` target text; if an opaque entry is created, deleted, retargeted, or has changed lstat metadata between baseline and end-fix inspection, block with `unexpected-worktree-change`. Reject directory symlinks instead of treating them as opaque (see residual risk below). Broken symlinks should be handled explicitly as opaque entries or blockers, not by accidentally following them.
+6. Keep ordinary non-target project files in the baseline so non-target edits still block automatic fixing.
 
 Residual risk to disclose: an opaque, lstat-only entry does not detect writes made *through* a symlink to its resolved target. For a directory symlink this could let a fixer modify content outside the monitored tree undetected — exactly the proof `guard=snapshot` claims to provide. Treating only file symlinks as opaque and rejecting directory symlinks keeps that hole closed. If directory symlinks must ever be tolerated, the docs must state that target-only proof excludes writes made through them.
 
@@ -180,8 +183,9 @@ Avoid a user-configurable ignore file until there is a clear product requirement
 - `snapshot target-only guard rejects a directory symlink instead of treating it as opaque`.
 - `snapshot target-only guard still rejects symlink target`.
 - `snapshot target-only guard still rejects symlink reference`.
+- `snapshot target-only guard does not exclude target or reference paths merely because they live under an infrastructure directory`.
 - `snapshot target-only guard still blocks ordinary non-target file changes`.
-- `snapshot target-only guard blocks when an opaque symlink entry changes`.
+- `snapshot target-only guard blocks when an opaque symlink entry is retargeted or its lstat metadata changes`.
 - `snapshot target-only guard excludes infrastructure directories and records them in monitorScope and the persisted guard report`.
 - `snapshot target-only guard stays responsive with a populated node_modules (infrastructure not hashed)`.
 
@@ -191,7 +195,7 @@ Avoid a user-configurable ignore file until there is a clear product requirement
 - `README.zh-CN.md`
 - `shared/core.md`
 
-Document that `guard=snapshot` monitors target and refs, ordinary project files, and unrelated symlinks as opaque entries when applicable.
+Document that `guard=snapshot` monitors target and refs, ordinary project files, and unrelated symlinks as opaque entries when applicable. Also document the target/ref precedence rule for paths that live under otherwise excluded infrastructure directories.
 
 If bounded infrastructure exclusions are added, docs must use scoped wording. They should not say snapshot mode proves target-only writes across the whole project tree.
 
@@ -226,9 +230,9 @@ The tests are valuable in the repository but not required at runtime. Publishing
 
 Remove `test/` from `package.json` `files`.
 
-Add a regression test or release check that runs `npm pack --dry-run --json` and asserts:
+Update the existing package file-list test in `test/shared-assets.test.js`, which currently expects `test/`, and add a regression test or release check that runs `npm pack --dry-run --json` and asserts:
 
-- The published top-level entries are exactly `bin/`, `lib/`, `skills/`, `shared/`, `templates/`, `README.md`, and `README.zh-CN.md`. Pin this as a whitelist so any future addition fails the check, not only `test/`.
+- The published top-level entries are exactly `package.json`, `bin/`, `lib/`, `skills/`, `shared/`, `templates/`, `README.md`, and `README.zh-CN.md`. Pin this as a whitelist so any future addition fails the check, not only `test/`.
 - `test/` and its fixtures are absent.
 
 ## Not Recommended Right Now
@@ -256,11 +260,13 @@ P1:
 - (P1a) Uninstall result reports skipped modified artifacts clearly, and the CLI prints a visible partial status instead of only `uninstalled: <platform>`.
 - (P1b) Codex owned directories are not deleted if they contain user-added files.
 - Partial uninstall keeps or updates manifest state for skipped artifacts.
+- The capability descriptor is kept while any generated artifact remains, and removed only when no generated artifact remains for that platform.
 
 P2:
 
 - Snapshot guard works and stays responsive in a project with a populated `node_modules` (infrastructure directories are not hashed on every run).
 - Target and explicit references remain symlink-protected; directory symlinks inside the monitored set are rejected, not treated as opaque.
+- Target and explicit references are never silently dropped from the monitor set because they are under an excluded infrastructure directory.
 - Non-target ordinary project changes still block automatic fixing.
 - Excluded infrastructure directories are recorded in the persisted guard output as a scoped monitor set.
 - Docs describe the monitor scope accurately and disclose the opaque-entry residual risk.
@@ -269,6 +275,7 @@ P3:
 
 - `npm pack --dry-run --json` no longer includes `test/`.
 - Runtime package files remain present.
+- Pack whitelist includes npm-mandated `package.json`.
 - README behavior stays structurally aligned between English and Simplified Chinese.
 
 ## Verification Plan
