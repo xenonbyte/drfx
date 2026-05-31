@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0 - 2026-05-31
+
+### Added
+
+- Manifest schema v2 records Codex skill directory tree metadata so uninstall can verify generated directory contents before removal.
+- Snapshot guard monitoring now supports opaque file symlink entries and reports infrastructure directory exclusions through `monitorScope`.
+
+### Fixed
+
+- Uninstall now keeps user-modified generated files, retains a narrowed manifest for those files, and reports partial uninstall status.
+- Snapshot guard now excludes common infrastructure directories unless the target or explicit references live inside them, while continuing to block unsupported directory symlinks.
+
+### Internal
+
+- Removed `test/` from the npm package whitelist and added package-content coverage.
+- Added audit remediation docs and implementation plan updates for the 2026-05-31 review pass.
+
 ## 0.2.1 - 2026-05-31
 
 ### Added
