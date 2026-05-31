@@ -160,6 +160,25 @@ test('uninstall skips a modified Claude command file and retains the manifest', 
   assert.equal(fs.existsSync(routePath), true);
   const manifestPath = path.join(homeDir, '.docs-review-fix', 'manifests', 'claude.manifest');
   assert.equal(fs.existsSync(manifestPath), true);
+  const retained = readInstallManifest('claude', { homeDir }).manifest.generated.map((entry) => entry.path);
+  assert.deepEqual(retained, [routePath]);
+  assert.equal(fs.existsSync(path.join(homeDir, '.docs-review-fix', 'capabilities', 'claude.json')), true);
+});
+
+test('uninstall skips a modified Gemini command file and retains the manifest', async (t) => {
+  const { homeDir, platformRoots } = makeInstallFixture(t);
+  await installPlatform('gemini', { homeDir, platformRoots });
+  const routePath = path.join(platformRoots.gemini, 'commands', 'review-fix-spec.toml');
+  fs.appendFileSync(routePath, '\n# user edit\n');
+
+  const result = await uninstallPlatform('gemini', { homeDir, platformRoots });
+
+  assert.equal(result.partial, true);
+  assert.ok(result.skipped.some((s) => s.reason === 'modified' && s.path === routePath));
+  assert.equal(fs.existsSync(routePath), true);
+  const retained = readInstallManifest('gemini', { homeDir }).manifest.generated.map((entry) => entry.path);
+  assert.deepEqual(retained, [routePath]);
+  assert.equal(fs.existsSync(path.join(homeDir, '.docs-review-fix', 'capabilities', 'gemini.json')), true);
 });
 
 test('uninstall still removes an unchanged Claude command file and its manifest', async (t) => {
@@ -236,7 +255,7 @@ with:
 - [ ] **Step 5: Run to verify the skip test passes (manifest still retained needs Task 2.2)**
 
 Run: `node --test test/capability-check.test.js`
-Expected: the modified file now survives and appears in `skipped`. The first new test may still fail on `manifest exists` until Task 2.2 makes manifest removal conditional. The second new test should PASS.
+Expected: the modified Claude and Gemini files now survive and appear in `skipped`. Both modified-file tests may still fail on retained-manifest and capability-descriptor assertions until Task 2.2 makes manifest/descriptor removal conditional and rewrites retained manifest state. The unchanged-file test should PASS.
 
 ### Task 2.2: Make manifest + descriptor removal conditional on retained files
 
@@ -271,6 +290,14 @@ with:
   if (!partial) {
     descriptorRemoved = removeCapabilityDescriptor(descriptorRemoval);
     fs.unlinkSync(manifestPath);
+  } else {
+    const manifest = manifestRead.manifest;
+    const retainedPaths = new Set(retained.map((item) => item.path));
+    writeInstallManifest({
+      ...manifest,
+      updatedAt: new Date().toISOString(),
+      generated: manifest.generated.filter((entry) => retainedPaths.has(entry.path))
+    }, { homeDir });
   }
 
   return {
@@ -288,7 +315,7 @@ with:
 - [ ] **Step 2: Run to verify both new tests pass**
 
 Run: `node --test test/capability-check.test.js`
-Expected: PASS (both new tests).
+Expected: PASS (the modified Claude and Gemini tests assert the retained manifest contains only the skipped modified artifact, and that the capability descriptor remains while that artifact remains).
 
 ### Task 2.3: Surface partial status at the CLI
 
@@ -411,6 +438,22 @@ const INFRASTRUCTURE_DIRECTORIES = new Set([
 
 - [ ] **Step 4: Thread exclusion + precedence through `collectMonitorRecords`**
 
+First update `uniqueByPath` so explicit target/reference records win over project-tree neighbor records when the same path appears twice. Replace `uniqueByPath` (lines 252-261) with:
+
+```js
+function uniqueByPath(records) {
+  const byPath = new Map();
+  const priority = { neighbor: 0, 'opaque-symlink': 1, reference: 2, target: 3 };
+  for (const record of records) {
+    const previous = byPath.get(record.path);
+    if (!previous || (priority[record.role] || 0) >= (priority[previous.role] || 0)) {
+      byPath.set(record.path, record);
+    }
+  }
+  return [...byPath.values()].sort((left, right) => left.path.localeCompare(right.path));
+}
+```
+
 Replace the body of `collectMonitorRecords` from `const records = [];` (line 276) through `collectDirectory(monitorRoot);` (line 302) with:
 
 ```js
@@ -421,6 +464,17 @@ Replace the body of `collectMonitorRecords` from `const records = [];` (line 276
 
   const monitoredPaths = [path.resolve(targetPath), ...(referencePaths || []).map((referencePath) =>
     path.isAbsolute(referencePath) ? referencePath : path.resolve(projectRoot, referencePath))];
+  for (const [index, monitoredPath] of monitoredPaths.entries()) {
+    let lstat;
+    try {
+      lstat = fs.lstatSync(monitoredPath);
+    } catch (error) {
+      throw guardError('target-only-guard-unavailable', index === 0 ? 'target is unreadable' : 'reference is unreadable', { cause: error });
+    }
+    if (lstat.isSymbolicLink()) {
+      throw guardError('target-only-guard-unavailable', index === 0 ? 'target must not be a symlink' : 'reference must not be a symlink');
+    }
+  }
   function containsMonitoredPath(directoryPath) {
     return monitoredPaths.some((monitored) => isInsideOrEqual(monitored, directoryPath));
   }
@@ -580,14 +634,52 @@ test('snapshot target-only guard records an unrelated file symlink as opaque wit
 test('snapshot target-only guard rejects a directory symlink instead of treating it as opaque', (t) => {
   const fixture = makeWorkspace(t);
   fs.symlinkSync(path.join(fixture.root, 'other'), path.join(fixture.root, 'docs', 'otherlink'));
-  const guard = checkSnapshotTargetOnly({
-    projectRoot: fixture.root,
-    targetPath: fixture.target,
-    allowedStateDir: fixture.targetStateDir,
-    expectedNormalizedTarget: 'docs/target.md'
-  });
-  assert.equal(guard.status, 'blocked');
-  assert.equal(guard.blockingReason, 'target-only-guard-unavailable');
+  assert.throws(
+    () => checkSnapshotTargetOnly({
+      projectRoot: fixture.root,
+      targetPath: fixture.target,
+      allowedStateDir: fixture.targetStateDir,
+      expectedNormalizedTarget: 'docs/target.md'
+    }),
+    (error) => error.blockingReason === 'target-only-guard-unavailable'
+  );
+});
+
+test('snapshot target-only guard rejects a symlink target', (t) => {
+  const fixture = makeWorkspace(t);
+  const outside = path.join(fixture.root, 'outside-target.md');
+  fs.writeFileSync(outside, '# Outside\n');
+  fs.rmSync(fixture.target);
+  fs.symlinkSync(outside, fixture.target);
+
+  assert.throws(
+    () => checkSnapshotTargetOnly({
+      projectRoot: fixture.root,
+      targetPath: fixture.target,
+      allowedStateDir: fixture.targetStateDir,
+      expectedNormalizedTarget: 'docs/target.md'
+    }),
+    (error) => error.blockingReason === 'target-only-guard-unavailable'
+  );
+});
+
+test('snapshot target-only guard rejects a symlink reference', (t) => {
+  const fixture = makeWorkspace(t);
+  const realReference = path.join(fixture.root, 'real-ref.md');
+  fs.writeFileSync(realReference, '# Real ref\n');
+  fs.rmSync(fixture.reference);
+  fs.symlinkSync(realReference, fixture.reference);
+
+  assert.throws(
+    () => checkSnapshotTargetOnly({
+      projectRoot: fixture.root,
+      targetPath: fixture.target,
+      allowedStateDir: fixture.targetStateDir,
+      expectedNormalizedTarget: 'docs/target.md',
+      referencePaths: [fixture.reference]
+    }),
+    (error) => error.blockingReason === 'target-only-guard-unavailable'
+  );
 });
 
 test('snapshot inspection blocks when an opaque symlink is retargeted', (t) => {
@@ -687,32 +779,109 @@ test('snapshot target-only guard does not exclude a target that lives under an i
   assert.equal(guard.entries.some((e) => e.path === 'dist/docs/target.md'), true);
   assert.equal(guard.excludedDirectories.includes('dist'), false);
 });
+
+test('snapshot target-only guard does not exclude a reference that lives under an infrastructure dir', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-snapshot-ref-infra-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'dist', 'refs'), { recursive: true });
+  const target = path.join(root, 'docs', 'target.md');
+  const reference = path.join(root, 'dist', 'refs', 'reference.md');
+  fs.writeFileSync(target, '# Target\n');
+  fs.writeFileSync(reference, '# Reference\n');
+  const stateDir = path.join(root, '.docs-review-fix', 'targets', 'x');
+
+  const guard = checkSnapshotTargetOnly({
+    projectRoot: root,
+    targetPath: target,
+    allowedStateDir: stateDir,
+    expectedNormalizedTarget: 'docs/target.md',
+    referencePaths: [reference]
+  });
+
+  assert.equal(guard.status, 'passed');
+  assert.equal(guard.entries.some((e) => e.path === 'dist/refs/reference.md'), true);
+  assert.equal(guard.entries.find((e) => e.path === 'dist/refs/reference.md').role, 'reference');
+  assert.equal(guard.excludedDirectories.includes('dist'), false);
+
+  const actual = inspectActualChangedFilesSnapshot({
+    projectRoot: root,
+    targetPath: target,
+    allowedStateDir: stateDir,
+    expectedNormalizedTarget: 'docs/target.md',
+    targetOnlyGuard: guard
+  });
+  assert.equal(actual.status, 'passed');
+});
 ```
 
 - [ ] **Step 2: Run**
 
 Run: `node --test test/snapshot-guard.test.js`
-Expected: PASS — `dist` is not excluded because it contains the target.
+Expected: PASS — `dist` is not excluded when it contains either the target or an explicit reference.
 
-### Task 3.4: Documentation + commit
+### Task 3.4: Persisted monitor scope + documentation + commit
 
 **Files:**
+- Test: `test/snapshot-guard.test.js`
 - Modify: `README.md`, `README.zh-CN.md`, `shared/core.md`
 
-- [ ] **Step 1: Update the guard-mode wording**
+- [ ] **Step 1: Add a guard-report persistence test**
+
+The begin-fix guard report is written by `formatFixGuardReport` (`lib/fix-guard.js`), which `JSON.stringify`s the whole `targetOnlyGuard` object inside a fenced ```json block, and end-fix reads it back wholesale. This test pins that the new scope metadata survives that round-trip. Add the import near the top of `test/snapshot-guard.test.js`:
+
+```js
+const { formatFixGuardReport } = require('../lib/fix-guard');
+```
+
+and append:
+
+```js
+test('fix guard report persists monitorScope and excludedDirectories', () => {
+  const report = formatFixGuardReport({
+    round: 1,
+    normalizedTarget: 'docs/target.md',
+    targetFingerprint: { sha256: 'x', size: 1 },
+    referenceFingerprints: [],
+    rollbackAnchor: { status: 'passed', guardMode: 'snapshot' },
+    targetOnlyGuard: {
+      status: 'passed',
+      guardMode: 'snapshot',
+      monitorScope: 'project-tree-files-and-references-excluding-infrastructure',
+      excludedDirectories: ['node_modules'],
+      entries: []
+    },
+    lock: null
+  });
+  const json = JSON.parse(report.split('```json')[1].split('```')[0]);
+  assert.equal(json.targetOnlyGuard.monitorScope, 'project-tree-files-and-references-excluding-infrastructure');
+  assert.deepEqual(json.targetOnlyGuard.excludedDirectories, ['node_modules']);
+});
+```
+
+- [ ] **Step 2: Run the persistence test**
+
+Run: `node --test test/snapshot-guard.test.js`
+Expected: PASS (it exercises the existing `formatFixGuardReport`, confirming the new fields are not dropped on persistence).
+
+- [ ] **Step 3: Update the guard-mode wording**
 
 In each file, find the sentence describing `guard=snapshot` proving target-only writes "across the project tree" and replace it with scoped wording, e.g.:
 
 > `guard=snapshot` monitors the target, explicit `ref=` documents, ordinary project files, and unrelated file symlinks as opaque entries. Well-known infrastructure directories (`.git`, `node_modules`, `.pnpm-store`, `.yarn`, `.cache`, `dist`, `build`, `coverage`) are excluded from monitoring unless the target or a reference lives inside one; when any directory is excluded the guard reports `monitorScope: project-tree-files-and-references-excluding-infrastructure`. Directory symlinks are not supported and block the guard.
 
+Also disclose the residual risk explicitly:
+
+> Opaque file-symlink entries are checked by symlink metadata and `readlink` target text, but they do not detect writes made through the symlink to its resolved target; directory symlinks remain unsupported for that reason.
+
 Keep `README.md` and `README.zh-CN.md` structurally aligned (same section, translated prose).
 
-- [ ] **Step 2: Run the full suite**
+- [ ] **Step 4: Run the full suite**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add lib/snapshot-guard.js test/snapshot-guard.test.js README.md README.zh-CN.md shared/core.md
@@ -1012,6 +1181,7 @@ Expected: PASS.
 
 ```js
 const { uninstallPlatform } = require('../lib/install');
+const { writeInstallManifest } = require('../lib/manifest');
 
 async function installCodex(t) {
   const homeDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-p1b-uninstall-')));
@@ -1046,6 +1216,46 @@ test('uninstall removes an unchanged codex skill directory', async (t) => {
   assert.notEqual(result.partial, true);
   assert.equal(fs.existsSync(skillDir), false);
 });
+
+test('schema v1 uninstall skips a codex skill directory whose tree is not fully recognized', async (t) => {
+  const { homeDir, platformRoots } = await installCodex(t);
+  const skillDir = path.join(platformRoots.codexSkills, 'review-fix-spec');
+  const { manifest } = readInstallManifest('codex', { homeDir });
+  writeInstallManifest({
+    ...manifest,
+    schemaVersion: 1,
+    generated: manifest.generated.map((entry) => entry.path === skillDir
+      ? { path: entry.path, kind: 'directory', action: entry.action, checksum: 'none' }
+      : entry)
+  }, { homeDir });
+  fs.writeFileSync(path.join(skillDir, 'USER-NOTES.md'), 'mine\n');
+
+  const result = await uninstallPlatform('codex', { homeDir, platformRoots });
+
+  assert.equal(result.partial, true);
+  assert.ok(result.skipped.some((s) => s.path === skillDir && s.reason === 'modified'));
+  assert.equal(fs.existsSync(skillDir), true);
+  const retained = readInstallManifest('codex', { homeDir }).manifest.generated.map((entry) => entry.path);
+  assert.ok(retained.includes(skillDir));
+});
+
+test('schema v1 uninstall removes an unchanged codex skill directory via the recognized set', async (t) => {
+  const { homeDir, platformRoots } = await installCodex(t);
+  const skillDir = path.join(platformRoots.codexSkills, 'review-fix-spec');
+  const { manifest } = readInstallManifest('codex', { homeDir });
+  writeInstallManifest({
+    ...manifest,
+    schemaVersion: 1,
+    generated: manifest.generated.map((entry) => entry.kind === 'directory'
+      ? { path: entry.path, kind: 'directory', action: entry.action, checksum: 'none' }
+      : entry)
+  }, { homeDir });
+
+  const result = await uninstallPlatform('codex', { homeDir, platformRoots });
+
+  assert.notEqual(result.partial, true);
+  assert.equal(fs.existsSync(skillDir), false);
+});
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -1064,23 +1274,23 @@ function directoryIsRemovable(entry, generatePlatformFiles) {
     return current.treeChecksum === entry.treeChecksum && current.childFiles === entry.childFiles;
   }
   // schemaVersion 1 manifest: conservative path — every current file must be a recognized generated name.
+  // generateCodexSkill returns { relativePath: 'skills/<name>', files: [{ relativePath }, ...] };
+  // the ownership marker is excluded just like directoryTreeMetadata excludes it.
   const skillName = path.basename(entry.path);
   const recognized = new Set();
   for (const skill of generatePlatformFiles('codex')) {
-    if (skill.relativePath && skill.relativePath.startsWith(`skills/${skillName}/`)) {
-      recognized.add(skill.relativePath.slice(`skills/${skillName}/`.length));
-    }
+    if (path.basename(skill.relativePath || '') !== skillName) continue;
     for (const file of skill.files || []) {
-      if (skill.skillName === skillName || (skill.relativePath || '').includes(`skills/${skillName}`)) {
-        recognized.add(file.relativePath || file.path);
-      }
+      if (file.relativePath === OWNERSHIP_MARKER) continue;
+      recognized.add(file.relativePath.split(path.sep).join('/'));
     }
   }
+  if (recognized.size === 0) return false; // unknown skill name → conservative skip
   return current.childFiles.split(',').every((name) => name === '' || recognized.has(name));
 }
 ```
 
-> Note: the v1 conservative path enumerates recognized names from `generatePlatformFiles('codex')`. Confirm the exact shape of a codex skill object during Step 4 by logging one element; adjust the `recognized` extraction to match the real `relativePath`/`files` fields. If the shape is uncertain, the safe default is to skip every v1 directory (return `false`) and require reinstall-then-uninstall, but prefer the recognized-set check.
+> The v1 extraction is grounded in the real `generateCodexSkill` shape (`relativePath: 'skills/<name>'`, `files: [{ relativePath }]`, ownership marker excluded). `OWNERSHIP_MARKER` is already defined in `lib/manifest.js` (line 10). Task 4.3 Step 1 includes both a negative test (extra user file → skip) and a positive test (clean v1 tree → still removed), so a wrong extraction fails loudly instead of silently degrading to "never remove v1 directories".
 
 - [ ] **Step 4: Wire the directory branch in `validateGeneratedRemoval`**
 
@@ -1142,7 +1352,7 @@ git commit -m "feat: verify codex skill directory trees on uninstall (manifest s
 - P2 infrastructure exclusion (primary) → Task 3.1; opaque file symlinks + directory-symlink rejection + retarget detection → Task 3.2; target/ref precedence → Tasks 3.1+3.3; docs → Task 3.4. ✓
 - P3 remove test/, update existing expectation, whitelist pack check incl. `package.json` → Tasks 1.1–1.2. ✓
 
-**Known soft spot (flagged, not a silent placeholder):** Task 4.3 Step 3 v1-conservative `recognized` extraction depends on the exact codex skill object shape from `generatePlatformFiles('codex')`. The step says to confirm the shape at implementation time and gives a safe fallback (skip all v1 directories). Fresh v2 installs do not hit this path.
+**Residual-risk coverage (was a soft spot, now resolved):** the v1-conservative `recognized` extraction is grounded in the real `generateCodexSkill` shape (`relativePath: 'skills/<name>'`, `files: [{ relativePath }]`, ownership marker excluded). Task 4.3 Step 1 carries both a negative test (extra user file → skip) and a positive test (clean v1 tree → still removed), so a wrong extraction fails loudly. The persisted-guard-report metadata (`monitorScope`, `excludedDirectories`) is locked by the Task 3.4 `formatFixGuardReport` round-trip test.
 
 **Type consistency:** `partial` and `skipped[].reason === 'modified'` are produced in `validateGeneratedRemoval` (manifest.js) and consumed in `uninstallPlatform` (install.js) and `bin/drfx.js`. `monitorScope`/`excludedDirectories`/`role: 'opaque-symlink'`/`linkTargetSha256`/`mode` are produced in `collectMonitorRecords`/`symlinkOpaqueRecord` and consumed in `checkSnapshotTargetOnly`/`monitorEntryChanged`. `directoryTreeMetadata` is defined once in `lib/manifest.js` (Task 4.2 Step 3) and imported by `lib/install.js`, so install and uninstall compute byte-identical `childFiles`/`treeChecksum` values — no divergent second copy.
 
