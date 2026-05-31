@@ -14,6 +14,8 @@ const {
   restoreSnapshot
 } = require('../lib/snapshot-guard');
 
+const { formatFixGuardReport } = require('../lib/fix-guard');
+
 function makeWorkspace(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-snapshot-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -319,6 +321,187 @@ test('snapshot restore rejects symlinked snapshot parent directory', (t) => {
   );
 });
 
+test('snapshot target-only guard excludes infrastructure directories and records the scoped monitor set', (t) => {
+  const fixture = makeWorkspace(t);
+  fs.mkdirSync(path.join(fixture.root, 'node_modules', 'pkg'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.root, 'node_modules', 'pkg', 'index.js'), 'module.exports = 1;\n');
+
+  const guard = checkSnapshotTargetOnly({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+
+  assert.equal(guard.status, 'passed');
+  assert.equal(guard.monitorScope, 'project-tree-files-and-references-excluding-infrastructure');
+  assert.ok(guard.excludedDirectories.includes('node_modules'));
+  assert.equal(guard.entries.some((e) => e.path.startsWith('node_modules/')), false);
+});
+
+test('snapshot target-only guard keeps the plain scope when no infrastructure dir is present', (t) => {
+  const fixture = makeWorkspace(t);
+  const guard = checkSnapshotTargetOnly({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+  assert.equal(guard.monitorScope, 'project-tree-files-and-references');
+  assert.deepEqual(guard.excludedDirectories, []);
+});
+
+test('snapshot target-only guard records an unrelated file symlink as opaque without following it', (t) => {
+  const fixture = makeWorkspace(t);
+  const realFile = path.join(fixture.root, 'docs', 'real.md');
+  fs.writeFileSync(realFile, '# Real\n');
+  fs.symlinkSync(realFile, path.join(fixture.root, 'docs', 'link.md'));
+
+  const guard = checkSnapshotTargetOnly({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+  const link = guard.entries.find((e) => e.path === 'docs/link.md');
+  assert.equal(link.role, 'opaque-symlink');
+  assert.ok(link.linkTargetSha256);
+});
+
+test('snapshot target-only guard rejects a directory symlink instead of treating it as opaque', (t) => {
+  const fixture = makeWorkspace(t);
+  fs.symlinkSync(path.join(fixture.root, 'other'), path.join(fixture.root, 'docs', 'otherlink'));
+  assert.throws(
+    () => checkSnapshotTargetOnly({
+      projectRoot: fixture.root,
+      targetPath: fixture.target,
+      allowedStateDir: fixture.targetStateDir,
+      expectedNormalizedTarget: 'docs/target.md'
+    }),
+    (error) => error.blockingReason === 'target-only-guard-unavailable'
+  );
+});
+
+test('snapshot target-only guard rejects a symlink target', (t) => {
+  const fixture = makeWorkspace(t);
+  const outside = path.join(fixture.root, 'outside-target.md');
+  fs.writeFileSync(outside, '# Outside\n');
+  fs.rmSync(fixture.target);
+  fs.symlinkSync(outside, fixture.target);
+
+  assert.throws(
+    () => checkSnapshotTargetOnly({
+      projectRoot: fixture.root,
+      targetPath: fixture.target,
+      allowedStateDir: fixture.targetStateDir,
+      expectedNormalizedTarget: 'docs/target.md'
+    }),
+    (error) => error.blockingReason === 'target-only-guard-unavailable'
+  );
+});
+
+test('snapshot target-only guard rejects a symlink reference', (t) => {
+  const fixture = makeWorkspace(t);
+  const realReference = path.join(fixture.root, 'real-ref.md');
+  fs.writeFileSync(realReference, '# Real ref\n');
+  fs.rmSync(fixture.reference);
+  fs.symlinkSync(realReference, fixture.reference);
+
+  assert.throws(
+    () => checkSnapshotTargetOnly({
+      projectRoot: fixture.root,
+      targetPath: fixture.target,
+      allowedStateDir: fixture.targetStateDir,
+      expectedNormalizedTarget: 'docs/target.md',
+      referencePaths: [fixture.reference]
+    }),
+    (error) => error.blockingReason === 'target-only-guard-unavailable'
+  );
+});
+
+test('snapshot inspection blocks when an opaque symlink is retargeted', (t) => {
+  const fixture = makeWorkspace(t);
+  const realA = path.join(fixture.root, 'docs', 'a.md');
+  const realB = path.join(fixture.root, 'docs', 'b.md');
+  fs.writeFileSync(realA, '# A\n');
+  fs.writeFileSync(realB, '# B\n');
+  const link = path.join(fixture.root, 'docs', 'link.md');
+  fs.symlinkSync(realA, link);
+
+  const baseline = checkSnapshotTargetOnly({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+  fs.rmSync(link);
+  fs.symlinkSync(realB, link);
+
+  const result = inspectActualChangedFilesSnapshot({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md',
+    targetOnlyGuard: baseline
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+});
+
+test('snapshot target-only guard does not exclude a target that lives under an infrastructure dir', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-snapshot-infra-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'dist', 'docs'), { recursive: true });
+  const target = path.join(root, 'dist', 'docs', 'target.md');
+  fs.writeFileSync(target, '# Target\n');
+  const stateDir = path.join(root, '.docs-review-fix', 'targets', 'x');
+
+  const guard = checkSnapshotTargetOnly({
+    projectRoot: root,
+    targetPath: target,
+    allowedStateDir: stateDir,
+    expectedNormalizedTarget: 'dist/docs/target.md'
+  });
+
+  assert.equal(guard.status, 'passed');
+  assert.equal(guard.entries.some((e) => e.path === 'dist/docs/target.md'), true);
+  assert.equal(guard.excludedDirectories.includes('dist'), false);
+});
+
+test('snapshot target-only guard does not exclude a reference that lives under an infrastructure dir', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-snapshot-ref-infra-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'dist', 'refs'), { recursive: true });
+  const target = path.join(root, 'docs', 'target.md');
+  const reference = path.join(root, 'dist', 'refs', 'reference.md');
+  fs.writeFileSync(target, '# Target\n');
+  fs.writeFileSync(reference, '# Reference\n');
+  const stateDir = path.join(root, '.docs-review-fix', 'targets', 'x');
+
+  const guard = checkSnapshotTargetOnly({
+    projectRoot: root,
+    targetPath: target,
+    allowedStateDir: stateDir,
+    expectedNormalizedTarget: 'docs/target.md',
+    referencePaths: [reference]
+  });
+
+  assert.equal(guard.status, 'passed');
+  assert.equal(guard.entries.some((e) => e.path === 'dist/refs/reference.md'), true);
+  assert.equal(guard.entries.find((e) => e.path === 'dist/refs/reference.md').role, 'reference');
+  assert.equal(guard.excludedDirectories.includes('dist'), false);
+
+  const actual = inspectActualChangedFilesSnapshot({
+    projectRoot: root,
+    targetPath: target,
+    allowedStateDir: stateDir,
+    expectedNormalizedTarget: 'docs/target.md',
+    targetOnlyGuard: guard
+  });
+  assert.equal(actual.status, 'passed');
+});
+
 test('snapshot restore rejects missing target when parent was replaced by symlink', (t) => {
   const fixture = makeWorkspace(t);
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-snapshot-parent-symlink-'));
@@ -349,4 +532,100 @@ test('snapshot restore rejects missing target when parent was replaced by symlin
     }
   );
   assert.equal(fs.existsSync(path.join(outside, 'target.md')), false);
+});
+
+test('snapshot target-only guard records a broken symlink as opaque and passes', (t) => {
+  const fixture = makeWorkspace(t);
+  // Create a symlink pointing at a non-existent path (broken symlink)
+  const brokenLink = path.join(fixture.root, 'docs', 'broken-link.md');
+  fs.symlinkSync(path.join(fixture.root, 'docs', 'nonexistent.md'), brokenLink);
+
+  const guard = checkSnapshotTargetOnly({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+
+  assert.equal(guard.status, 'passed');
+  const entry = guard.entries.find((e) => e.path === 'docs/broken-link.md');
+  assert.ok(entry, 'broken symlink entry should appear in entries');
+  assert.equal(entry.role, 'opaque-symlink');
+  assert.ok(entry.linkTargetSha256, 'broken symlink entry should have a linkTargetSha256');
+});
+
+test('snapshot inspection blocks when an opaque symlink is deleted', (t) => {
+  const fixture = makeWorkspace(t);
+  const realFile = path.join(fixture.root, 'docs', 'real.md');
+  fs.writeFileSync(realFile, '# Real\n');
+  const link = path.join(fixture.root, 'docs', 'link.md');
+  fs.symlinkSync(realFile, link);
+
+  const baseline = checkSnapshotTargetOnly({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+  assert.equal(baseline.status, 'passed');
+  assert.ok(baseline.entries.some((e) => e.path === 'docs/link.md' && e.role === 'opaque-symlink'));
+
+  fs.rmSync(link);
+
+  const result = inspectActualChangedFilesSnapshot({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md',
+    targetOnlyGuard: baseline
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+});
+
+test('snapshot inspection blocks when a new opaque symlink is created after baseline', (t) => {
+  const fixture = makeWorkspace(t);
+  const baseline = checkSnapshotTargetOnly({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+  assert.equal(baseline.status, 'passed');
+
+  const realFile = path.join(fixture.root, 'docs', 'real.md');
+  fs.writeFileSync(realFile, '# Real\n');
+  const newLink = path.join(fixture.root, 'docs', 'new-link.md');
+  fs.symlinkSync(realFile, newLink);
+
+  const result = inspectActualChangedFilesSnapshot({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md',
+    targetOnlyGuard: baseline
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+});
+
+test('fix guard report persists monitorScope and excludedDirectories', () => {
+  const report = formatFixGuardReport({
+    round: 1,
+    normalizedTarget: 'docs/target.md',
+    targetFingerprint: { sha256: 'x', size: 1 },
+    referenceFingerprints: [],
+    rollbackAnchor: { status: 'passed', guardMode: 'snapshot' },
+    targetOnlyGuard: {
+      status: 'passed',
+      guardMode: 'snapshot',
+      monitorScope: 'project-tree-files-and-references-excluding-infrastructure',
+      excludedDirectories: ['node_modules'],
+      entries: []
+    },
+    lock: null
+  });
+  const json = JSON.parse(report.split('```json')[1].split('```')[0]);
+  assert.equal(json.targetOnlyGuard.monitorScope, 'project-tree-files-and-references-excluding-infrastructure');
+  assert.deepEqual(json.targetOnlyGuard.excludedDirectories, ['node_modules']);
 });

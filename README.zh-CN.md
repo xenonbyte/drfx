@@ -68,7 +68,7 @@ review-fix-doc docs/notes.md read-only resume
 - `normal` 使用默认 strictness。
 - `strict` 让 low findings 阻断，除非显式接受为 non-blocking。
 - `assurance=practical|strict-verified|advisory` 选择 runtime assurance。
-- `guard=git|snapshot` 选择 rollback 和 target-only guard family。
+- `guard=git|snapshot` 选择 rollback 和 target-only guard family。`guard=snapshot` 监控 target、显式 `ref=` 文档、普通项目文件，以及无关 file symlink（作为 opaque entries）。常见 infrastructure 目录（`.git`、`node_modules`、`.pnpm-store`、`.yarn`、`.cache`、`dist`、`build`、`coverage`）默认排除在监控范围之外，除非 target 或 reference 位于其中；若有目录被排除，guard 报告 `monitorScope: project-tree-files-and-references-excluding-infrastructure`。Directory symlink 不被支持，会阻断 guard。Opaque file-symlink entries 通过 symlink metadata 和 `readlink` target text 检测变化，但无法检测通过 symlink 写入其 resolved target 的修改；因此 directory symlink 保持不支持。
 - `resume` 从 target-local state 继续。
 - `debug` 打印 redacted workflow audit details。
 - `root=<path>` 设置 project root。

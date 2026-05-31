@@ -135,7 +135,7 @@ Supported tokens:
 - `debug` prints redacted workflow audit details. Default output is concise.
 - `root=<path>` sets the project root used for containment and state layout.
 - `ledger=<path>` selects a custom issue ledger path inside the target state directory.
-- `guard=git|snapshot` selects the rollback and target-only guard family. `git` is the default; `snapshot` uses file snapshots when a Git rollback anchor is unavailable.
+- `guard=git|snapshot` selects the rollback and target-only guard family. `git` is the default; `snapshot` uses file snapshots when a Git rollback anchor is unavailable. `guard=snapshot` monitors the target, explicit `ref=` documents, ordinary project files, and unrelated file symlinks as opaque entries. Well-known infrastructure directories (`.git`, `node_modules`, `.pnpm-store`, `.yarn`, `.cache`, `dist`, `build`, `coverage`) are excluded from monitoring unless the target or a reference lives inside one; when any directory is excluded the guard reports `monitorScope: project-tree-files-and-references-excluding-infrastructure`. Directory symlinks are not supported and block the guard. Opaque file-symlink entries are checked by symlink metadata and `readlink` target text, but they do not detect writes made through the symlink to its resolved target; directory symlinks remain unsupported for that reason.
 
 Parsing is strict:
 
