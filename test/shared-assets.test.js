@@ -286,7 +286,6 @@ test('package file list excludes project-local state and ignored planning direct
     'skills/',
     'shared/',
     'templates/',
-    'test/',
     'README.md',
     'README.zh-CN.md'
   ]);
