@@ -559,7 +559,7 @@ test('removal validation requires canonical allowed roots and platform route all
     homeDir,
     platformRoots,
     platform: 'gemini',
-    generated: [{ path: route, kind: 'file', action: 'created', checksum: 'a'.repeat(64) }]
+    generated: [{ path: route, kind: 'file', action: 'created', checksum: 'none' }]
   });
 
   assert.deepEqual(
@@ -702,7 +702,7 @@ test('Codex skill directory removal requires ownership marker', (t) => {
     platform: 'codex',
     generated: [
       { path: completeRoute, kind: 'directory', action: 'created', checksum: 'none' },
-      { path: path.join(completeRoute, 'SKILL.md'), kind: 'file', action: 'created', checksum: 'a'.repeat(64) }
+      { path: path.join(completeRoute, 'SKILL.md'), kind: 'file', action: 'created', checksum: 'none' }
     ]
   });
   assert.throws(() => validateGeneratedRemoval(completeManifest, { homeDir, platformRoots }), /ownership marker|non-owned/i);
@@ -720,7 +720,7 @@ test('Codex skill directory removal requires ownership marker', (t) => {
         path: path.join(nonOwnedFileRoute, 'SKILL.md'),
         kind: 'file',
         action: 'created',
-        checksum: 'a'.repeat(64)
+        checksum: 'none'
       }
     ]
   });
@@ -737,7 +737,7 @@ test('Codex legacy prompt routes are removable only when manifest-recorded or ow
     platformRoots,
     platform: 'codex',
     allowedRoots: [path.join(platformRoots.codex, 'prompts')],
-    generated: [{ path: manifestRecordedPrompt, kind: 'file', action: 'created', checksum: 'a'.repeat(64) }]
+    generated: [{ path: manifestRecordedPrompt, kind: 'file', action: 'created', checksum: 'none' }]
   });
 
   assert.deepEqual(validateGeneratedRemoval(manifest, { homeDir, platformRoots }).removable[0].path, manifestRecordedPrompt);
@@ -1230,6 +1230,53 @@ test('generated platform files include all Claude, Codex, and Gemini route contr
       path.join('skills', 'review-fix-spec')
     ].sort()
   );
+});
+
+test('uninstall skips a modified Claude command file and retains the manifest', async (t) => {
+  const { homeDir, platformRoots } = makeInstallFixture(t);
+  await installPlatform('claude', { homeDir, platformRoots });
+  const routePath = path.join(platformRoots.claude, 'commands', 'review-fix-spec.md');
+  fs.appendFileSync(routePath, '\n<!-- user edit -->\n');
+
+  const result = await uninstallPlatform('claude', { homeDir, platformRoots });
+
+  assert.equal(result.partial, true);
+  assert.ok(result.skipped.some((s) => s.reason === 'modified' && s.path === routePath));
+  assert.equal(fs.existsSync(routePath), true);
+  const manifestPath = path.join(homeDir, '.docs-review-fix', 'manifests', 'claude.manifest');
+  assert.equal(fs.existsSync(manifestPath), true);
+  const retained = readInstallManifest('claude', { homeDir }).manifest.generated.map((entry) => entry.path);
+  assert.deepEqual(retained, [routePath]);
+  assert.equal(fs.existsSync(path.join(homeDir, '.docs-review-fix', 'capabilities', 'claude.json')), true);
+});
+
+test('uninstall skips a modified Gemini command file and retains the manifest', async (t) => {
+  const { homeDir, platformRoots } = makeInstallFixture(t);
+  await installPlatform('gemini', { homeDir, platformRoots });
+  const routePath = path.join(platformRoots.gemini, 'commands', 'review-fix-spec.toml');
+  fs.appendFileSync(routePath, '\n# user edit\n');
+
+  const result = await uninstallPlatform('gemini', { homeDir, platformRoots });
+
+  assert.equal(result.partial, true);
+  assert.ok(result.skipped.some((s) => s.reason === 'modified' && s.path === routePath));
+  assert.equal(fs.existsSync(routePath), true);
+  const retained = readInstallManifest('gemini', { homeDir }).manifest.generated.map((entry) => entry.path);
+  assert.deepEqual(retained, [routePath]);
+  assert.equal(fs.existsSync(path.join(homeDir, '.docs-review-fix', 'capabilities', 'gemini.json')), true);
+});
+
+test('uninstall still removes an unchanged Claude command file and its manifest', async (t) => {
+  const { homeDir, platformRoots } = makeInstallFixture(t);
+  await installPlatform('claude', { homeDir, platformRoots });
+  const routePath = path.join(platformRoots.claude, 'commands', 'review-fix-spec.md');
+
+  const result = await uninstallPlatform('claude', { homeDir, platformRoots });
+
+  assert.notEqual(result.partial, true);
+  assert.equal(fs.existsSync(routePath), false);
+  const manifestPath = path.join(homeDir, '.docs-review-fix', 'manifests', 'claude.manifest');
+  assert.equal(fs.existsSync(manifestPath), false);
 });
 
 test('generated-output scan rejects runtime memory continuity claims', () => {

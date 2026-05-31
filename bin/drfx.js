@@ -98,7 +98,19 @@ async function main(argv) {
   }
   if (command === 'uninstall') {
     const result = await uninstallPlatforms({ platforms });
-    process.stdout.write(`uninstalled: ${Object.keys(result.platforms).join(', ')}\n`);
+    const entries = Object.entries(result.platforms);
+    const fullyDone = entries.filter(([, o]) => !o.partial && !o.missing).map(([p]) => p);
+    const lines = [];
+    if (fullyDone.length > 0) lines.push(`uninstalled: ${fullyDone.join(', ')}`);
+    for (const [platform, outcome] of entries) {
+      if (outcome.missing) {
+        lines.push(`not installed: ${platform}`);
+      } else if (outcome.partial) {
+        const modified = (outcome.skipped || []).filter((s) => s.reason === 'modified').length;
+        lines.push(`partially uninstalled: ${platform} (kept ${modified} modified file(s); manifest retained)`);
+      }
+    }
+    process.stdout.write(`${lines.join('\n')}\n`);
     return 0;
   }
 
