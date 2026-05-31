@@ -308,6 +308,20 @@ test('localized README is root-level without package lifecycle hooks', () => {
   assert.match(read('README.zh-CN.md'), /\[English\]\(README\.md\)/);
 });
 
+test('localized README keeps public section structure aligned', () => {
+  function sectionHeadings(filePath) {
+    return read(filePath)
+      .split(/\n/)
+      .filter((line) => /^#{2,3} /.test(line))
+      .map((line) => line.trim());
+  }
+
+  const zhReadme = read('README.zh-CN.md');
+  assert.deepEqual(sectionHeadings('README.zh-CN.md'), sectionHeadings('README.md'));
+  assert.match(zhReadme, /## Modes/);
+  assert.match(zhReadme, /partially uninstalled: <platform>/);
+});
+
 test('usage examples prefer bare target paths while preserving target form and guard tokens', () => {
   const readme = read('README.md');
   const core = read('shared/core.md');
