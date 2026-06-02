@@ -5,6 +5,7 @@
   "type": "commonjs",
   "bin": { "drfx": "bin/drfx.js" },
   "scripts": {
+    "typecheck": "node scripts/typecheck.js",
     "test": "node --test"
   },
   "engines": { "node": ">=20.0.0" },
