@@ -42,6 +42,7 @@ test('schema v2 directory entry round-trips childFiles and treeChecksum', () => 
 const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { installPlatform, uninstallPlatform } = require('../lib/install');
 const { readInstallManifest, writeInstallManifest } = require('../lib/manifest');
 
@@ -82,6 +83,17 @@ async function installCodex(t) {
   return { homeDir, platformRoots };
 }
 
+function legacyFileOnlyTreeChecksum(directoryPath, childFiles) {
+  const hash = crypto.createHash('sha256');
+  for (const relativePath of childFiles.split(',').filter(Boolean).sort()) {
+    hash.update(relativePath);
+    hash.update('\0');
+    hash.update(fs.readFileSync(path.join(directoryPath, ...relativePath.split('/'))));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
 test('uninstall skips a codex skill directory that gained a user file', async (t) => {
   const { homeDir, platformRoots } = await installCodex(t);
   const skillDir = path.join(platformRoots.codexSkills, 'review-fix-spec');
@@ -94,12 +106,74 @@ test('uninstall skips a codex skill directory that gained a user file', async (t
   assert.equal(fs.existsSync(skillDir), true);
 });
 
+test('uninstall skips a codex skill directory that gained a user empty directory', async (t) => {
+  const { homeDir, platformRoots } = await installCodex(t);
+  const skillDir = path.join(platformRoots.codexSkills, 'review-fix-spec');
+  const userDirectory = path.join(skillDir, 'user-notes');
+  fs.mkdirSync(userDirectory);
+
+  const result = await uninstallPlatform('codex', { homeDir, platformRoots });
+
+  assert.equal(result.partial, true);
+  assert.ok(result.skipped.some((s) => s.path === skillDir && s.reason === 'modified'));
+  assert.equal(fs.existsSync(userDirectory), true);
+});
+
+test('uninstall skips a codex skill directory that gained a nested ownership-marker-named file', async (t) => {
+  const { homeDir, platformRoots } = await installCodex(t);
+  const skillDir = path.join(platformRoots.codexSkills, 'review-fix-spec');
+  const nestedMarker = path.join(skillDir, 'shared', '.document-review-loop-owned');
+  fs.writeFileSync(nestedMarker, 'user note\n');
+
+  const result = await uninstallPlatform('codex', { homeDir, platformRoots });
+
+  assert.equal(result.partial, true);
+  assert.ok(result.skipped.some((s) => s.path === skillDir && s.reason === 'modified'));
+  assert.equal(fs.existsSync(nestedMarker), true);
+});
+
 test('uninstall removes an unchanged codex skill directory', async (t) => {
   const { homeDir, platformRoots } = await installCodex(t);
   const skillDir = path.join(platformRoots.codexSkills, 'review-fix-spec');
   const result = await uninstallPlatform('codex', { homeDir, platformRoots });
   assert.notEqual(result.partial, true);
   assert.equal(fs.existsSync(skillDir), false);
+});
+
+test('uninstall removes unchanged codex skill directory from legacy schema v2 file-only checksum', async (t) => {
+  const { homeDir, platformRoots } = await installCodex(t);
+  const skillDir = path.join(platformRoots.codexSkills, 'review-fix-spec');
+  const { manifest } = readInstallManifest('codex', { homeDir });
+  writeInstallManifest({
+    ...manifest,
+    generated: manifest.generated.map((entry) => entry.path === skillDir
+      ? { ...entry, treeChecksum: legacyFileOnlyTreeChecksum(skillDir, entry.childFiles) }
+      : entry)
+  }, { homeDir });
+
+  const result = await uninstallPlatform('codex', { homeDir, platformRoots });
+
+  assert.notEqual(result.partial, true);
+  assert.equal(fs.existsSync(skillDir), false);
+});
+
+test('legacy schema v2 file-only checksum still skips unrecognized empty directories', async (t) => {
+  const { homeDir, platformRoots } = await installCodex(t);
+  const skillDir = path.join(platformRoots.codexSkills, 'review-fix-spec');
+  const { manifest } = readInstallManifest('codex', { homeDir });
+  writeInstallManifest({
+    ...manifest,
+    generated: manifest.generated.map((entry) => entry.path === skillDir
+      ? { ...entry, treeChecksum: legacyFileOnlyTreeChecksum(skillDir, entry.childFiles) }
+      : entry)
+  }, { homeDir });
+  fs.mkdirSync(path.join(skillDir, 'user-notes'));
+
+  const result = await uninstallPlatform('codex', { homeDir, platformRoots });
+
+  assert.equal(result.partial, true);
+  assert.ok(result.skipped.some((s) => s.path === skillDir && s.reason === 'modified'));
+  assert.equal(fs.existsSync(skillDir), true);
 });
 
 test('schema v1 uninstall skips a codex skill directory whose tree is not fully recognized', async (t) => {
@@ -122,6 +196,47 @@ test('schema v1 uninstall skips a codex skill directory whose tree is not fully 
   assert.equal(fs.existsSync(skillDir), true);
   const retained = readInstallManifest('codex', { homeDir }).manifest.generated.map((entry) => entry.path);
   assert.ok(retained.includes(skillDir));
+});
+
+test('schema v1 uninstall skips a codex skill directory with an unrecognized empty directory', async (t) => {
+  const { homeDir, platformRoots } = await installCodex(t);
+  const skillDir = path.join(platformRoots.codexSkills, 'review-fix-spec');
+  const { manifest } = readInstallManifest('codex', { homeDir });
+  writeInstallManifest({
+    ...manifest,
+    schemaVersion: 1,
+    generated: manifest.generated.map((entry) => entry.path === skillDir
+      ? { path: entry.path, kind: 'directory', action: entry.action, checksum: 'none' }
+      : entry)
+  }, { homeDir });
+  fs.mkdirSync(path.join(skillDir, 'user-notes'));
+
+  const result = await uninstallPlatform('codex', { homeDir, platformRoots });
+
+  assert.equal(result.partial, true);
+  assert.ok(result.skipped.some((s) => s.path === skillDir && s.reason === 'modified'));
+  assert.equal(fs.existsSync(skillDir), true);
+});
+
+test('schema v1 uninstall skips a codex skill directory with comma-crafted user directory names', async (t) => {
+  const { homeDir, platformRoots } = await installCodex(t);
+  const skillDir = path.join(platformRoots.codexSkills, 'review-fix-spec');
+  const { manifest } = readInstallManifest('codex', { homeDir });
+  writeInstallManifest({
+    ...manifest,
+    schemaVersion: 1,
+    generated: manifest.generated.map((entry) => entry.path === skillDir
+      ? { path: entry.path, kind: 'directory', action: entry.action, checksum: 'none' }
+      : entry)
+  }, { homeDir });
+  const craftedDirectory = path.join(skillDir, 'shared,F:SKILL.md');
+  fs.mkdirSync(craftedDirectory);
+
+  const result = await uninstallPlatform('codex', { homeDir, platformRoots });
+
+  assert.equal(result.partial, true);
+  assert.ok(result.skipped.some((s) => s.path === skillDir && s.reason === 'modified'));
+  assert.equal(fs.existsSync(craftedDirectory), true);
 });
 
 test('schema v1 uninstall removes an unchanged codex skill directory via the recognized set', async (t) => {

@@ -609,6 +609,55 @@ test('snapshot inspection blocks when a new opaque symlink is created after base
   assert.equal(result.blockingReason, 'unexpected-worktree-change');
 });
 
+test('snapshot inspection blocks when a new infrastructure directory appears after baseline', (t) => {
+  const fixture = makeWorkspace(t);
+  const baseline = checkSnapshotTargetOnly({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+  assert.equal(baseline.monitorScope, 'project-tree-files-and-references');
+
+  fs.mkdirSync(path.join(fixture.root, 'node_modules', 'pkg'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.root, 'node_modules', 'pkg', 'index.js'), 'module.exports = 1;\n');
+
+  const result = inspectActualChangedFilesSnapshot({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md',
+    targetOnlyGuard: baseline
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+});
+
+test('snapshot inspection blocks when an excluded infrastructure directory disappears', (t) => {
+  const fixture = makeWorkspace(t);
+  fs.mkdirSync(path.join(fixture.root, 'node_modules', 'pkg'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.root, 'node_modules', 'pkg', 'index.js'), 'module.exports = 1;\n');
+  const baseline = checkSnapshotTargetOnly({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md'
+  });
+  assert.deepEqual(baseline.excludedDirectories, ['node_modules']);
+
+  fs.rmSync(path.join(fixture.root, 'node_modules'), { recursive: true, force: true });
+
+  const result = inspectActualChangedFilesSnapshot({
+    projectRoot: fixture.root,
+    targetPath: fixture.target,
+    allowedStateDir: fixture.targetStateDir,
+    expectedNormalizedTarget: 'docs/target.md',
+    targetOnlyGuard: baseline
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+});
+
 test('fix guard report persists monitorScope and excludedDirectories', () => {
   const report = formatFixGuardReport({
     round: 1,
