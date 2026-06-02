@@ -1,5 +1,6 @@
 docs/*
 !docs/AUDIT-2026-05-31-code-and-process-review.md
+!docs/REQUIREMENT-code-review-routes-2026-06-03.md
 design/
 CONTINUITY.md
 .docs-review-fix/
