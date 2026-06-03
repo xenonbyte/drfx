@@ -792,6 +792,26 @@ test('file-set snapshot restore limits writes to monitored files only', (t) => {
   assert.equal(fs.readFileSync(fixture.other, 'utf8'), '# Other mutated and must survive.\n');
 });
 
+test('file-set snapshot restore recreates a monitored file whose parent dir was removed', (t) => {
+  const fixture = makeWorkspace(t);
+  const baseline = captureFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md', 'docs/sibling.md']
+  });
+  // A fixer deleted both monitored files AND their parent directory; restore must
+  // recreate the directory and the files rather than throwing an uncaught ENOENT.
+  fs.rmSync(path.dirname(fixture.target), { recursive: true, force: true });
+
+  const result = restoreFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md', 'docs/sibling.md'],
+    baseline
+  });
+  assert.equal(result.status, 'passed');
+  assert.equal(fs.readFileSync(fixture.target, 'utf8'), '# Target\n\nOriginal.\n');
+  assert.equal(fs.readFileSync(fixture.sibling, 'utf8'), '# Sibling\n');
+});
+
 test('file-set snapshot restore blocks (no silent pass) when a snapshot body is unavailable', (t) => {
   const fixture = makeWorkspace(t);
   const baseline = captureFileSetBaseline({
