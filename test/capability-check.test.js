@@ -1206,27 +1206,33 @@ test('generated platform files include all Claude, Codex, and Gemini route contr
   assert.deepEqual(
     generatePlatformFiles('claude', { packageVersion: PACKAGE_VERSION }).map((entry) => entry.relativePath).sort(),
     [
+      path.join('commands', 'review-fix-code.md'),
       path.join('commands', 'review-fix-design.md'),
       path.join('commands', 'review-fix-doc.md'),
       path.join('commands', 'review-fix-plan.md'),
+      path.join('commands', 'review-fix-pr.md'),
       path.join('commands', 'review-fix-spec.md')
     ].sort()
   );
   assert.deepEqual(
     generatePlatformFiles('gemini', { packageVersion: PACKAGE_VERSION }).map((entry) => entry.relativePath).sort(),
     [
+      path.join('commands', 'review-fix-code.toml'),
       path.join('commands', 'review-fix-design.toml'),
       path.join('commands', 'review-fix-doc.toml'),
       path.join('commands', 'review-fix-plan.toml'),
+      path.join('commands', 'review-fix-pr.toml'),
       path.join('commands', 'review-fix-spec.toml')
     ].sort()
   );
   assert.deepEqual(
     generatePlatformFiles('codex', { packageVersion: PACKAGE_VERSION }).map((entry) => entry.relativePath).sort(),
     [
+      path.join('skills', 'review-fix-code'),
       path.join('skills', 'review-fix-design'),
       path.join('skills', 'review-fix-doc'),
       path.join('skills', 'review-fix-plan'),
+      path.join('skills', 'review-fix-pr'),
       path.join('skills', 'review-fix-spec')
     ].sort()
   );

@@ -12,7 +12,7 @@ Users must not pass type. This entry skill always treats the target as `COMMON` 
 Invocation syntax:
 
 ```text
-review-fix-doc <path> [ref=<path>...] [read-only|review-and-fix] [strict|normal] [assurance=practical|strict-verified|advisory] [guard=git|snapshot] [resume] [ledger=<target-local path>] [root=<project-root>] [debug]
+review-fix-doc <path> [ref=<path>...] [read-only|review-and-fix] [strict|normal] [assurance=practical|strict-verified|advisory] [guard=git|snapshot] [resume] [rounds=<n>] [ledger=<target-local path>] [root=<project-root>] [debug]
 ```
 
 Full form: `review-fix-doc target=<path> ...`. A bare path is shorthand for `target=<path>`.
@@ -24,6 +24,8 @@ Reference Conformance: `ref=` documents are consistency sources, not mandatory u
 COMMON review may flag document type fit when a generic document is really acting as a DESIGN, SPEC, or PLAN.
 
 `assurance=practical|strict-verified|advisory` controls runtime assurance. `strict` and `normal` are review strictness only.
+
+`rounds=<n>` sets the maximum repair-loop count for review-and-fix; it is unsupported with `read-only`.
 
 Pass `debug` to print redacted workflow audit details. Default output is concise and must not expose raw workflow JSON, prompt text, subagent transcripts, or internal issue IDs in `Issues:`, `Fixed:`, or `Unfixed:` lists.
 

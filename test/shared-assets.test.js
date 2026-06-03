@@ -6,7 +6,7 @@ const path = require('node:path');
 const test = require('node:test');
 const { renderPlatformRoute, generatePlatformFiles } = require('../lib/generator');
 const { buildFinalResponseChecklist } = require('../lib/final-response');
-const { listDocumentRoutes } = require('../lib/routes');
+const { listDocumentRoutes, listRoutes } = require('../lib/routes');
 const {
   maskEmbeddedSharedContent,
   readSnapshot,
@@ -56,6 +56,21 @@ test('document-route generated shells equal golden snapshots except additive rou
         stripAdditiveRounds(snapshot),
         `${platform}:${route.routeName} document shell drifted beyond the additive rounds=<n> token`
       );
+    }
+  }
+});
+
+test('code-route generated shells equal golden snapshots byte-for-byte', () => {
+  const SNAPSHOT_VERSION = '0.0.0-snapshot';
+
+  for (const platform of ['claude', 'codex', 'gemini']) {
+    for (const route of listRoutes()) {
+      if (route.routeKind === 'document') continue;
+      const rendered = renderPlatformRoute(platform, route.routeName, { packageVersion: SNAPSHOT_VERSION });
+      const shell = maskEmbeddedSharedContent(platform, rendered);
+      const snapshot = readSnapshot(platform, route.routeName);
+
+      assert.equal(shell, snapshot, `${platform}:${route.routeName} code shell drifted from snapshot`);
     }
   }
 });
@@ -983,16 +998,18 @@ test('coordinator defines a recurrence + fix-attempt-cap convergence rule', () =
 });
 
 // ---------------------------------------------------------------------------
-// Compatibility: generatePlatformFiles must still generate only document routes
+// generatePlatformFiles must generate all SIX routes (document + pr + code)
 // ---------------------------------------------------------------------------
 
-test('generatePlatformFiles generates only the four document routes (not PR or code)', () => {
-  const documentRouteNames = listDocumentRoutes().map((r) => r.routeName);
-  assert.deepEqual(documentRouteNames, [
+test('generatePlatformFiles generates all six routes (document + pr + code)', () => {
+  const allRouteNames = listRoutes().map((r) => r.routeName);
+  assert.deepEqual(allRouteNames, [
     'review-fix-spec',
     'review-fix-plan',
     'review-fix-design',
     'review-fix-doc',
+    'review-fix-pr',
+    'review-fix-code',
   ]);
 
   for (const platform of ['claude', 'codex', 'gemini']) {
@@ -1000,8 +1017,8 @@ test('generatePlatformFiles generates only the four document routes (not PR or c
     const generatedRouteNames = files.map((f) => f.routeName);
     assert.deepEqual(
       generatedRouteNames,
-      documentRouteNames,
-      `${platform} must only generate document routes`
+      allRouteNames,
+      `${platform} must generate all six routes`
     );
   }
 });
@@ -1060,5 +1077,122 @@ test('code.md lists the required CODE priority-scan surfaces', () => {
 
   for (const surface of surfaces) {
     assert.match(code, new RegExp(surface.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `code.md must mention priority-scan surface: ${surface}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Generated CODE route (review-fix-pr / review-fix-code) behavior (PLAN-TASK-008 P3)
+// ---------------------------------------------------------------------------
+
+function generatedCodeRoutes() {
+  const outputs = [];
+  for (const platform of ['claude', 'codex', 'gemini']) {
+    for (const routeName of ['review-fix-pr', 'review-fix-code']) {
+      outputs.push({
+        platform,
+        routeName,
+        routeKind: routeName === 'review-fix-pr' ? 'pr' : 'code',
+        body: renderPlatformRoute(platform, routeName, { packageVersion: '0.0.0-test' })
+      });
+    }
+  }
+  return outputs;
+}
+
+test('generated code routes do not delegate to platform review commands', () => {
+  for (const output of generatedCodeRoutes()) {
+    assert.doesNotMatch(output.body, /\/review\b/, `${output.platform}:${output.routeName} must not mention /review`);
+  }
+});
+
+test('generated code routes use the route-kind target token and omit document-only tokens', () => {
+  for (const output of generatedCodeRoutes()) {
+    const requiredToken = output.routeKind === 'pr' ? /base=<branch>/ : /scope=<path>/;
+    assert.match(output.body, requiredToken, `${output.platform}:${output.routeName} must use its target token`);
+    // No fixed Document type semantics for code routes (check the route SHELL,
+    // not the embedded coordinator prompt which legitimately mentions Document type).
+    const shell = maskEmbeddedSharedContent(output.platform, output.body);
+    assert.doesNotMatch(shell, /^Document type:/m, `${output.platform}:${output.routeName} must not declare a Document type`);
+    // Invocation grammar must omit the document-only tokens.
+    const grammar = output.body.match(/review-fix-(?:pr|code) (?:base=<branch>|scope=<path>)[^\n`]*/);
+    assert.ok(grammar, `${output.platform}:${output.routeName} must show an invocation grammar line`);
+    assert.doesNotMatch(grammar[0], /\bref=/, 'code grammar omits ref=');
+    assert.doesNotMatch(grammar[0], /\bassurance=/, 'code grammar omits assurance=');
+    assert.doesNotMatch(grammar[0], /\bledger=/, 'code grammar omits ledger=');
+    assert.doesNotMatch(grammar[0], /\[strict\|normal\]/, 'code grammar omits strict|normal');
+  }
+});
+
+test('Claude and Codex code routes materialize practical assurance without exposing assurance=', () => {
+  for (const platform of ['claude', 'codex']) {
+    for (const routeName of ['review-fix-pr', 'review-fix-code']) {
+      const body = renderPlatformRoute(platform, routeName, { packageVersion: '0.0.0-test' });
+      // Internally materializes practical so auto-fix is not rejected.
+      assert.match(body, /internally materializes `practical`/i, `${platform}:${routeName}`);
+      assert.match(body, /advisory-review-and-fix-unsupported/i, `${platform}:${routeName}`);
+      // The persistent review-and-fix start command carries practical assurance.
+      assert.match(
+        body,
+        new RegExp(`drfx workflow start ${routeName} (?:base=<branch>|scope=<path>)[\\s\\S]{0,120}review-and-fix[\\s\\S]{0,120}--assurance practical`),
+        `${platform}:${routeName} persistent start must pass --assurance practical`
+      );
+      // No user-facing assurance= token in the invocation grammar.
+      const grammar = body.match(new RegExp(`${routeName} (?:base=<branch>|scope=<path>)[^\\n\`]*`));
+      assert.doesNotMatch(grammar[0], /assurance=/, `${platform}:${routeName} grammar exposes no assurance=`);
+    }
+  }
+});
+
+test('Gemini code routes are advisory only', () => {
+  for (const routeName of ['review-fix-pr', 'review-fix-code']) {
+    const command = renderPlatformRoute('gemini', routeName, { packageVersion: '0.0.0-test' });
+    assert.match(command, /advisory-only/i);
+    assert.match(command, /review-and-fix[\s\S]{0,160}unsupported|unsupported[\s\S]{0,160}review-and-fix/i);
+    assert.match(command, /workflow PASS[\s\S]{0,120}(?:unavailable|must not claim)|must not claim[\s\S]{0,120}workflow PASS/i);
+    assert.doesNotMatch(command, /Pass:\s*<target>|workflow PASS\s+(?:is\s+)?(?:available|supported)|automatic fixes?\s+(?:available|supported|will run)/i);
+    // Gemini code routes never silently default omitted mode to read-only; they
+    // render the shared review-and-fix default as unsupported/advisory-only.
+    assert.doesNotMatch(command, /missing mode selects `?read-only`?/i);
+  }
+});
+
+test('document source skills document rounds=<n> loop-limit support', () => {
+  for (const routeName of ['spec', 'plan', 'design', 'doc']) {
+    const skill = read(`skills/review-fix-${routeName}/SKILL.md`);
+    assert.match(skill, /\[rounds=<n>\]/, `review-fix-${routeName} grammar must include [rounds=<n>]`);
+    assert.match(skill, /`rounds=<n>` sets the maximum repair-loop count/i, `review-fix-${routeName} must explain rounds=<n>`);
+    assert.match(skill, /unsupported with `read-only`/i, `review-fix-${routeName} must note rounds is read-only-incompatible`);
+  }
+});
+
+test('PR and CODE source skills exist with code-route contract guidance', () => {
+  const pr = read('skills/review-fix-pr/SKILL.md');
+  const code = read('skills/review-fix-code/SKILL.md');
+
+  // PR skill
+  assert.match(pr, /^name: review-fix-pr$/m);
+  assert.match(pr, /base=<branch>/);
+  assert.match(pr, /must not pass `target=`, `type`, `ref=`, `assurance=`, `strict`, `normal`, or `ledger=`/);
+  assert.match(pr, /internally materializes `practical` assurance/i);
+  assert.match(pr, /advisory-review-and-fix-unsupported/);
+  assert.match(pr, /shared\/rubrics\/pr\.md/);
+  assert.doesNotMatch(pr, /\/review\b/);
+  assert.doesNotMatch(pr, /fixed document type/i);
+
+  // CODE skill
+  assert.match(code, /^name: review-fix-code$/m);
+  assert.match(code, /scope=<path>/);
+  assert.match(code, /must not pass `target=`, `type`, `ref=`, `base=`, `assurance=`, `strict`, `normal`, or `ledger=`/);
+  assert.match(code, /internally materializes `practical` assurance/i);
+  assert.match(code, /advisory-review-and-fix-unsupported/);
+  assert.match(code, /shared\/rubrics\/code\.md/);
+  assert.doesNotMatch(code, /\/review\b/);
+  assert.doesNotMatch(code, /fixed document type/i);
+
+  // Both reference the shared sources every route relies on.
+  for (const skill of [pr, code]) {
+    for (const ref of ['shared/core.md', 'shared/long-task.md', 'shared/rubrics/common.md', 'shared/prompts/reviewer.md', 'shared/prompts/fixer.md', 'shared/prompts/coordinator.md']) {
+      assert.match(skill, new RegExp(ref.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')));
+    }
   }
 });

@@ -1,0 +1,9 @@
+- This route reviews a PR diff: the file set changed between `base=<branch>` and `HEAD`.
+- Users must not pass `target=`, `type`, `ref=`, `assurance=`, `strict`, `normal`, or `ledger=`; this route has no document type and no reference documents.
+- The review judges the changed file set as a diff, not a single document. Resolve the base..HEAD file set, then review correctness, regressions, safety, tests, contracts, and maintainability of the change.
+- Code review is actionable-only: pure style preferences, no-risk refactors, and over-abstraction are not blocking.
+- Public CLI commands are `drfx check`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.
+- The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, code editing, diff judgment, and final coordinator agreement are LLM work.
+- For resume, read `.docs-review-fix/targets/<target-key>/`.
+- Do not call, wrap, or delegate to a platform-native code-review command; this route runs the deterministic `drfx workflow` protocol itself.
+- This skill includes copied shared references under this skill directory; it does not need a home-level shared asset directory at runtime.
