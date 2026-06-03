@@ -7,18 +7,21 @@ const test = require('node:test');
 
 const repoRoot = path.join(__dirname, '..');
 
-function packTopLevelEntries() {
+function packFiles() {
   const stdout = execFileSync('npm', ['pack', '--dry-run', '--json'], {
     cwd: repoRoot,
     encoding: 'utf8'
   });
   const report = JSON.parse(stdout);
-  const files = report[0].files.map((entry) => entry.path);
+  return report[0].files.map((entry) => entry.path);
+}
+
+function packTopLevelEntries(files) {
   return new Set(files.map((p) => (p.includes('/') ? `${p.split('/')[0]}/` : p)));
 }
 
 test('npm pack ships exactly the runtime whitelist and no tests', () => {
-  const tops = packTopLevelEntries();
+  const tops = packTopLevelEntries(packFiles());
   const expected = [
     'README.md',
     'README.zh-CN.md',
@@ -31,4 +34,21 @@ test('npm pack ships exactly the runtime whitelist and no tests', () => {
   ];
   assert.deepEqual([...tops].sort(), expected);
   assert.equal(tops.has('test/'), false);
+});
+
+test('npm pack ships the code-route skills, rubrics, and template fragments', () => {
+  const files = new Set(packFiles());
+  for (const required of [
+    'skills/review-fix-pr/SKILL.md',
+    'skills/review-fix-code/SKILL.md',
+    'shared/rubrics/pr.md',
+    'shared/rubrics/code.md',
+    'templates/fragments/route-contract.pr.claude.md',
+    'templates/fragments/route-contract.code.codex.md',
+    'templates/fragments/route-contract.pr.gemini.md',
+    'templates/fragments/invocation-gate.code.claude.md',
+    'templates/fragments/invocation-gate.pr.gemini.md'
+  ]) {
+    assert.equal(files.has(required), true, `npm pack must ship ${required}`);
+  }
 });
