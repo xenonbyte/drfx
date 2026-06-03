@@ -162,7 +162,7 @@ review-fix-pr base=main rounds=2
 Review 整个 project root（省略 `scope=` 表示全项目）：
 
 ```text
-review-fix-code scope=lib
+review-fix-code
 ```
 
 Scoped code review（一个或多个根目录）：
@@ -285,7 +285,7 @@ Help-style 或 invalid invocations 只解释用法，不得读取文件、运行
 
 Gemini 支持 advisory read-only review。Gemini 不支持 `review-and-fix` 或 `assurance=strict-verified`。
 
-Code routes（`review-fix-pr`、`review-fix-code`）在 Gemini 上为 advisory-only：`review-and-fix` 不支持，workflow PASS 不可用，自动修复永远不会运行。如需 code route 自动修复，请使用 Claude Code 或 Codex。
+Code routes（`review-fix-pr`、`review-fix-code`）在 Gemini 上为 advisory-only：`review-and-fix` 不支持，`rounds=<n>` 不接受，workflow PASS 不可用，自动修复永远不会运行。如需 code route 自动修复，请使用 Claude Code 或 Codex。
 
 `read-only` 路径在任何平台上都不声明 PASS，也不创建 auto-fix state。
 

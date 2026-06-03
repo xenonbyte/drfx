@@ -162,7 +162,7 @@ review-fix-pr base=main rounds=2
 Review the whole project root (`scope=` omitted means whole project):
 
 ```text
-review-fix-code scope=lib
+review-fix-code
 ```
 
 Scoped code review (one or more roots):
@@ -285,7 +285,7 @@ Help-style or invalid invocations explain usage only and must not read files, ru
 
 Gemini supports advisory read-only review. Gemini does not support `review-and-fix` or `assurance=strict-verified`.
 
-Code routes (`review-fix-pr`, `review-fix-code`) on Gemini are advisory-only: `review-and-fix` is unsupported, workflow PASS is unavailable, and automatic fixing never runs. Use Claude Code or Codex for automatic code fixing.
+Code routes (`review-fix-pr`, `review-fix-code`) on Gemini are advisory-only: `review-and-fix` is unsupported, `rounds=<n>` is not accepted, workflow PASS is unavailable, and automatic fixing never runs. Use Claude Code or Codex for automatic code fixing.
 
 `read-only` paths never claim PASS and create no auto-fix state, on any platform.
 
