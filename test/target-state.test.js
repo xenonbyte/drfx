@@ -296,6 +296,62 @@ test('readManifestAny dispatches v1 and schema-2 manifests without normalizing c
   );
 });
 
+test('readManifestAny parses a schema-2 pr-kind file-set manifest', () => {
+  const root = makeWorkspace();
+  const { formatManifestV2 } = require('../lib/workflow-state');
+  const prText = formatManifestV2({
+    manifestSchema: 2,
+    targetContextKind: 'pr',
+    documentType: 'none',
+    target: 'none',
+    normalizedTarget: 'none',
+    strictness: 'normal',
+    mode: 'review-and-fix',
+    guardMode: 'git',
+    targetKey: 'pr-feature-123456789abc',
+    ledgerPath: '.docs-review-fix/targets/pr-feature-123456789abc/ISSUES.md',
+    status: 'review',
+    currentPhase: 'review',
+    currentRound: 1,
+    fixAttemptCount: 0,
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    descriptorPlatform: 'none',
+    assuranceProof: 'none',
+    runtimeSubagentProbe: 'ready',
+    runtimeSubagentProbeEvidence: 'route-asserted-ready',
+    runtimeFingerprintGuard: 'passed',
+    runtimeStdinHandoff: 'ready',
+    runtimeStdinHandoffEvidence: 'route-asserted-ready',
+    runtimeDowngradeReason: 'none',
+    blockingReason: 'none',
+    statusReason: 'none',
+    currentReportPath: 'none',
+    lastReviewerReportPath: 'none',
+    lastTriageReportPath: 'none',
+    lastFixReportPath: 'none',
+    lastDiffReviewReportPath: 'none',
+    base: 'main',
+    baseRevision: '1'.repeat(40),
+    mergeBase: '2'.repeat(40),
+    head: '3'.repeat(40),
+    fileSetFingerprint: 'f'.repeat(64),
+    roundLimit: '5',
+    lastModifiedAt: '2026-05-21T00:00:00.000Z',
+    references: [],
+    createdAt: '2026-05-21T00:00:00.000Z',
+    updatedAt: '2026-05-21T00:00:00.000Z'
+  });
+  const prPath = path.join(root, 'MANIFEST-pr.md');
+  fs.writeFileSync(prPath, prText);
+
+  const parsed = readManifestAny(prPath);
+  assert.equal(parsed.manifestSchema, 2);
+  assert.equal(parsed.targetContextKind, 'pr');
+  assert.equal(parsed.base, 'main');
+  assert.equal(parsed.fileSetFingerprint, 'f'.repeat(64));
+});
+
 test('resume preserves manifest strictness, mode, and custom ledger path when no explicit conflict exists', () => {
   const root = makeWorkspace();
   const target = path.join(root, 'docs', 'My SPEC.md');

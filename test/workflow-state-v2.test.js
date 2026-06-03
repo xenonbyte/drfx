@@ -298,3 +298,126 @@ test('stopped-no-progress is a valid manifest status with no-progress-detected r
   assert.equal(parsed.status, 'stopped-no-progress');
   assert.equal(parsed.statusReason, 'no-progress-detected');
 });
+
+// --- PLAN-TASK-003: targetContextKind schema extension ---
+
+test('document manifests default targetContextKind to document and stay byte-identical', () => {
+  const text = formatManifestV2(makeManifest());
+  // No new file-set lines leak into a document manifest.
+  assert.doesNotMatch(text, /Target context kind:/);
+  assert.doesNotMatch(text, /File set fingerprint:/);
+  assert.doesNotMatch(text, /Base revision:/);
+  assert.doesNotMatch(text, /Round limit:/);
+
+  const parsed = parseManifestV2(text);
+  assert.equal(parsed.targetContextKind, 'document');
+  assert.equal(formatManifestV2(parsed), text);
+});
+
+test('explicit document targetContextKind is accepted and still byte-identical to absent', () => {
+  const explicit = formatManifestV2(makeManifest({ targetContextKind: 'document' }));
+  const implicit = formatManifestV2(makeManifest());
+  assert.equal(explicit, implicit);
+});
+
+function makePrManifest(overrides = {}) {
+  return makeManifest({
+    targetContextKind: 'pr',
+    documentType: 'none',
+    target: 'none',
+    normalizedTarget: 'none',
+    base: 'main',
+    baseRevision: '1'.repeat(40),
+    mergeBase: '2'.repeat(40),
+    head: '3'.repeat(40),
+    fileSetFingerprint: 'f'.repeat(64),
+    roundLimit: '5',
+    initialContentSha256: 'none',
+    lastKnownContentSha256: 'none',
+    lastReviewedContentSha256: 'none',
+    lastPassedContentSha256: 'none',
+    fileSize: 0,
+    ...overrides
+  });
+}
+
+test('pr-kind manifest formats and parses file-set identity fields', () => {
+  const text = formatManifestV2(makePrManifest());
+  assert.match(text, /Target context kind: pr/);
+  assert.match(text, /Base: main/);
+  assert.match(text, /Base revision: 1{40}/);
+  assert.match(text, /Merge base: 2{40}/);
+  assert.match(text, /Head: 3{40}/);
+  assert.match(text, /File set fingerprint: f{64}/);
+  assert.match(text, /Round limit: 5/);
+
+  const parsed = parseManifestV2(text);
+  assert.equal(parsed.targetContextKind, 'pr');
+  assert.equal(parsed.documentType, 'none');
+  assert.equal(parsed.base, 'main');
+  assert.equal(parsed.baseRevision, '1'.repeat(40));
+  assert.equal(parsed.mergeBase, '2'.repeat(40));
+  assert.equal(parsed.head, '3'.repeat(40));
+  assert.equal(parsed.fileSetFingerprint, 'f'.repeat(64));
+  assert.equal(parsed.roundLimit, '5');
+  assert.equal(formatManifestV2(parsed), text);
+});
+
+test('pr-kind manifest does not emit single-file identity fields', () => {
+  const text = formatManifestV2(makePrManifest());
+  // The single-file content identity block is replaced by the file-set block.
+  assert.doesNotMatch(text, /^Initial content sha256:/m);
+  assert.doesNotMatch(text, /^Last known content sha256:/m);
+  assert.doesNotMatch(text, /^Last reviewed content sha256:/m);
+  assert.doesNotMatch(text, /^Last passed content sha256:/m);
+  assert.doesNotMatch(text, /^File size:/m);
+  // Document type / Target are common head fields pinned to none for file-set kinds.
+  assert.match(text, /^Document type: none$/m);
+  assert.match(text, /^Target: none$/m);
+  assert.match(text, /^Normalized target: none$/m);
+});
+
+test('pr-kind manifest rejects a missing file-set fingerprint', () => {
+  assert.throws(
+    () => formatManifestV2(makePrManifest({ fileSetFingerprint: undefined })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /file set fingerprint/i.test(error.message)
+  );
+});
+
+test('pr-kind manifest rejects a non-sha file-set fingerprint', () => {
+  assert.throws(
+    () => formatManifestV2(makePrManifest({ fileSetFingerprint: 'not-a-hash' })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /file set fingerprint/i.test(error.message)
+  );
+});
+
+test('pr-kind manifest still enforces route-agnostic status/phase pairing', () => {
+  assert.throws(
+    () => formatManifestV2(makePrManifest({ status: 'fix', currentPhase: 'review' })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /current phase/i.test(error.message)
+  );
+});
+
+test('pr-kind manifest still enforces route-agnostic blocked/reason pairing', () => {
+  assert.throws(
+    () => formatManifestV2(makePrManifest({ status: 'blocked', blockingReason: 'none', statusReason: 'none' })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /blocking reason/i.test(error.message)
+  );
+});
+
+test('unknown targetContextKind is rejected', () => {
+  assert.throws(
+    () => formatManifestV2(makeManifest({ targetContextKind: 'banana' })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /target context kind/i.test(error.message)
+  );
+});
+
+test('roundLimit round-trips on a pr manifest and defaults to none when absent', () => {
+  const withLimit = formatManifestV2(makePrManifest({ roundLimit: '7' }));
+  assert.match(withLimit, /Round limit: 7/);
+  assert.equal(parseManifestV2(withLimit).roundLimit, '7');
+
+  const noLimit = formatManifestV2(makePrManifest({ roundLimit: 'none' }));
+  assert.match(noLimit, /Round limit: none/);
+  assert.equal(parseManifestV2(noLimit).roundLimit, 'none');
+});
