@@ -416,6 +416,16 @@ test('rounds=<n> rejects non-integer values', () => {
   );
 });
 
+test('rounds=<n> rejects hex, scientific, padded, and leading-zero values (strict decimal integer)', () => {
+  for (const value of ['0x3', '1e2', ' 3', '3 ', '03', '+3', '3px']) {
+    assert.throws(
+      () => parseInvocation('review-fix-spec', ['target=docs/spec.md', `rounds=${value}`]),
+      (error) => error.code === 'ERR_ROUNDS_INVALID',
+      `rounds=${value} must throw ERR_ROUNDS_INVALID`
+    );
+  }
+});
+
 test('rounds=<n> rejects missing value (bare rounds=)', () => {
   assert.throws(
     () => parseInvocation('review-fix-spec', ['target=docs/spec.md', 'rounds=']),
