@@ -7,12 +7,45 @@ const test = require('node:test');
 const { renderPlatformRoute, generatePlatformFiles } = require('../lib/generator');
 const { buildFinalResponseChecklist } = require('../lib/final-response');
 const { listDocumentRoutes } = require('../lib/routes');
+const {
+  maskEmbeddedSharedContent,
+  readSnapshot,
+  stripAdditiveRounds
+} = require('./helpers/route-shell-snapshot');
 
 const ROOT = path.join(__dirname, '..');
 
 function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 }
+
+// ---------------------------------------------------------------------------
+// Golden shell snapshot (PLAN-TASK-008 PHASE 1)
+//
+// The regenerated DOCUMENT-route shells (embedded shared content masked,
+// {{RUNTIME_FLAGS}} rendered) must equal the committed snapshots byte-for-byte
+// EXCEPT for the additive `rounds=<n>` token. Any other drift in the route
+// protocol/contract shell fails loudly so code-route parameterization cannot
+// silently regress document routes.
+// ---------------------------------------------------------------------------
+
+test('document-route generated shells equal golden snapshots except additive rounds=<n>', () => {
+  const SNAPSHOT_VERSION = '0.0.0-snapshot';
+
+  for (const platform of ['claude', 'codex', 'gemini']) {
+    for (const route of listDocumentRoutes()) {
+      const rendered = renderPlatformRoute(platform, route.routeName, { packageVersion: SNAPSHOT_VERSION });
+      const shell = maskEmbeddedSharedContent(platform, rendered);
+      const snapshot = readSnapshot(platform, route.routeName);
+
+      assert.equal(
+        stripAdditiveRounds(shell),
+        stripAdditiveRounds(snapshot),
+        `${platform}:${route.routeName} document shell drifted beyond the additive rounds=<n> token`
+      );
+    }
+  }
+});
 
 test('shared core contains canonical loop and no runtime memory dependency', () => {
   const core = read('shared/core.md');
