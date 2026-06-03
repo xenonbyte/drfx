@@ -3,7 +3,7 @@ r2p_stage: plan
 r2p_version: 2
 r2p_status: approved
 r2p_created_at: 2026-06-02T18:53:29.555244+00:00
-r2p_updated_at: 2026-06-03T11:45:00+00:00
+r2p_updated_at: 2026-06-03T12:00:00+00:00
 ---
 
 # PLAN: code review routes
@@ -293,7 +293,7 @@ Steps:
 - [ ] refactor: Keep target-context shape usable by file-set guards and workflow prompts.
 
 Verification:
-Run `node --test test/target-context.test.js test/target-state.test.js test/workflow-e2e.test.js`. Confirm no command path performs `git fetch`, push, branch mutation, or remote update.
+Run `node --test test/target-context.test.js test/target-state.test.js test/workflow-state-v2.test.js test/workflow-e2e.test.js`. Confirm no command path performs `git fetch`, push, branch mutation, or remote update, and confirm the file-set `MANIFEST.md` schema extension remains backward compatible for existing document manifests.
 
 Rollback / Safety:
 Stop if resolving PR context requires network access or remote ref mutation. Roll back PR resolver wiring if state identity cannot reject stale PR contexts.
@@ -355,7 +355,7 @@ Steps:
 - [ ] refactor: Keep exclusion constants owned by target-context or route descriptor code, not duplicated in prompts.
 
 Verification:
-Run `node --test test/code-scope.test.js test/target-context.test.js test/target-state.test.js`. Confirm no files outside project root are inspected or persisted in state.
+Run `node --test test/code-scope.test.js test/target-context.test.js test/target-state.test.js test/workflow-state-v2.test.js`. Confirm no files outside project root are inspected or persisted in state, and confirm CODE file-set identity is covered by the shared manifest schema tests.
 
 Rollback / Safety:
 Stop if source discovery requires a new dependency with meaningful maintenance/licensing/security impact; request a new decision before adding it.
@@ -586,7 +586,9 @@ test('generated code routes do not delegate to platform review commands', () => 
 test('Gemini code routes are advisory only', () => {
   const command = generateRoute({ platform: 'gemini', routeName: 'review-fix-code' });
   assert.match(command.body, /advisory-only/i);
-  assert.doesNotMatch(command.body, /PASS/i);
+  assert.match(command.body, /review-and-fix[\s\S]{0,160}unsupported|unsupported[\s\S]{0,160}review-and-fix/i);
+  assert.match(command.body, /workflow PASS[\s\S]{0,120}(?:unavailable|must not claim)|must not claim[\s\S]{0,120}workflow PASS/i);
+  assert.doesNotMatch(command.body, /Pass:\s*<target>|workflow PASS\s+(?:is\s+)?(?:available|supported)|automatic fixes?\s+(?:available|supported|will run)/i);
 });
 ```
 
@@ -594,6 +596,7 @@ Steps:
 - [ ] red: Capture a golden snapshot of the current four document-route generated template shells per platform under `test/fixtures/generated/<platform>/<routeName>.<ext>` (`.md` for Claude/Codex, `.toml` for Gemini) after replacing the embedded shared-content region with a stable sentinel. The normalizer must strip only the `{{EMBEDDED_SHARED_CONTENT}}` expansion bounded by the platform markers (`## Embedded Shared Content` for Claude/Codex, `Embedded shared content:` for Gemini, plus the generated `<!-- shared/... -->` chunk markers) and must leave the rendered `{{RUNTIME_FLAGS}}` partial in the shell because that partial is route-varying for Codex no-state commands. Assert in `test/shared-assets.test.js` that regenerated document-route shells equal the snapshots byte-for-byte except for the additive `rounds=<n>` token. This baseline must exist before any template parameterization so template-shell drift fails loudly while legitimate PLAN-TASK-009 shared-text edits do not fail TASK-008.
 - [ ] red: Add generated output tests for all six routes on Claude, Codex, and Gemini.
 - [ ] red: Add assertions that Claude/Codex generated entries describe automatic fix capability where supported, while Gemini code routes say advisory-only and direct automatic-fix requests to Claude Code/Codex.
+- [ ] red: Add Gemini code-route generated-output assertions that omitted mode follows the shared route default (`review-and-fix`) and is rendered as an unsupported/advisory-only request with guidance to Claude Code/Codex, rather than silently defaulting to `read-only`. These assertions must allow required negative safety wording such as "workflow PASS is unavailable" or "must not claim workflow PASS", and must reject positive PASS examples or automatic-fix-available claims.
 - [ ] red: Add assertions that code route generated text does not call, wrap, or mention invoking platform-native `/review`.
 - [ ] red: Add assertions that code-route generated text uses `base=<branch>` (PR) or optional `scope=<path>` (CODE) in every `drfx workflow` command instead of `target=<path>`, and that the code-route invocation grammar omits `ref=`, `strict|normal`, `assurance=`, and `ledger=`.
 - [ ] red: Add assertions specifically for the Codex `{{RUNTIME_FLAGS}}` no-state commands rendered from `shared/runtime-flags.md` (`context`/`record-review`/`record-triage`/`finalize`) so PR/CODE routes emit `base=`/`scope=` and never `target=<path>` — the target token lives in `runtime-flags.md`, not the platform template, so template-only parameterization would miss it.
@@ -603,7 +606,7 @@ Steps:
 - [ ] red: Add manifest install/uninstall tests for new route ownership and owned-only removal.
 - [ ] green: Generalize the shared templates by route kind so the Invocation Gate, Route Contract, preflight, runtime probes, persistent 13-step loop, and no-state flow emit file-set target tokens (`base=`/`scope=`) for code routes while keeping the existing document route template shell stable except for the additive `rounds=<n>` token and its workflow propagation; embedded shared content may change only through PLAN-TASK-009 and remains covered by shared-asset semantic assertions.
 - [ ] green: Add a route-kind target-token placeholder (e.g. `{{TARGET_TOKEN}}`) to `shared/runtime-flags.md` and pass it from `runtimeFlagsContent()` in `lib/generator.js` (today it injects only `ROUTE_NAME`/`RUNTIME_PLATFORM`), so the Codex no-state commands render `target=<path>` for document routes and `base=`/`scope=` for code routes.
-- [ ] green: Inject the per-platform code-route assurance policy from route descriptors (Claude/Codex internal `practical`; Gemini advisory-only).
+- [ ] green: Inject the per-platform code-route assurance policy from route descriptors (Claude/Codex internal `practical`; Gemini advisory-only). For Gemini code routes, keep omitted mode as the shared default `review-and-fix` at the route-invocation layer, then render it as unsupported/advisory-only with guidance to Claude Code/Codex; do not reuse the existing Gemini document-route omitted-mode behavior that defaults to `read-only`.
 - [ ] green: Update generator/platform adapters/source skills to emit six route entries from descriptors and refresh existing document source skills so installed-route guidance matches parser support for `rounds=<n>`.
 - [ ] green: Update package contents checks so new skills/rubrics are included.
 - [ ] refactor: Preserve existing document route installed paths and manifest ownership behavior.
@@ -794,7 +797,7 @@ The final matrix must cover:
 - PR route: missing base, invalid base, same current branch, no implicit fetch, default mode/guard, explicit snapshot guard.
 - CODE route: root review, scoped review, `base` rejection, outside-root scope, excluded scopes, default mode/guard.
 - Document routes: no-rounds compatibility, valid rounds, invalid rounds, `read-only rounds=<n>`.
-- Platforms: Claude/Codex automatic-fix wording where supported; Gemini advisory-only code route wording.
+- Platforms: Claude/Codex automatic-fix wording where supported; Gemini advisory-only code route wording, including omitted-mode unsupported `review-and-fix` guidance and no positive workflow PASS/automatic-fix claims.
 - Rules: built-in PR/CODE categories, user-global/project-local load order, conflict handling.
 - Guards/state: route-owned changes allowed, unrelated changes blocked, snapshot file set protected, stale resume refused, read-only no-state.
 - Verification loop: each automatic fix round records the minimum necessary verification command or inspection method, result, and residual risk when verification cannot run before continuing or claiming PASS.
@@ -808,12 +811,12 @@ Do not commit, push, publish, create PRs, fetch remote refs, delete user files, 
 |---|---|---|---|---|
 | Route registry tests | Six route descriptors and document compatibility | `node --test test/routes.test.js` | All descriptors expose expected route facts. | SPEC-FR-001, SPEC-IF-001 |
 | Parser/preflight tests | Grammar, defaults, usage-only invalid stops | `node --test test/input-parsing.test.js test/workflow-args.test.js` | Valid invocations normalize; invalid invocations produce usage without side effects. | SPEC-IF-002, SPEC-IF-003, SPEC-IF-004, SPEC-FR-009 |
-| PR resolver tests | Local base/merge-base/no-fetch behavior | `node --test test/target-context.test.js` | PR context resolves or blocks with explicit reasons. | SPEC-FR-002, SPEC-ERR-002, SPEC-COMPAT-004 |
-| CODE resolver tests | Scope containment and exclusions | `node --test test/code-scope.test.js test/target-context.test.js` | Safe scopes pass; unsafe/excluded scopes block. | SPEC-FR-003, SPEC-SAFE-005 |
+| PR resolver tests | Local base/merge-base/no-fetch behavior and PR file-set identity schema | `node --test test/target-context.test.js test/target-state.test.js test/workflow-state-v2.test.js` | PR context resolves or blocks with explicit reasons; PR file-set manifest identity serializes/parses without breaking document manifests. | SPEC-FR-002, SPEC-ERR-002, SPEC-COMPAT-004 |
+| CODE resolver tests | Scope containment, exclusions, and CODE file-set identity schema | `node --test test/code-scope.test.js test/target-context.test.js test/target-state.test.js test/workflow-state-v2.test.js` | Safe scopes pass; unsafe/excluded scopes block; CODE file-set manifest identity serializes/parses without breaking document manifests. | SPEC-FR-003, SPEC-SAFE-005 |
 | Rounds tests | Loop limit metadata and compatibility | `node --test test/workflow-state-v2.test.js test/workflow-e2e.test.js` | `roundLimit` works as max and no-rounds behavior is preserved. | SPEC-FR-004, SPEC-STATE-002 |
 | Guard tests | File-set git/snapshot safety | `node --test test/fix-guard.test.js test/snapshot-guard.test.js` | Route-owned changes allowed; unrelated changes blocked; snapshot explicit. | SPEC-SAFE-001, SPEC-SAFE-002, SPEC-SAFE-003 |
 | Rulebook tests | PR/CODE rubrics and rule order | `node --test test/rulebook.test.js` | Built-ins, paths, precedence, and conflicts match SPEC. | SPEC-FR-005, SPEC-IF-005 |
-| Generation/install tests | Six route outputs, document rounds text, byte-stable document template shell, and manifest ownership | `node --test test/shared-assets.test.js test/capability-check.test.js test/manifest-schema-v2.test.js test/pack-contents.test.js` | Claude/Codex/Gemini entries generated; document route outputs/source skills expose and propagate `rounds=<n>`; document-route output matches the `test/fixtures/generated/` shell snapshot after masking the embedded shared-content region and excepting the additive `rounds=<n>` token; manifest-owned uninstall remains safe. | SPEC-FR-006, SPEC-COMPAT-001, SPEC-COMPAT-002 |
+| Generation/install tests | Six route outputs, document rounds text, Gemini code-route unsupported default semantics, byte-stable document template shell, and manifest ownership | `node --test test/shared-assets.test.js test/capability-check.test.js test/manifest-schema-v2.test.js test/pack-contents.test.js` | Claude/Codex/Gemini entries generated; document route outputs/source skills expose and propagate `rounds=<n>`; Gemini code routes treat omitted mode as unsupported `review-and-fix` rather than silent `read-only`, include negative "workflow PASS unavailable / must not claim" safety text, and avoid positive PASS or automatic-fix-available claims; document-route output matches the `test/fixtures/generated/` shell snapshot after masking the embedded shared-content region and excepting the additive `rounds=<n>` token; manifest-owned uninstall remains safe. | SPEC-FR-006, SPEC-COMPAT-001, SPEC-COMPAT-002 |
 | Workflow lifecycle tests | full re-review, per-round verification, read-only no-state, redaction, long-task shared wording | `node --test test/no-state-tokens.test.js test/finalize-resume.test.js test/workflow-e2e.test.js test/redaction.test.js test/shared-assets.test.js` | No invalid PASS; every fix cycle records verification command/result or residual risk; read-only no state; output bounded/redacted; `shared/long-task.md` and generated PR/CODE route content no longer leak document-only target-state/resume claims. | SPEC-FR-007, SPEC-STATE-004, SPEC-OBS-* |
 | README tests | Public docs coverage and alignment | `node --test test/readme-content.test.js` or shared asset assertions | Both READMEs include required aligned content. | SPEC-FR-008, SPEC-COMPAT-003 |
 | Full test suite | Regression coverage | `npm test` | All tests pass. | SPEC-PLAN-010 |
@@ -831,7 +834,7 @@ Do not commit, push, publish, create PRs, fetch remote refs, delete user files, 
 | File-set guards | Never overwrite unrelated local user changes. | Revert file-set guard integration. | Guard cannot distinguish route-owned from unrelated changes. | Guard tests. |
 | Snapshot guard | Restore only monitored files and do not touch unmonitored files. | Revert snapshot file-set helper. | Snapshot restore would affect unmonitored paths. | Snapshot tests. |
 | Rulebook | External rules cannot relax hard constraints. | Revert PR/CODE rule loading. | Hard-constraint conflict is accepted silently. | Rulebook conflict tests. |
-| Platform generation/install | Manifest-owned uninstall only; no `/review` delegation. | Revert generated route additions and manifest updates. | Generated code route delegates to `/review` or uninstall targets unowned files. | Shared asset and manifest tests. |
+| Platform generation/install | Manifest-owned uninstall only; no `/review` delegation; Gemini code routes keep unsupported `review-and-fix` default semantics without positive PASS/auto-fix claims. | Revert generated route additions and manifest updates. | Generated code route delegates to `/review`, uninstall targets unowned files, Gemini code routes silently default omitted mode to `read-only`, or Gemini generated text includes positive workflow PASS/automatic-fix-available claims. | Shared asset and manifest tests. |
 | Workflow lifecycle | Coordinator-only PASS, reviewer read-only, full re-review after fixes. | Revert target-context workflow integration. | PASS can occur without full re-review or read-only creates auto-fix state. | Workflow lifecycle tests. |
 | Workflow dispatcher (`index.js`/`helpers.js`) | Document and code routes share one route-kind-aware target resolver. | Revert dispatcher unification and restore the document-only resolver. | A PR/CODE path resolves an undefined single-file target. | Workflow lifecycle and target-context tests. |
 | Shared long-task protocol | Generated route content must not describe PR/CODE state as a single document target. | Revert `shared/long-task.md` edits together with file-set workflow integration. | `shared/long-task.md` or generated PR/CODE content still claims document-root target-key derivation, document-only manifest fields, or single-file sha/size-only identity for code routes. | Shared asset and workflow lifecycle tests. |
@@ -849,7 +852,7 @@ Do not commit, push, publish, create PRs, fetch remote refs, delete user files, 
 | File-set guard cannot prove unrelated local changes are blocked. | Stop | PLAN-TASK-006 | Do not integrate automatic fixing until guard proof exists. |
 | Workflow can PASS after only diff review or without full re-review. | Stop | PLAN-TASK-009 | Fix lifecycle before continuing. |
 | Read-only path writes files or creates automatic-fix state. | Stop | PLAN-TASK-009 | Repair no-state/read-only behavior before docs/final verification. |
-| Gemini generated text implies automatic fixing or workflow PASS for code routes. | Stop | PLAN-TASK-008 | Repair generated Gemini output before install checks. |
+| Gemini code-route generated text silently defaults omitted mode to `read-only`, lacks unsupported `review-and-fix` guidance for omitted mode, omits required negative workflow PASS safety wording, or implies positive automatic fixing/workflow PASS. | Stop | PLAN-TASK-008 | Repair generated Gemini output before install checks. |
 | Generated code routes call or wrap platform-native `/review`. | Stop | PLAN-TASK-008 | Remove delegation and use project workflow contract. |
 | Parameterizing the existing templates cannot keep the document-route template-shell golden snapshot green (after masking embedded shared content and beyond the additive `rounds=<n>` token) while adding file-set output. | Stop | PLAN-TASK-008 | Fall back to the pinned alternative — a dedicated code-route template file per platform — before emitting partial generation; do not relax or delete the shell snapshot, and do not expand it to cover PLAN-TASK-009 shared semantic edits. |
 | A PR/CODE invocation reaches `workflowBase`/`resolveTargetMetadata` with an undefined single-file `target`. | Stop | PLAN-TASK-009 | Unify the `index.js`/`helpers.js` dispatcher to be route-kind aware before continuing integration. |
@@ -979,6 +982,7 @@ Do not commit, push, publish, create PRs, fetch remote refs, delete user files, 
 - The runtime dispatcher (`lib/workflow/index.js`), the persistent `MANIFEST.md` file-set schema, and route-kind template generalization are explicitly scoped in PLAN-TASK-002, PLAN-TASK-003/004, PLAN-TASK-008, and PLAN-TASK-009.
 - The byte-stable document template-shell invariant is reconciled with the additive `rounds=<n>` token and with PLAN-TASK-009 shared-text edits by masking the embedded shared-content region in the executable `test/fixtures/generated/` golden snapshot; the template strategy is pinned (parameterization first, dedicated code-route template as fallback) rather than deferred to execution time.
 - The shared long-task protocol (`shared/long-task.md`) is explicitly scoped in PLAN-TASK-009 so generated PR/CODE route content cannot retain document-only target-state, manifest, lock, receipt, or resume claims.
+- Gemini code-route generation is explicitly guarded so omitted mode stays the shared `review-and-fix` default but renders as unsupported/advisory-only with guidance, and so required negative workflow PASS wording is not rejected by an over-broad `/PASS/i` test.
 - Safe next node: PLAN Checkpoint.
 
 ## PLAN Checkpoint
@@ -992,5 +996,6 @@ Do not commit, push, publish, create PRs, fetch remote refs, delete user files, 
 - Post-approval revision 4 (2026-06-03): fixed the follow-up plan review findings. (F15) Added `shared/long-task.md` to PLAN-TASK-009 files, steps, verification, rollback, stop conditions, and quality-gate wording because Codex skill generation copies/embeds it and the current file contains document-only target-state, manifest, lock, receipt, and resume language that would otherwise leak into PR/CODE generated content. (F16) Corrected PLAN-TASK-002's parser error-handling note: `parseInvocation` remains throw-based, `parseWorkflowArgs`/`runWorkflowCommand` surface parser throws before reads/state, and CLI `--json` error formatting happens in `bin/drfx.js` via `formatWorkflowError`, not in `lib/workflow/index.js` catching parser throws. No SPEC contract, requirement scope, or task numbering changed.
 - Post-approval revision 5 (2026-06-03): fixed the golden-snapshot/shared-content conflict. (F17) Narrowed PLAN-TASK-008's byte-stable golden snapshot from the whole generated document-route body to the generated template shell with the `{{EMBEDDED_SHARED_CONTENT}}` expansion masked out, while leaving rendered `{{RUNTIME_FLAGS}}` in scope. This keeps F7 focused on template parameterization drift and lets PLAN-TASK-009 intentionally edit `shared/core.md`, `shared/long-task.md`, and shared prompts under separate semantic shared-asset assertions. No SPEC contract, requirement scope, or task numbering changed.
 - Post-approval revision 6 (2026-06-03): third plan-vs-code pass fixed two task-boundary defects. (F18) De-duplicated `rounds=<n>` parsing ownership: PLAN-TASK-002 now owns all `rounds=<n>` token parsing and value validation (positive-integer, usage-only, `read-only rounds=<n>` unsupported), so `lib/input.js` and `test/input-parsing.test.js` were removed from PLAN-TASK-005's files and its parser red step dropped — PLAN-TASK-005 had a parser red test with no parser green step and shared `lib/input.js` with PLAN-TASK-002, risking double implementation. SPEC-ERR-004 traceability was repointed to PLAN-TASK-002 (parser) plus PLAN-TASK-005 (loop metadata) in the Contract-to-Task mapping, TDD decomposition, TASK-002/005 spec references, and Coverage Closure. (F19) Made PLAN-TASK-007 name the structural rulebook work: extend `ALLOWED_RULE_FILENAMES`/`ALLOWED_RULE_FILE_SET` to recognize `PR.md`/`CODE.md` (otherwise `rulebook.js` warns/skips them as unknown rule files) and add a route-kind loading path that does not inherit the document `['COMMON', documentType]` section logic, since SPEC-IF-005 PR/CODE order has no COMMON layer. No SPEC contract, requirement scope, or task numbering changed.
+- Post-approval revision 7 (2026-06-03): fixed the follow-up PLAN review findings. (F20) Replaced the over-broad Gemini `assert.doesNotMatch(command.body, /PASS/i)` skeleton with assertions that require negative workflow PASS safety wording and reject only positive PASS/automatic-fix claims. (F21) Added TASK-008 red/green coverage that Gemini code routes must treat omitted mode as the shared `review-and-fix` default and render it as unsupported/advisory-only with guidance to Claude Code/Codex, rather than silently defaulting to `read-only`. (F22) Added `test/workflow-state-v2.test.js` to TASK-003 and TASK-004 verification plus the global PR/CODE resolver verification rows so manifest schema changes are exercised where they are introduced. No SPEC contract, requirement scope, or task numbering changed.
 - User Confirmations:
   - Execution Authorization: not part of this r2p workflow.
