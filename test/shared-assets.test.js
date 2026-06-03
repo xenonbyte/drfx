@@ -19,6 +19,19 @@ function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 }
 
+// Some route-protocol text moved out of the platform `.tmpl` files into
+// generator-filled placeholders (route contract, invocation grammar, invocation
+// gate body) in PLAN-TASK-008. Tests that previously grepped the raw templates
+// for that text now read the rendered DOCUMENT route output (template + its
+// fragments) for one route per platform, which is the actual generated contract.
+function renderedDocumentRoute(platform, routeName = 'review-fix-spec') {
+  return renderPlatformRoute(platform, routeName, { packageVersion: '0.0.0-test' });
+}
+
+function renderedDocumentTemplates() {
+  return ['codex', 'claude', 'gemini'].map((platform) => renderedDocumentRoute(platform)).join('\n\n');
+}
+
 // ---------------------------------------------------------------------------
 // Golden shell snapshot (PLAN-TASK-008 PHASE 1)
 //
@@ -360,16 +373,12 @@ test('usage examples prefer bare target paths while preserving target form and g
   const readme = read('README.md');
   const core = read('shared/core.md');
   const coordinator = read('shared/prompts/coordinator.md');
-  const templates = [
-    read('templates/codex-skill.md.tmpl'),
-    read('templates/claude-command.md.tmpl'),
-    read('templates/gemini-command.toml.tmpl')
-  ].join('\n\n');
+  const templates = renderedDocumentTemplates();
 
   assert.match(readme, /review-fix-spec docs\/spec\.md/);
   assert.match(readme, /bare path is shorthand for `target=<path>`/i);
   assert.match(readme, /`guard=git\|snapshot`/);
-  assert.match(templates, /\{\{ROUTE_NAME\}\} <path> \[ref=<path>\.\.\.\]/);
+  assert.match(templates, /review-fix-spec <path> \[ref=<path>\.\.\.\]/);
   assert.match(templates, /full form/i);
   assert.match(templates, /target=<path>/);
   assert.match(templates, /guard=git\|snapshot/);
@@ -466,9 +475,9 @@ test('generated route text contains v2 operational workflow commands', () => {
 });
 
 test('route templates bind each runtime platform explicitly', () => {
-  const codexText = read('templates/codex-skill.md.tmpl');
-  const claudeText = read('templates/claude-command.md.tmpl');
-  const geminiText = read('templates/gemini-command.toml.tmpl');
+  const codexText = renderedDocumentRoute('codex');
+  const claudeText = renderedDocumentRoute('claude');
+  const geminiText = renderedDocumentRoute('gemini');
 
   assert.match(codexText, /--runtime-platform codex\b/);
   assert.match(claudeText, /--runtime-platform claude-code\b/);
@@ -522,16 +531,16 @@ test('record-diff-review route handoff uses result stdin flag', () => {
 });
 
 test('help-style and invalid route path remains explain-only', () => {
-  const sourceText = read('templates/codex-skill.md.tmpl');
+  const sourceText = renderedDocumentRoute('codex');
   assert.match(sourceText, /Help-style or invalid invocations still explain usage only/i);
   assert.match(sourceText, /missing target, unknown usage, or explicit help/i);
   assert.doesNotMatch(sourceText, /Help-style or invalid invocations[\s\S]{0,180}drfx workflow start/i);
 });
 
 test('generated route text documents v3 platform defaults and advisory override', () => {
-  const codexTemplate = read('templates/codex-skill.md.tmpl');
-  const claudeTemplate = read('templates/claude-command.md.tmpl');
-  const geminiTemplate = read('templates/gemini-command.toml.tmpl');
+  const codexTemplate = renderedDocumentRoute('codex');
+  const claudeTemplate = renderedDocumentRoute('claude');
+  const geminiTemplate = renderedDocumentRoute('gemini');
 
   assert.match(codexTemplate, /missing mode selects `review-and-fix`/i);
   assert.match(codexTemplate, /missing assurance selects `practical`/i);
@@ -610,8 +619,8 @@ test('gemini route output stays advisory-only concise', () => {
 });
 
 test('generated route text rejects explicit advisory review-and-fix user requests', () => {
-  const codexTemplate = read('templates/codex-skill.md.tmpl');
-  const claudeTemplate = read('templates/claude-command.md.tmpl');
+  const codexTemplate = renderedDocumentRoute('codex');
+  const claudeTemplate = renderedDocumentRoute('claude');
 
   for (const template of [codexTemplate, claudeTemplate]) {
     assert.match(template, /review-and-fix assurance=advisory/i);
@@ -621,8 +630,8 @@ test('generated route text rejects explicit advisory review-and-fix user request
 });
 
 test('generated route text materializes defaults before workflow commands', () => {
-  const codexTemplate = read('templates/codex-skill.md.tmpl');
-  const claudeTemplate = read('templates/claude-command.md.tmpl');
+  const codexTemplate = renderedDocumentRoute('codex');
+  const claudeTemplate = renderedDocumentRoute('claude');
 
   for (const template of [codexTemplate, claudeTemplate]) {
     assert.match(template, /materialize effective `<selectedMode>`, `<selectedAssurance>`, and `<selectedGuard>`/i);

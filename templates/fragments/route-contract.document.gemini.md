@@ -1,0 +1,15 @@
+- This route has a fixed document type: {{DOCUMENT_TYPE}}.
+- Users must not pass type.
+- Must not infer type from filename or path.
+- Reference Conformance: reference documents are consistency sources, not mandatory upstream chains.
+- A `ref=design.md` does not require a SPEC target to include `Design Coverage Import`.
+- A `ref=spec.md` does not require a PLAN target to include `SPEC-to-task mapping`.
+- Missing trace tables, stable IDs, and coverage tables are not blocking by default unless the target claims complete reference coverage, custom rules require them, or the document becomes unverifiable for its stated purpose.
+- Public CLI commands are drfx check, drfx install, and drfx uninstall; drfx workflow is the internal deterministic interface used by this generated route.
+- The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, diff judgment, and final coordinator agreement are LLM work.
+- For resume, read .docs-review-fix/targets/<target-key>/.
+- Gemini is advisory-only.
+- Gemini v1 is advisory-only and produces read-only findings.
+- automatic fixing is unavailable in Gemini v1.
+- workflow PASS is unavailable in Gemini v1.
+- Gemini must not edit target files, reference files, or workflow state except through no-state workflow outputs.
