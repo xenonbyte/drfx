@@ -421,3 +421,122 @@ test('roundLimit round-trips on a pr manifest and defaults to none when absent',
   assert.match(noLimit, /Round limit: none/);
   assert.equal(parseManifestV2(noLimit).roundLimit, 'none');
 });
+
+// --- PLAN-TASK-004: code targetContextKind schema extension ---
+
+function makeCodeManifest(overrides = {}) {
+  return makeManifest({
+    targetContextKind: 'code',
+    documentType: 'none',
+    target: 'none',
+    normalizedTarget: 'none',
+    fileSetFingerprint: 'f'.repeat(64),
+    roundLimit: '5',
+    normalizedScopes: ['lib', 'src'],
+    exclusions: ['.git', 'node_modules'],
+    initialContentSha256: 'none',
+    lastKnownContentSha256: 'none',
+    lastReviewedContentSha256: 'none',
+    lastPassedContentSha256: 'none',
+    fileSize: 0,
+    ...overrides
+  });
+}
+
+test('code-kind manifest formats and parses file-set identity with scope/exclusion lists', () => {
+  const text = formatManifestV2(makeCodeManifest());
+  assert.match(text, /Target context kind: code/);
+  assert.match(text, /File set fingerprint: f{64}/);
+  assert.match(text, /Round limit: 5/);
+  assert.match(text, /Normalized scopes:/);
+  assert.match(text, /^- lib$/m);
+  assert.match(text, /^- src$/m);
+  assert.match(text, /Exclusions:/);
+  assert.match(text, /^- \.git$/m);
+  assert.match(text, /^- node_modules$/m);
+
+  const parsed = parseManifestV2(text);
+  assert.equal(parsed.targetContextKind, 'code');
+  assert.equal(parsed.documentType, 'none');
+  assert.equal(parsed.fileSetFingerprint, 'f'.repeat(64));
+  assert.equal(parsed.roundLimit, '5');
+  assert.deepEqual(parsed.normalizedScopes, ['lib', 'src']);
+  assert.deepEqual(parsed.exclusions, ['.git', 'node_modules']);
+  assert.equal(formatManifestV2(parsed), text);
+});
+
+test('code-kind manifest does not emit PR-only base/merge-base/head fields', () => {
+  const text = formatManifestV2(makeCodeManifest());
+  assert.doesNotMatch(text, /^Base:/m);
+  assert.doesNotMatch(text, /^Base revision:/m);
+  assert.doesNotMatch(text, /^Merge base:/m);
+  assert.doesNotMatch(text, /^Head:/m);
+  // ...nor the single-file identity block.
+  assert.doesNotMatch(text, /^Initial content sha256:/m);
+  assert.doesNotMatch(text, /^File size:/m);
+});
+
+test('code-kind manifest accepts empty scopes (whole project root)', () => {
+  const text = formatManifestV2(makeCodeManifest({ normalizedScopes: [] }));
+  assert.match(text, /Normalized scopes:/);
+  const parsed = parseManifestV2(text);
+  assert.deepEqual(parsed.normalizedScopes, []);
+  assert.equal(formatManifestV2(parsed), text);
+});
+
+test('code-kind manifest sorts scope/exclusion lists for byte-stable output', () => {
+  const unsorted = formatManifestV2(makeCodeManifest({ normalizedScopes: ['src', 'lib'], exclusions: ['node_modules', '.git'] }));
+  const sorted = formatManifestV2(makeCodeManifest({ normalizedScopes: ['lib', 'src'], exclusions: ['.git', 'node_modules'] }));
+  assert.equal(unsorted, sorted);
+});
+
+test('code-kind manifest rejects duplicate scope entries', () => {
+  const text = formatManifestV2(makeCodeManifest());
+  const dup = text.replace('Normalized scopes:\n- lib\n', 'Normalized scopes:\n- lib\n- lib\n');
+  assert.throws(
+    () => parseManifestV2(dup),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED'
+  );
+});
+
+test('code-kind manifest rejects absolute or escaping scope entries', () => {
+  assert.throws(
+    () => formatManifestV2(makeCodeManifest({ normalizedScopes: ['/abs/path'] })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED'
+  );
+  assert.throws(
+    () => formatManifestV2(makeCodeManifest({ normalizedScopes: ['../escape'] })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED'
+  );
+});
+
+test('code-kind manifest rejects a missing file-set fingerprint', () => {
+  assert.throws(
+    () => formatManifestV2(makeCodeManifest({ fileSetFingerprint: undefined })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /file set fingerprint/i.test(error.message)
+  );
+});
+
+test('code-kind manifest still enforces route-agnostic status/phase pairing', () => {
+  assert.throws(
+    () => formatManifestV2(makeCodeManifest({ status: 'fix', currentPhase: 'review' })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /current phase/i.test(error.message)
+  );
+});
+
+test('code-kind manifest still enforces route-agnostic blocked/reason pairing', () => {
+  assert.throws(
+    () => formatManifestV2(makeCodeManifest({ status: 'blocked', blockingReason: 'none', statusReason: 'none' })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /blocking reason/i.test(error.message)
+  );
+});
+
+test('roundLimit round-trips on a code manifest and defaults to none when absent', () => {
+  const withLimit = formatManifestV2(makeCodeManifest({ roundLimit: '9' }));
+  assert.match(withLimit, /Round limit: 9/);
+  assert.equal(parseManifestV2(withLimit).roundLimit, '9');
+
+  const noLimit = formatManifestV2(makeCodeManifest({ roundLimit: 'none' }));
+  assert.match(noLimit, /Round limit: none/);
+  assert.equal(parseManifestV2(noLimit).roundLimit, 'none');
+});

@@ -13,7 +13,11 @@ const {
   buildPrIdentity,
   formatPrIdentityFields,
   parsePrIdentityFields,
-  comparePrIdentity
+  comparePrIdentity,
+  buildCodeIdentity,
+  formatCodeIdentityFields,
+  parseCodeIdentityFields,
+  compareCodeIdentity
 } = require('../lib/target-context');
 
 function git(root, args) {
@@ -275,4 +279,116 @@ test('comparePrIdentity treats a guard-mode drift as a stale mismatch', () => {
   const stored = buildPrIdentity({ context: sampleContext(), guardMode: 'git', roundLimit: 2 });
   const requested = buildPrIdentity({ context: sampleContext(), guardMode: 'snapshot', roundLimit: 2 });
   assert.ok(comparePrIdentity({ stored, requested }).mismatches.includes('guardMode'));
+});
+
+// --- PLAN-TASK-004: CODE identity helpers (PURE) ---
+
+function sampleCodeContext(overrides = {}) {
+  return {
+    routeKind: 'code',
+    normalizedScopes: ['src', 'lib'],
+    exclusions: ['.git', 'node_modules'],
+    files: [
+      { path: 'src/a.js', status: 'present', contentId: 'a'.repeat(64) },
+      { path: 'lib/c.js', status: 'present', contentId: 'c'.repeat(64) }
+    ],
+    ...overrides
+  };
+}
+
+test('buildCodeIdentity captures kind, normalized scopes/exclusions, guard, roundLimit, and fingerprint', () => {
+  const identity = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'git', roundLimit: 4 });
+  assert.equal(identity.targetContextKind, 'code');
+  // Scopes and exclusions are sorted so order never causes false staleness.
+  assert.deepEqual(identity.normalizedScopes, ['lib', 'src']);
+  assert.deepEqual(identity.exclusions, ['.git', 'node_modules']);
+  assert.equal(identity.guardMode, 'git');
+  assert.equal(identity.roundLimit, '4');
+  assert.match(identity.fileSetFingerprint, /^[0-9a-f]{64}$/);
+});
+
+test('buildCodeIdentity stores roundLimit none when unset', () => {
+  const identity = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'git', roundLimit: null });
+  assert.equal(identity.roundLimit, 'none');
+});
+
+test('buildCodeIdentity rejects a non-code context', () => {
+  assert.throws(
+    () => buildCodeIdentity({ context: { routeKind: 'pr' }, guardMode: 'git', roundLimit: 1 }),
+    (error) => error.code === 'ERR_CODE_IDENTITY'
+  );
+});
+
+test('code identity round-trips through format/parse helpers including the scope/exclusion lists', () => {
+  const identity = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'snapshot', roundLimit: 3 });
+  const fields = formatCodeIdentityFields(identity);
+  const parsed = parseCodeIdentityFields(fields);
+  assert.deepEqual(parsed, identity);
+});
+
+test('compareCodeIdentity matches identical CODE identities on resume', () => {
+  const identity = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'git', roundLimit: 2 });
+  assert.deepEqual(compareCodeIdentity({ stored: identity, requested: identity }), { match: true, mismatches: [] });
+});
+
+test('compareCodeIdentity is order-stable: scope ordering does not cause false staleness', () => {
+  const stored = buildCodeIdentity({
+    context: sampleCodeContext({ normalizedScopes: ['src', 'lib'] }),
+    guardMode: 'git',
+    roundLimit: 2
+  });
+  const requested = buildCodeIdentity({
+    context: sampleCodeContext({ normalizedScopes: ['lib', 'src'] }),
+    guardMode: 'git',
+    roundLimit: 2
+  });
+  assert.deepEqual(compareCodeIdentity({ stored, requested }), { match: true, mismatches: [] });
+});
+
+test('compareCodeIdentity flags a scope drift as a STRICT stale mismatch', () => {
+  const stored = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'git', roundLimit: 2 });
+  const requested = buildCodeIdentity({
+    context: sampleCodeContext({ normalizedScopes: ['src'] }),
+    guardMode: 'git',
+    roundLimit: 2
+  });
+  const result = compareCodeIdentity({ stored, requested });
+  assert.equal(result.match, false);
+  assert.ok(result.mismatches.includes('normalizedScopes'));
+});
+
+test('compareCodeIdentity flags an exclusion drift as a STRICT stale mismatch', () => {
+  const stored = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'git', roundLimit: 2 });
+  const requested = buildCodeIdentity({
+    context: sampleCodeContext({ exclusions: ['.git'] }),
+    guardMode: 'git',
+    roundLimit: 2
+  });
+  assert.ok(compareCodeIdentity({ stored, requested }).mismatches.includes('exclusions'));
+});
+
+test('compareCodeIdentity flags a file-set drift as a STRICT stale mismatch', () => {
+  const stored = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'git', roundLimit: 2 });
+  const requested = buildCodeIdentity({
+    context: sampleCodeContext({
+      files: [{ path: 'src/a.js', status: 'present', contentId: 'f'.repeat(64) }]
+    }),
+    guardMode: 'git',
+    roundLimit: 2
+  });
+  assert.ok(compareCodeIdentity({ stored, requested }).mismatches.includes('fileSetFingerprint'));
+});
+
+test('compareCodeIdentity treats a roundLimit drift as a STRICT stale mismatch', () => {
+  const stored = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'git', roundLimit: 2 });
+  const requested = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'git', roundLimit: 3 });
+  const result = compareCodeIdentity({ stored, requested });
+  assert.equal(result.match, false);
+  assert.ok(result.mismatches.includes('roundLimit'));
+});
+
+test('compareCodeIdentity treats a guard-mode drift as a stale mismatch', () => {
+  const stored = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'git', roundLimit: 2 });
+  const requested = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'snapshot', roundLimit: 2 });
+  assert.ok(compareCodeIdentity({ stored, requested }).mismatches.includes('guardMode'));
 });
