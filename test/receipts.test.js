@@ -32,6 +32,21 @@ test('builds target-local receipt paths', () => {
   assert.equal(receiptPath, path.join(root, '.docs-review-fix', 'targets', 'spec-md-123456789abc', 'rounds', '002-review.md'));
 });
 
+test('receipt round directory naming derives ONLY from the round counter, not any rounds=<n> limit', () => {
+  // SPEC-STATE-002 / PLAN-TASK-005: the reserved `rounds/` receipt directory is
+  // numbered by the current ROUND counter (padded), and is wholly unrelated to the
+  // `rounds=<n>` loop limit. The receipt API takes no roundLimit input, so the
+  // limit can never leak into receipt path names. The padded segment tracks the
+  // round number even when it exceeds a (hypothetical) round limit of 1.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-receipts-limit-sep-'));
+  const round3Path = roundReceiptPath({ projectRoot: root, targetKey: 'spec-md-123456789abc', round: 3, kind: 'fix' });
+  assert.equal(path.basename(round3Path), '003-fix.md');
+  // The same round number yields the same path regardless of caller intent; there
+  // is no roundLimit parameter and the segment is purely the padded round counter.
+  const round3Again = roundReceiptPath({ projectRoot: root, targetKey: 'spec-md-123456789abc', round: 3, kind: 'fix' });
+  assert.equal(round3Again, round3Path);
+});
+
 test('rejects receipt path segments that would escape target-local state', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-receipts-escape-'));
 

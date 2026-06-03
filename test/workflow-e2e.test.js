@@ -164,6 +164,7 @@ function makeNonGitWorkflowFixture(t) {
 
 function workflowStartArgs(fixture, mode, assurance, runtimePlatform, options = {}) {
   const guardToken = options.guardMode ? [`guard=${options.guardMode}`] : [];
+  const roundsToken = options.rounds ? [`rounds=${options.rounds}`] : [];
   return [
     'review-fix-design',
     `root=${fixture.root}`,
@@ -171,6 +172,7 @@ function workflowStartArgs(fixture, mode, assurance, runtimePlatform, options = 
     `ref=${fixture.reference}`,
     mode,
     ...guardToken,
+    ...roundsToken,
     '--assurance',
     assurance,
     '--runtime-platform',
@@ -1101,6 +1103,164 @@ test('recurring high finding after full re-review finalizes stopped-no-progress'
   assert.equal(manifest.status, 'stopped-no-progress');
   assert.equal(manifest.statusReason, 'no-progress-detected');
   assert.equal(fs.existsSync(path.join(start.targetStateDir, 'rounds', '001-final-stopped-no-progress.md')), true);
+});
+
+test('rounds=N persists Round limit in the start manifest as durable workflow metadata', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git', rounds: 5 });
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  assert.equal(start.ok, true, JSON.stringify(start));
+
+  const manifestText = fs.readFileSync(start.manifestPath, 'utf8');
+  assert.match(manifestText, /^Round limit: 5$/m);
+  const manifest = manifestAt(start.manifestPath);
+  assert.equal(manifest.roundLimit, '5');
+  // roundLimit is NOT derived from currentRound or any receipt rounds/ directory.
+  assert.equal(manifest.currentRound, 1);
+  assert.equal(fs.existsSync(path.join(start.targetStateDir, 'rounds')), false);
+});
+
+test('no-rounds start manifest stays free of any Round limit line', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git' });
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  assert.equal(start.ok, true, JSON.stringify(start));
+  assert.doesNotMatch(fs.readFileSync(start.manifestPath, 'utf8'), /Round limit:/);
+  assert.equal(manifestAt(start.manifestPath).roundLimit, 'none');
+});
+
+test('rounds=1 stops with deferrals when findings remain after the post-fix full re-review', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git', rounds: 1 });
+  const opts = () => workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') });
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  assert.equal(start.ok, true);
+
+  // Round 1: review FAIL -> triage accept -> fix -> DIFF-OK -> full re-review FAIL.
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+  await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  fs.writeFileSync(fixture.target, '# Practical Workflow Target\n\nFirst fix output.\n');
+  await runWorkflowCommand('end-fix', [start.targetStateDir, '--fix-report-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FIX_REPORT }));
+  await runWorkflowCommand('record-diff-review', [start.targetStateDir, '--result-stdin', '--json'],
+    workflowOptions(fixture, { stdin: DIFF_OK }));
+  // One repair round is now complete (fixAttemptCount = 1 == roundLimit).
+  assert.equal(Number(manifestAt(start.manifestPath).fixAttemptCount), 1);
+
+  await runWorkflowCommand('context', [...startArgs, '--phase', 'full-re-review'], workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'full-re-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+
+  // The triage that WOULD start round 2 must stop with deferrals instead.
+  const triage = await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_REOPEN }));
+  assert.equal(triage.status, 'recorded-triage');
+  assert.equal(triage.stopReason, 'round-limit');
+  assert.equal(triage.roundLimit, 1);
+
+  const manifest = manifestAt(start.manifestPath);
+  assert.equal(manifest.status, 'stopped-with-deferrals');
+  assert.equal(manifest.currentPhase, 'final');
+  assert.equal(manifest.statusReason, 'round-limit');
+  // It is NOT presented as a clean pass.
+  assert.notEqual(manifest.status, 'pass');
+  // currentRound semantics are untouched: DIFF-OK never incremented it.
+  assert.equal(manifest.currentRound, 1);
+  // The roundLimit stays durable workflow metadata distinct from currentRound.
+  assert.equal(manifest.roundLimit, '1');
+
+  // The residual blocking finding is DEFERRED (not dropped, not fixed, not a pass).
+  const ledger = parseLedger(fs.readFileSync(start.ledgerPath, 'utf8'));
+  assert.equal(ledger.issues.find((issue) => issue.id === 'ISSUE-001').status, 'deferred');
+
+  // The terminal round-limit stop finalizes through the validated deferral path.
+  const FINAL_ROUND_LIMIT = [
+    'Final status: stopped-with-deferrals',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Mode: review-and-fix',
+    'Target: docs/practical-target.md',
+    'Files changed: docs/practical-target.md',
+    'Fixed issue IDs: ISSUE-001',
+    'Verification performed: full re-review after the round limit',
+    'Deferrals or blockers: ISSUE-001 deferred after rounds=1 limit',
+    'Blocking reason: none',
+    'Status reason: round-limit',
+    'Residual risk: ISSUE-001 remains for manual follow-up',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: none'
+  ].join('\n');
+  const final = await runWorkflowCommand('finalize', [start.targetStateDir, '--final-response-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FINAL_ROUND_LIMIT }));
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'stopped-with-deferrals');
+  assert.equal(manifestAt(start.manifestPath).statusReason, 'round-limit');
+});
+
+test('rounds=2 still allows a second fix cycle (limit is a maximum, not an off-by-one)', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git', rounds: 2 });
+  const opts = () => workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') });
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+
+  // Round 1: fix -> DIFF-OK -> full re-review FAIL -> triage REOPEN.
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+  await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  fs.writeFileSync(fixture.target, '# Practical Workflow Target\n\nFirst fix output.\n');
+  await runWorkflowCommand('end-fix', [start.targetStateDir, '--fix-report-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FIX_REPORT }));
+  await runWorkflowCommand('record-diff-review', [start.targetStateDir, '--result-stdin', '--json'],
+    workflowOptions(fixture, { stdin: DIFF_OK }));
+  await runWorkflowCommand('context', [...startArgs, '--phase', 'full-re-review'], workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'full-re-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+
+  // fixAttemptCount = 1 < roundLimit = 2: a SECOND fix cycle is permitted.
+  const triage = await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_REOPEN }));
+  assert.equal(triage.stopReason, 'none');
+  assertManifestPhase(start.manifestPath, 'fix', 'fix');
+});
+
+test('rounds=1 still passes when the first full re-review is clean (early clean stop)', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'git', rounds: 1 });
+  const opts = () => workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') });
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+  await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  fs.writeFileSync(fixture.target,
+    '# Practical Workflow Target\n\nThe document now states the expected behavior directly for implementers.\n\n## Acceptance\n\n- The final wording names the expected behavior.\n');
+  await runWorkflowCommand('end-fix', [start.targetStateDir, '--fix-report-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FIX_REPORT }));
+  await runWorkflowCommand('record-diff-review', [start.targetStateDir, '--result-stdin', '--json'],
+    workflowOptions(fixture, { stdin: DIFF_OK }));
+  await runWorkflowCommand('context', [...startArgs, '--phase', 'full-re-review'], workflowOptions(fixture));
+  // Clean full re-review BEFORE the limit bites: terminates normally.
+  const reReview = await runWorkflowCommand('record-review',
+    [...startArgs, '--phase', 'full-re-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_PASS }));
+  assert.equal(reReview.ok, true);
+  assertManifestPhase(start.manifestPath, 'full-re-review', 'full-re-review');
+
+  const final = await runWorkflowCommand('finalize', [start.targetStateDir, '--final-response-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FINAL_PASS }));
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'pass');
+  assert.equal(assertManifestPhase(start.manifestPath, 'pass', 'final').roundLimit, '1');
 });
 
 test('begin-fix increments fixAttemptCount on a successful attempt', async (t) => {

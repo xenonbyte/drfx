@@ -412,13 +412,16 @@ test('unknown targetContextKind is rejected', () => {
   );
 });
 
-test('roundLimit round-trips on a pr manifest and defaults to none when absent', () => {
+test('roundLimit round-trips on a pr manifest and is omitted (not "none") when absent', () => {
   const withLimit = formatManifestV2(makePrManifest({ roundLimit: '7' }));
   assert.match(withLimit, /Round limit: 7/);
   assert.equal(parseManifestV2(withLimit).roundLimit, '7');
 
+  // roundLimit is a MAXIMUM-only field: when unset it must never emit a
+  // `Round limit: none` line (conditional emission), but it still parses back
+  // to 'none' for back-compat (like guardMode / fixAttemptCount defaults).
   const noLimit = formatManifestV2(makePrManifest({ roundLimit: 'none' }));
-  assert.match(noLimit, /Round limit: none/);
+  assert.doesNotMatch(noLimit, /Round limit:/);
   assert.equal(parseManifestV2(noLimit).roundLimit, 'none');
 });
 
@@ -531,12 +534,68 @@ test('code-kind manifest still enforces route-agnostic blocked/reason pairing', 
   );
 });
 
-test('roundLimit round-trips on a code manifest and defaults to none when absent', () => {
+test('roundLimit round-trips on a code manifest and is omitted (not "none") when absent', () => {
   const withLimit = formatManifestV2(makeCodeManifest({ roundLimit: '9' }));
   assert.match(withLimit, /Round limit: 9/);
   assert.equal(parseManifestV2(withLimit).roundLimit, '9');
 
   const noLimit = formatManifestV2(makeCodeManifest({ roundLimit: 'none' }));
-  assert.match(noLimit, /Round limit: none/);
+  assert.doesNotMatch(noLimit, /Round limit:/);
   assert.equal(parseManifestV2(noLimit).roundLimit, 'none');
+});
+
+// --- PLAN-TASK-005: roundLimit as durable workflow metadata across all kinds ---
+
+test('a document manifest WITHOUT rounds stays byte-identical and parses roundLimit none', () => {
+  // SPEC-COMPAT-001 / Task-3 byte-stability: an unset roundLimit must add NO
+  // line to a document manifest, and roundLimit defaults to 'none' on parse.
+  const text = formatManifestV2(makeManifest());
+  assert.doesNotMatch(text, /Round limit:/);
+  const parsed = parseManifestV2(text);
+  assert.equal(parsed.roundLimit, 'none');
+  assert.equal(formatManifestV2(parsed), text);
+});
+
+test('a document manifest carries a positive roundLimit as durable workflow metadata', () => {
+  // SPEC-STATE-002: roundLimit is invocation/workflow metadata; it lives in the
+  // manifest as its own line, NOT derived from currentRound or receipt paths.
+  const baseline = formatManifestV2(makeManifest());
+  const withLimit = formatManifestV2(makeManifest({ roundLimit: '3' }));
+  assert.match(withLimit, /^Round limit: 3$/m);
+  assert.notEqual(withLimit, baseline);
+
+  const parsed = parseManifestV2(withLimit);
+  assert.equal(parsed.roundLimit, '3');
+  // roundLimit is distinct from currentRound: the counter stays at its own value.
+  assert.equal(parsed.currentRound, 1);
+  assert.equal(formatManifestV2(parsed), withLimit);
+});
+
+test('roundLimit is never emitted as "none" on a document manifest (conditional emission)', () => {
+  const explicitNone = formatManifestV2(makeManifest({ roundLimit: 'none' }));
+  const implicit = formatManifestV2(makeManifest());
+  // Explicitly-none must produce the SAME bytes as omitting roundLimit entirely.
+  assert.equal(explicitNone, implicit);
+  assert.doesNotMatch(explicitNone, /Round limit:/);
+});
+
+test('roundLimit rejects a non-positive or non-integer value on any kind', () => {
+  assert.throws(
+    () => formatManifestV2(makeManifest({ roundLimit: '0' })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /round limit/i.test(error.message)
+  );
+  assert.throws(
+    () => formatManifestV2(makeManifest({ roundLimit: 'abc' })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' && /round limit/i.test(error.message)
+  );
+});
+
+test('a unified Round limit line round-trips identically across document, pr, and code kinds', () => {
+  for (const make of [makeManifest, makePrManifest, makeCodeManifest]) {
+    const text = formatManifestV2(make({ roundLimit: '4' }));
+    assert.match(text, /^Round limit: 4$/m);
+    const parsed = parseManifestV2(text);
+    assert.equal(parsed.roundLimit, '4');
+    assert.equal(formatManifestV2(parsed), text);
+  }
 });
