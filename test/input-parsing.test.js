@@ -214,15 +214,226 @@ test('DOCUMENT_TYPES aligns with route registry documentType values', () => {
   }
 });
 
-test('parseInvocation still rejects PR and code entry skills as unknown', () => {
-  // PR/CODE parsing is PLAN-TASK-002; document parser must not recognize them yet
+// ---------------------------------------------------------------------------
+// review-fix-pr parser tests
+// ---------------------------------------------------------------------------
+
+test('review-fix-pr requires base token and defaults mode and guardMode', () => {
+  const result = parseInvocation('review-fix-pr', ['base=main']);
+  assert.equal(result.entrySkill, 'review-fix-pr');
+  assert.equal(result.routeKind, 'pr');
+  assert.equal(result.documentType, null);
+  assert.equal(result.base, 'main');
+  assert.equal(result.mode, 'review-and-fix');
+  assert.equal(result.guardMode, 'git');
+  assert.equal(result.resume, false);
+  assert.equal(result.root, null);
+  assert.equal(result.roundLimit, null);
+});
+
+test('review-fix-pr throws usage error when base is missing', () => {
   assert.throws(
-    () => parseInvocation('review-fix-pr', ['target=foo.md']),
-    /unknown entry skill/i
+    () => parseInvocation('review-fix-pr', []),
+    (error) => typeof error.code === 'string' && /base/i.test(error.message)
   );
   assert.throws(
-    () => parseInvocation('review-fix-code', ['target=foo.md']),
-    /unknown entry skill/i
+    () => parseInvocation('review-fix-pr', ['read-only']),
+    (error) => typeof error.code === 'string' && /base/i.test(error.message)
+  );
+});
+
+test('review-fix-pr accepts explicit mode, guard, resume, root, and rounds', () => {
+  const result = parseInvocation('review-fix-pr', [
+    'base=origin/main',
+    'review-and-fix',
+    'guard=snapshot',
+    'resume',
+    'root=/project',
+    'rounds=3'
+  ]);
+  assert.equal(result.base, 'origin/main');
+  assert.equal(result.mode, 'review-and-fix');
+  assert.equal(result.guardMode, 'snapshot');
+  assert.equal(result.resume, true);
+  assert.equal(result.root, '/project');
+  assert.equal(result.roundLimit, 3);
+});
+
+test('review-fix-pr rejects document-only tokens: target, ref, strict, normal, assurance, ledger, type', () => {
+  assert.throws(() => parseInvocation('review-fix-pr', ['base=main', 'target=foo.md']), /unknown token/i);
+  assert.throws(() => parseInvocation('review-fix-pr', ['base=main', 'ref=foo.md']), /unknown token/i);
+  assert.throws(() => parseInvocation('review-fix-pr', ['base=main', 'strict']), /unknown token/i);
+  assert.throws(() => parseInvocation('review-fix-pr', ['base=main', 'normal']), /unknown token/i);
+  assert.throws(() => parseInvocation('review-fix-pr', ['base=main', 'assurance=practical']), /unknown token/i);
+  assert.throws(() => parseInvocation('review-fix-pr', ['base=main', 'ledger=ISSUES.md']), /unknown token/i);
+  assert.throws(() => parseInvocation('review-fix-pr', ['base=main', 'type=SPEC']), /unknown token/i);
+});
+
+test('review-fix-pr rejects scope token (CODE-only)', () => {
+  assert.throws(() => parseInvocation('review-fix-pr', ['base=main', 'scope=src/']), /unknown token/i);
+});
+
+test('review-fix-pr rejects duplicate base', () => {
+  assert.throws(
+    () => parseInvocation('review-fix-pr', ['base=main', 'base=other']),
+    /duplicate base/i
+  );
+});
+
+test('review-fix-pr rejects conflicting mode flags', () => {
+  assert.throws(
+    () => parseInvocation('review-fix-pr', ['base=main', 'read-only', 'review-and-fix']),
+    /read-only.*review-and-fix/i
+  );
+});
+
+test('review-fix-pr rejects read-only rounds=<n> (unsupported loop semantics)', () => {
+  assert.throws(
+    () => parseInvocation('review-fix-pr', ['base=main', 'read-only', 'rounds=2']),
+    (error) => typeof error.code === 'string' && /rounds/i.test(error.message)
+  );
+});
+
+test('review-fix-pr with includeMetadata exposes routeKind and requestedMode', () => {
+  const result = parseInvocation('review-fix-pr', ['base=main', 'review-and-fix'], {
+    defaultMode: 'read-only',
+    includeMetadata: true
+  });
+  assert.equal(result.routeKind, 'pr');
+  assert.equal(result.requestedMode, 'review-and-fix');
+  assert.equal(result.modeSource, 'explicit');
+});
+
+// ---------------------------------------------------------------------------
+// review-fix-code parser tests
+// ---------------------------------------------------------------------------
+
+test('review-fix-code accepts zero scopes (whole project root) and defaults mode and guardMode', () => {
+  const result = parseInvocation('review-fix-code', []);
+  assert.equal(result.entrySkill, 'review-fix-code');
+  assert.equal(result.routeKind, 'code');
+  assert.equal(result.documentType, null);
+  assert.deepEqual(result.scopes, []);
+  assert.equal(result.mode, 'review-and-fix');
+  assert.equal(result.guardMode, 'git');
+  assert.equal(result.resume, false);
+  assert.equal(result.root, null);
+  assert.equal(result.roundLimit, null);
+});
+
+test('review-fix-code accepts repeated scope= paths', () => {
+  const result = parseInvocation('review-fix-code', ['scope=src/', 'scope=lib/']);
+  assert.deepEqual(result.scopes, ['src/', 'lib/']);
+});
+
+test('review-fix-code rejects base= token with message referencing review-fix-pr', () => {
+  assert.throws(
+    () => parseInvocation('review-fix-code', ['base=main']),
+    (error) => typeof error.code === 'string' && /review-fix-pr/.test(error.message)
+  );
+});
+
+test('review-fix-code rejects document-only tokens: target, ref, strict, normal, assurance, ledger, type', () => {
+  assert.throws(() => parseInvocation('review-fix-code', ['target=foo.md']), /unknown token/i);
+  assert.throws(() => parseInvocation('review-fix-code', ['ref=foo.md']), /unknown token/i);
+  assert.throws(() => parseInvocation('review-fix-code', ['strict']), /unknown token/i);
+  assert.throws(() => parseInvocation('review-fix-code', ['normal']), /unknown token/i);
+  assert.throws(() => parseInvocation('review-fix-code', ['assurance=practical']), /unknown token/i);
+  assert.throws(() => parseInvocation('review-fix-code', ['ledger=ISSUES.md']), /unknown token/i);
+  assert.throws(() => parseInvocation('review-fix-code', ['type=SPEC']), /unknown token/i);
+});
+
+test('review-fix-code accepts explicit mode, guard, resume, root, and rounds', () => {
+  const result = parseInvocation('review-fix-code', [
+    'scope=src/',
+    'review-and-fix',
+    'guard=snapshot',
+    'resume',
+    'root=/project',
+    'rounds=5'
+  ]);
+  assert.deepEqual(result.scopes, ['src/']);
+  assert.equal(result.mode, 'review-and-fix');
+  assert.equal(result.guardMode, 'snapshot');
+  assert.equal(result.resume, true);
+  assert.equal(result.root, '/project');
+  assert.equal(result.roundLimit, 5);
+});
+
+test('review-fix-code rejects read-only rounds=<n> (unsupported loop semantics)', () => {
+  assert.throws(
+    () => parseInvocation('review-fix-code', ['read-only', 'rounds=2']),
+    (error) => typeof error.code === 'string' && /rounds/i.test(error.message)
+  );
+});
+
+test('review-fix-code with includeMetadata exposes routeKind and requestedMode', () => {
+  const result = parseInvocation('review-fix-code', ['scope=src/'], {
+    defaultMode: 'read-only',
+    includeMetadata: true
+  });
+  assert.equal(result.routeKind, 'code');
+  assert.equal(result.requestedMode, 'read-only');
+  assert.equal(result.modeSource, 'default');
+});
+
+// ---------------------------------------------------------------------------
+// rounds=<n> token tests (all six routes — document routes tested here)
+// ---------------------------------------------------------------------------
+
+test('document routes accept valid rounds=<n> and expose roundLimit', () => {
+  const result = parseInvocation('review-fix-spec', ['target=docs/spec.md', 'rounds=3']);
+  assert.equal(result.roundLimit, 3);
+});
+
+test('document routes roundLimit is null when rounds is omitted', () => {
+  const result = parseInvocation('review-fix-spec', ['target=docs/spec.md']);
+  assert.equal(result.roundLimit, null);
+});
+
+test('rounds=<n> rejects zero', () => {
+  assert.throws(
+    () => parseInvocation('review-fix-spec', ['target=docs/spec.md', 'rounds=0']),
+    (error) => typeof error.code === 'string' && /rounds/i.test(error.message)
+  );
+});
+
+test('rounds=<n> rejects negative integers', () => {
+  assert.throws(
+    () => parseInvocation('review-fix-spec', ['target=docs/spec.md', 'rounds=-1']),
+    (error) => typeof error.code === 'string' && /rounds/i.test(error.message)
+  );
+});
+
+test('rounds=<n> rejects non-integer values', () => {
+  assert.throws(
+    () => parseInvocation('review-fix-spec', ['target=docs/spec.md', 'rounds=1.5']),
+    (error) => typeof error.code === 'string' && /rounds/i.test(error.message)
+  );
+  assert.throws(
+    () => parseInvocation('review-fix-spec', ['target=docs/spec.md', 'rounds=abc']),
+    (error) => typeof error.code === 'string' && /rounds/i.test(error.message)
+  );
+});
+
+test('rounds=<n> rejects missing value (bare rounds=)', () => {
+  assert.throws(
+    () => parseInvocation('review-fix-spec', ['target=docs/spec.md', 'rounds=']),
+    (error) => typeof error.code === 'string' && /rounds/i.test(error.message)
+  );
+});
+
+test('rounds=<n> rejects duplicate rounds token', () => {
+  assert.throws(
+    () => parseInvocation('review-fix-spec', ['target=docs/spec.md', 'rounds=2', 'rounds=3']),
+    /duplicate rounds/i
+  );
+});
+
+test('document route read-only rounds=<n> is unsupported', () => {
+  assert.throws(
+    () => parseInvocation('review-fix-spec', ['target=docs/spec.md', 'read-only', 'rounds=2']),
+    (error) => typeof error.code === 'string' && /rounds/i.test(error.message)
   );
 });
 

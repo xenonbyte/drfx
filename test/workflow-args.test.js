@@ -756,3 +756,206 @@ test('write eligibility preflight blocks unsafe non-target worktree changes', as
   assert.equal(result.blockingReason, 'unexpected-worktree-change');
   assertNoPreflightState(fixture.root);
 });
+
+// ---------------------------------------------------------------------------
+// PR route workflow args (parseWorkflowArgs for review-fix-pr)
+// ---------------------------------------------------------------------------
+
+test('parseWorkflowArgs accepts review-fix-pr with base=<branch> and defaults mode, guardMode', () => {
+  const parsed = parseWorkflowArgs('start', [
+    'review-fix-pr',
+    'base=main',
+    'review-and-fix',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'manual',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required'
+  ]);
+
+  assert.equal(parsed.entrySkill, 'review-fix-pr');
+  assert.equal(parsed.invocation.routeKind, 'pr');
+  assert.equal(parsed.invocation.base, 'main');
+  assert.equal(parsed.invocation.mode, 'review-and-fix');
+  assert.equal(parsed.invocation.guardMode, 'git');
+  assert.equal(parsed.invocation.resume, false);
+  assert.equal(parsed.invocation.roundLimit, null);
+});
+
+test('parseWorkflowArgs accepts review-fix-pr with explicit guard=snapshot', () => {
+  const parsed = parseWorkflowArgs('start', [
+    'review-fix-pr',
+    'base=origin/main',
+    'guard=snapshot',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'manual',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required'
+  ]);
+
+  assert.equal(parsed.invocation.guardMode, 'snapshot');
+  assert.equal(parsed.invocation.base, 'origin/main');
+});
+
+test('parseWorkflowArgs accepts review-fix-pr with explicit resume token (no implicit resume)', () => {
+  const parsed = parseWorkflowArgs('start', [
+    'review-fix-pr',
+    'base=main',
+    'resume',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'manual',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required'
+  ]);
+
+  assert.equal(parsed.invocation.resume, true);
+});
+
+test('parseWorkflowArgs accepts review-fix-pr with rounds=<n>', () => {
+  const parsed = parseWorkflowArgs('start', [
+    'review-fix-pr',
+    'base=main',
+    'review-and-fix',
+    'rounds=4',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'manual',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required'
+  ]);
+
+  assert.equal(parsed.invocation.roundLimit, 4);
+});
+
+test('parseWorkflowArgs rejects review-fix-pr missing base at the parse boundary', () => {
+  assert.throws(
+    () =>
+      parseWorkflowArgs('start', [
+        'review-fix-pr',
+        '--assurance',
+        'advisory',
+        '--runtime-platform',
+        'manual',
+        '--runtime-subagent-probe',
+        'not-required',
+        '--runtime-stdin-handoff',
+        'not-required'
+      ]),
+    /base/i
+  );
+});
+
+// ---------------------------------------------------------------------------
+// CODE route workflow args (parseWorkflowArgs for review-fix-code)
+// ---------------------------------------------------------------------------
+
+test('parseWorkflowArgs accepts review-fix-code with zero scopes and defaults mode, guardMode', () => {
+  const parsed = parseWorkflowArgs('start', [
+    'review-fix-code',
+    'review-and-fix',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'manual',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required'
+  ]);
+
+  assert.equal(parsed.entrySkill, 'review-fix-code');
+  assert.equal(parsed.invocation.routeKind, 'code');
+  assert.deepEqual(parsed.invocation.scopes, []);
+  assert.equal(parsed.invocation.mode, 'review-and-fix');
+  assert.equal(parsed.invocation.guardMode, 'git');
+  assert.equal(parsed.invocation.resume, false);
+  assert.equal(parsed.invocation.roundLimit, null);
+});
+
+test('parseWorkflowArgs accepts review-fix-code with repeated scope= paths', () => {
+  const parsed = parseWorkflowArgs('start', [
+    'review-fix-code',
+    'scope=src/',
+    'scope=lib/',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'manual',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required'
+  ]);
+
+  assert.deepEqual(parsed.invocation.scopes, ['src/', 'lib/']);
+});
+
+test('parseWorkflowArgs accepts review-fix-code with explicit resume token', () => {
+  const parsed = parseWorkflowArgs('start', [
+    'review-fix-code',
+    'scope=src/',
+    'resume',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'manual',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required'
+  ]);
+
+  assert.equal(parsed.invocation.resume, true);
+});
+
+test('parseWorkflowArgs accepts review-fix-code with rounds=<n>', () => {
+  const parsed = parseWorkflowArgs('start', [
+    'review-fix-code',
+    'scope=src/',
+    'review-and-fix',
+    'rounds=2',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'manual',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required'
+  ]);
+
+  assert.equal(parsed.invocation.roundLimit, 2);
+});
+
+test('parseWorkflowArgs rejects review-fix-code with base= (usage error before side effects)', () => {
+  assert.throws(
+    () =>
+      parseWorkflowArgs('start', [
+        'review-fix-code',
+        'base=main',
+        '--assurance',
+        'advisory',
+        '--runtime-platform',
+        'manual',
+        '--runtime-subagent-probe',
+        'not-required',
+        '--runtime-stdin-handoff',
+        'not-required'
+      ]),
+    /review-fix-pr/i
+  );
+});
