@@ -11,13 +11,13 @@ Route name: review-fix-code
 Review target: source scope file set
 Package version: 0.0.0-snapshot
 
-Use this Gemini command with required `scope=<path>` (repeat `scope=<path>` for multiple roots), optional `read-only`, optional `guard=git|snapshot`, optional `root=<project-root>`, and optional `debug`.
+Use this Gemini command with optional `scope=<path>` tokens (repeat `scope=<path>` for multiple roots; omit scope to review the project root), optional `read-only`, optional `guard=git|snapshot`, optional `root=<project-root>`, and optional `debug`.
 This is a code route and is advisory-only on Gemini: `review-and-fix` is unsupported, workflow PASS is unavailable, Gemini must not edit files, and it must not claim workflow PASS.
 It does not accept `target=`, `ref=`, `strict`, `normal`, `assurance=`, `ledger=`, or `rounds=`.
 Help-style or invalid invocations explain usage without reading files, running probes, creating state, or declaring review results.
 
 Route contract:
-- This route reviews a source scope: the file set under one or more scope=<path> roots.
+- This route reviews a source scope: the file set under one or more scope=<path> roots, or the whole project root when scope= is omitted.
 - Users must not pass target=, type, ref=, base=, assurance=, strict, normal, or ledger=; this route has no document type and no reference documents.
 - The review judges the resolved source file set, not a single document. Discover the in-scope source files deterministically, then review correctness, architecture, state-and-io, safety, tests, contracts, and maintainability.
 - Code review is actionable-only: pure style preferences, no-risk refactors, and over-abstraction are not blocking.
@@ -32,9 +32,9 @@ Route contract:
 - Do not call, wrap, or delegate to a platform-native code-review command; this route only produces advisory read-only findings.
 
 Invocation:
-review-fix-code scope=<path> [scope=<path>...] [read-only] [guard=git|snapshot] [root=<project-root>] [debug]
+review-fix-code [scope=<path>...] [read-only] [guard=git|snapshot] [root=<project-root>] [debug]
 
-Full form: review-fix-code scope=<path> [scope=<path>...] ... . At least one scope=<path> is required and names a source root to review; repeat scope=<path> for multiple roots. There is no bare-path or target= form for this route.
+Full form: review-fix-code [scope=<path>...] ... . scope=<path> names a source root to review; repeat scope=<path> for multiple roots. Omit scope= to review the whole project root. There is no bare-path or target= form for this route. Before workflow commands, materialize <scopeTokens> as the repeated scope=<path> tokens exactly as requested, or as an empty string when scope is omitted.
 
 This route accepts only scope=<path> (repeatable), optional read-only, optional guard=git|snapshot, optional root=<project-root>, and optional debug. It does not accept ref=, base=, strict, normal, assurance=, ledger=, review-and-fix, or rounds=.
 
@@ -102,7 +102,7 @@ When debug is present, generated routes may print the final-response machine blo
 
 review-and-fix is unsupported on Gemini. Before reading target/reference bodies or generating any semantic payload, return the unsupported result through no-state preflight:
 
-drfx workflow preflight --no-state review-fix-code scope=<path> review-and-fix guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --terminal-status unsupported --blocking-reason none --status-reason unsupported-runtime-capability --json
+drfx workflow preflight --no-state review-fix-code <scopeTokens> review-and-fix guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --terminal-status unsupported --blocking-reason none --status-reason unsupported-runtime-capability --json
 
 If the user requests strict verified assurance, explain that Gemini remains advisory-only and do not issue a strict verified workflow command.
 
@@ -111,15 +111,15 @@ Read-only advisory flow:
 2. On stdin handoff failure, fail closed as unsafe-handoff-file before semantic handoff. Do not use shell pipes, heredocs, herestrings, command substitution, argv, environment variables, env vars, or raw temp files for semantic payloads.
 3. Start review-backed no-state context:
 
-drfx workflow context --no-state review-fix-code scope=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
+drfx workflow context --no-state review-fix-code <scopeTokens> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
 
 4. Keep reviewGuard and stateToken in coordinator memory only. Never write tokens to the filesystem and never hand-edit tokens.
 5. Build the reviewer prompt in memory from the context skeleton plus target/reference reads. Gemini produces advisory review content; it must not claim workflow PASS.
 6. Submit review, triage, and final response by repeating the same runtime fields:
 
-drfx workflow record-review --no-state review-fix-code scope=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
-drfx workflow record-triage --no-state review-fix-code scope=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
-drfx workflow finalize --no-state review-fix-code scope=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
+drfx workflow record-review --no-state review-fix-code <scopeTokens> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
+drfx workflow record-triage --no-state review-fix-code <scopeTokens> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
+drfx workflow finalize --no-state review-fix-code <scopeTokens> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
 
 No-state final status is read-only-clean, read-only-findings, blocked, or unsupported; never pass. (Review-and-fix terminal states such as stopped-no-progress, stopped-with-deferrals, and pass are unavailable in Gemini advisory-only mode.)
 

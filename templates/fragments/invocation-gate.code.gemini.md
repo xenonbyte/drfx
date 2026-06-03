@@ -1,4 +1,4 @@
-Full form: {{ROUTE_NAME}} scope=<path> [scope=<path>...] ... . At least one scope=<path> is required and names a source root to review; repeat scope=<path> for multiple roots. There is no bare-path or target= form for this route.
+Full form: {{ROUTE_NAME}} [scope=<path>...] ... . scope=<path> names a source root to review; repeat scope=<path> for multiple roots. Omit scope= to review the whole project root. There is no bare-path or target= form for this route. Before workflow commands, materialize <scopeTokens> as the repeated scope=<path> tokens exactly as requested, or as an empty string when scope is omitted.
 
 This route accepts only scope=<path> (repeatable), optional read-only, optional guard=git|snapshot, optional root=<project-root>, and optional debug. It does not accept ref=, base=, strict, normal, assurance=, ledger=, review-and-fix, or rounds=.
 

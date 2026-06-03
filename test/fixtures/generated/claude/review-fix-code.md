@@ -6,8 +6,8 @@ Route name: review-fix-code
 Review target: source scope file set
 Package version: 0.0.0-snapshot
 
-Use this Claude Code command with required `scope=<path>` (repeat `scope=<path>` for multiple roots), optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`.
-When a valid scope=<path> is present and mode is omitted, Claude Code selects `review-and-fix`.
+Use this Claude Code command with optional `scope=<path>` tokens (repeat `scope=<path>` for multiple roots; omit scope to review the project root), optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`.
+When a valid scope=<path> or bare project root is present and mode is omitted, Claude Code selects `review-and-fix`.
 This code route exposes no `assurance=` token; for `review-and-fix` it internally materializes `practical` assurance, so auto-fix is not rejected as `advisory-review-and-fix-unsupported`.
 It does not accept `target=`, `ref=`, `strict`, `normal`, `assurance=`, or `ledger=`.
 The generated route must materialize effective mode, assurance, and guard before workflow calls; never pass omitted values through to `drfx workflow`.
@@ -15,7 +15,7 @@ Help-style or invalid invocations explain usage without reading files, running p
 
 ## Route Contract
 
-- This route reviews a source scope: the file set under one or more `scope=<path>` roots.
+- This route reviews a source scope: the file set under one or more `scope=<path>` roots, or the whole project root when `scope=` is omitted.
 - Users must not pass `target=`, `type`, `ref=`, `base=`, `assurance=`, `strict`, `normal`, or `ledger=`; this route has no document type and no reference documents.
 - The review judges the resolved source file set, not a single document. Discover the in-scope source files deterministically, then review correctness, architecture, state-and-io, safety, tests, contracts, and maintainability.
 - Code review is actionable-only: pure style preferences, no-risk refactors, and over-abstraction are not blocking.
@@ -30,16 +30,16 @@ Help-style or invalid invocations explain usage without reading files, running p
 Invocation syntax:
 
 ```text
-review-fix-code scope=<path> [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<project-root>] [debug]
+review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<project-root>] [debug]
 ```
 
-Full form: `review-fix-code scope=<path> [scope=<path>...] ...`. At least one `scope=<path>` is required and names a source root to review; repeat `scope=<path>` for multiple roots. There is no bare-path or `target=` form for this route.
+Full form: `review-fix-code [scope=<path>...] ...`. `scope=<path>` names a source root to review; repeat `scope=<path>` for multiple roots. Omit `scope=` to review the whole project root. There is no bare-path or `target=` form for this route. Before workflow commands, materialize `<scopeTokens>` as the repeated `scope=<path>` tokens exactly as requested, or as an empty string when scope is omitted.
 
 This route accepts only `scope=<path>` (repeatable), optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`. It does not accept `ref=`, `base=`, `strict`, `normal`, `assurance=`, or `ledger=`.
 
-If a valid `scope=<path>` invocation omits mode, missing mode selects `review-and-fix`. This is a code route: there is no user-facing `assurance=` token. For `review-and-fix`, the route internally materializes `practical` assurance (or `strict-verified` only via the same-flow strict proof path); it never runs `review-and-fix` with advisory assurance, so code auto-fix is not rejected as `advisory-review-and-fix-unsupported`.
+If a valid `scope=<path>` invocation or bare project-root invocation omits mode, missing mode selects `review-and-fix`. This is a code route: there is no user-facing `assurance=` token. For `review-and-fix`, the route internally materializes `practical` assurance (or `strict-verified` only via the same-flow strict proof path); it never runs `review-and-fix` with advisory assurance, so code auto-fix is not rejected as `advisory-review-and-fix-unsupported`.
 
-Help-style or invalid invocations still explain usage only. Do not read scope files, run workflow commands, run probes, create state, or declare a review result for missing `scope=`, unknown usage, or explicit help.
+Help-style or invalid invocations still explain usage only. Do not read scope files, run workflow commands, run probes, create state, or declare a review result for unknown usage or explicit help.
 
 Before any `drfx workflow` command, materialize effective `<selectedMode>`, `<selectedAssurance>`, and `<selectedGuard>`. Compute `<selectedMode>` from explicit mode or the default `review-and-fix`. Set `<selectedAssurance>` to `practical` for materialized `review-and-fix`, or `strict-verified` only on the same-flow strict proof path; for `read-only` use `practical`. Compute `<selectedGuard>` from explicit guard or default `git`. Always pass those explicit materialized values to workflow commands; never pass omitted mode, assurance, or guard through to `drfx workflow`.
 
@@ -121,7 +121,7 @@ Generated routes must not pin concrete model names. Runtime readiness probes may
 When effective mode is `review-and-fix`, run write eligibility preflight before runtime readiness probe, semantic reviewer dispatch, semantic file-set review, and target-local workflow state creation:
 
 ```text
-drfx workflow preflight review-fix-code scope=<path> review-and-fix guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --json
+drfx workflow preflight review-fix-code <scopeTokens> review-and-fix guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --json
 ```
 
 For Codex, use `--runtime-platform codex`.
@@ -171,7 +171,7 @@ drfx check --platform claude --json
 Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.claude.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Pass those current-run values to workflow start:
 
 ```text
-drfx workflow start review-fix-code scope=<path> <selectedMode> rounds=<roundLimit> guard=<selectedGuard> --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
+drfx workflow start review-fix-code <scopeTokens> <selectedMode> rounds=<roundLimit> guard=<selectedGuard> --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
 ```
 
 For `review-and-fix assurance=strict-verified`, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
@@ -183,24 +183,24 @@ Do not scrape human-readable `drfx check` output. Do not reuse a cached descript
 For `assurance=practical`, after successful probes, start persistent state:
 
 ```text
-drfx workflow start review-fix-code scope=<path> review-and-fix rounds=<roundLimit> guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
+drfx workflow start review-fix-code <scopeTokens> review-and-fix rounds=<roundLimit> guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
 ```
 
 This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, and `<selectedGuard>` is explicit guard or default `git`. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
 
 Then coordinate this loop:
 
-1. Run persistent context with `drfx workflow context review-fix-code scope=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json`.
+1. Run persistent context with `drfx workflow context review-fix-code <scopeTokens> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json`.
 2. Build the reviewer prompt in memory from the context manifest plus target/reference reads. Do not write prompt text or file body text to disk.
-3. Spawn a read-only reviewer subagent and submit its exact output with `drfx workflow record-review review-fix-code scope=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --result-stdin --json`.
-4. Triage every finding semantically and submit the triage with `drfx workflow record-triage review-fix-code scope=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --triage-stdin --json`.
+3. Spawn a read-only reviewer subagent and submit its exact output with `drfx workflow record-review review-fix-code <scopeTokens> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --result-stdin --json`.
+4. Triage every finding semantically and submit the triage with `drfx workflow record-triage review-fix-code <scopeTokens> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --triage-stdin --json`.
 5. For accepted or reopened blocking issues, run `drfx workflow begin-fix <targetStateDir> --json`.
 6. Edit only the target directly by default. Use a bounded serial fixer only when lock refresh rules can be satisfied and the issue list is scoped.
 7. Run `drfx workflow refresh-lock <targetStateDir> --json` before writes after 60 seconds, before a delegated fixer writes, and before ending a long fix.
 8. Submit a valid fix report with `drfx workflow end-fix <targetStateDir> --fix-report-stdin --json`.
 9. If interruption, blocker, checkpoint, context pressure, or user stop happens before a valid fix report, run `drfx workflow abort-fix <targetStateDir> --status checkpoint --reason checkpoint-requested --next-action <redacted next action> --json` or use `--status blocked` with an allowed blocking reason.
 10. Review the diff and submit with `drfx workflow record-diff-review <targetStateDir> --result-stdin --json`.
-11. After `DIFF-OK`, run full re-review using `drfx workflow context review-fix-code scope=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --json`, then record the full re-review with `--phase full-re-review --result-stdin`.
+11. After `DIFF-OK`, run full re-review using `drfx workflow context review-fix-code <scopeTokens> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --json`, then record the full re-review with `--phase full-re-review --result-stdin`.
 12. Repeat triage, fix, diff review, and full re-review until terminal status (`pass`, `stopped-with-deferrals`, `stopped-no-progress`, `read-only-findings`, `blocked`, `unsupported`, `externally-changed`, `possible-target-replacement`, user stop, or `checkpoint`).
 13. Finalize only through `drfx workflow finalize <targetStateDir> --final-response-stdin --json`.
 
@@ -221,29 +221,29 @@ Use the materialized `<selectedAssurance>` to choose runtime fields, and pass th
 Advisory read-only no-state path starts with:
 
 ```text
-drfx workflow context --no-state review-fix-code scope=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
+drfx workflow context --no-state review-fix-code <scopeTokens> read-only guard=<selectedGuard> --assurance advisory --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
 ```
 
 Submit advisory review, triage, and final response by repeating the same advisory runtime fields:
 
 ```text
-drfx workflow record-review --no-state review-fix-code scope=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
-drfx workflow record-triage --no-state review-fix-code scope=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
-drfx workflow finalize --no-state review-fix-code scope=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
+drfx workflow record-review --no-state review-fix-code <scopeTokens> read-only guard=<selectedGuard> --assurance advisory --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
+drfx workflow record-triage --no-state review-fix-code <scopeTokens> read-only guard=<selectedGuard> --assurance advisory --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
+drfx workflow finalize --no-state review-fix-code <scopeTokens> read-only guard=<selectedGuard> --assurance advisory --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
 ```
 
 Practical read-only no-state path starts with:
 
 ```text
-drfx workflow context --no-state review-fix-code scope=<path> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
+drfx workflow context --no-state review-fix-code <scopeTokens> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
 ```
 
 Submit practical review, triage, and final response by repeating the same practical runtime fields:
 
 ```text
-drfx workflow record-review --no-state review-fix-code scope=<path> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
-drfx workflow record-triage --no-state review-fix-code scope=<path> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
-drfx workflow finalize --no-state review-fix-code scope=<path> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
+drfx workflow record-review --no-state review-fix-code <scopeTokens> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
+drfx workflow record-triage --no-state review-fix-code <scopeTokens> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
+drfx workflow finalize --no-state review-fix-code <scopeTokens> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
 ```
 
 No-state final status is `read-only-clean`, `read-only-findings`, `blocked`, or `unsupported`; never `pass`.

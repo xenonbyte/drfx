@@ -12,7 +12,6 @@ const MODULE_RULES = {
     'runNoStatePreflight',
     'runWriteEligibilityPreflight',
     'runNoStateContext',
-    'runNoStateFileSetContext',
     'runNoStateRecordReview',
     'runNoStateRecordTriage',
     'runNoStateFinalize',
@@ -50,6 +49,15 @@ const MODULE_RULES = {
     'runEndFix',
     'runAbortFix',
     'runFileSetFixLifecycleCommand'
+  ]),
+  'file-set-no-state.js': new Set([
+    'runFileSetNoStateContext',
+    'runFileSetNoStatePreflight',
+    'runFileSetWriteEligibilityPreflight',
+    'runFileSetNoStateRecordReview',
+    'runFileSetNoStateRecordTriage',
+    'runFileSetNoStateFinalize',
+    'runFileSetNoStateWorkflowCommand'
   ])
 };
 

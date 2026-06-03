@@ -1120,19 +1120,30 @@ test('generated code routes do not delegate to platform review commands', () => 
 
 test('generated code routes use the route-kind target token and omit document-only tokens', () => {
   for (const output of generatedCodeRoutes()) {
-    const requiredToken = output.routeKind === 'pr' ? /base=<branch>/ : /scope=<path>/;
+    const requiredToken = output.routeKind === 'pr' ? /base=<branch>/ : /\[scope=<path>\.\.\.\]|<scopeTokens>/;
     assert.match(output.body, requiredToken, `${output.platform}:${output.routeName} must use its target token`);
     // No fixed Document type semantics for code routes (check the route SHELL,
     // not the embedded coordinator prompt which legitimately mentions Document type).
     const shell = maskEmbeddedSharedContent(output.platform, output.body);
     assert.doesNotMatch(shell, /^Document type:/m, `${output.platform}:${output.routeName} must not declare a Document type`);
     // Invocation grammar must omit the document-only tokens.
-    const grammar = output.body.match(/review-fix-(?:pr|code) (?:base=<branch>|scope=<path>)[^\n`]*/);
+    const grammar = output.body.match(/review-fix-(?:pr|code) (?:base=<branch>|\[scope=<path>\.\.\.\])[^\n`]*/);
     assert.ok(grammar, `${output.platform}:${output.routeName} must show an invocation grammar line`);
     assert.doesNotMatch(grammar[0], /\bref=/, 'code grammar omits ref=');
     assert.doesNotMatch(grammar[0], /\bassurance=/, 'code grammar omits assurance=');
     assert.doesNotMatch(grammar[0], /\bledger=/, 'code grammar omits ledger=');
     assert.doesNotMatch(grammar[0], /\[strict\|normal\]/, 'code grammar omits strict|normal');
+  }
+});
+
+test('generated review-fix-code route accepts omitted scope as whole project root', () => {
+  for (const platform of ['claude', 'codex', 'gemini']) {
+    const body = renderPlatformRoute(platform, 'review-fix-code', { packageVersion: '0.0.0-test' });
+    const grammar = body.match(/review-fix-code \[scope=<path>\.\.\.\][^\n`]*/);
+    assert.ok(grammar, `${platform}:review-fix-code grammar must make scope optional`);
+    assert.match(body, /Omit `?scope=`? to review the whole project root/i);
+    assert.match(body, /<scopeTokens>/, `${platform}:review-fix-code workflow commands must use materialized scope tokens`);
+    assert.doesNotMatch(maskEmbeddedSharedContent(platform, body), /missing `scope=`|At least one `?scope=<path>`? is required/i);
   }
 });
 
@@ -1146,11 +1157,11 @@ test('Claude and Codex code routes materialize practical assurance without expos
       // The persistent review-and-fix start command carries practical assurance.
       assert.match(
         body,
-        new RegExp(`drfx workflow start ${routeName} (?:base=<branch>|scope=<path>)[\\s\\S]{0,120}review-and-fix[\\s\\S]{0,120}--assurance practical`),
+        new RegExp(`drfx workflow start ${routeName} (?:base=<branch>|<scopeTokens>)[\\s\\S]{0,120}review-and-fix[\\s\\S]{0,120}--assurance practical`),
         `${platform}:${routeName} persistent start must pass --assurance practical`
       );
       // No user-facing assurance= token in the invocation grammar.
-      const grammar = body.match(new RegExp(`${routeName} (?:base=<branch>|scope=<path>)[^\\n\`]*`));
+      const grammar = body.match(new RegExp(`${routeName} (?:base=<branch>|\\[scope=<path>\\.\\.\\.\\])[^\\n\`]*`));
       assert.doesNotMatch(grammar[0], /assurance=/, `${platform}:${routeName} grammar exposes no assurance=`);
     }
   }
@@ -1168,7 +1179,7 @@ test('Gemini code routes are advisory only', () => {
     assert.doesNotMatch(command, /missing mode selects `?read-only`?/i);
     // The displayed invocation grammar line must match the advisory-only gate body:
     // no review-and-fix, no rounds, no resume tokens advertised on Gemini code routes.
-    const targetToken = routeName === 'review-fix-pr' ? 'base=<branch>' : 'scope=<path>';
+    const targetToken = routeName === 'review-fix-pr' ? 'base=<branch>' : '[scope=<path>...]';
     const grammar = command.match(new RegExp(`${routeName} ${targetToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\n]*`));
     assert.ok(grammar, `${routeName} gemini grammar line must be present`);
     assert.doesNotMatch(grammar[0], /review-and-fix|rounds=|resume/, `${routeName} gemini grammar must not advertise review-and-fix/rounds/resume`);

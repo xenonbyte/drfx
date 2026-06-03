@@ -40,9 +40,11 @@ function git(cwd, args) {
 function freshRepo(t) {
   const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-fileset-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  git(root, ['init']);
+  git(root, ['init', '-b', 'main']);
   fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'lib'), { recursive: true });
   fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 1;\n');
+  fs.writeFileSync(path.join(root, 'lib', 'b.js'), 'module.exports = 2;\n');
   git(root, ['add', '.']);
   git(root, ['commit', '-m', 'init']);
   return root;
@@ -82,10 +84,80 @@ test('resolveRouteTargetMetadata derives a code-<hash> file-set key from sorted 
   assert.deepEqual(metadata.scopes.slice().sort(), ['lib', 'src']);
 });
 
+test('resolveRouteTargetMetadata derives CODE key from normalized scopes, including bare project root', (t) => {
+  const root = freshRepo(t);
+  const bare = resolveRouteTargetMetadata(parsedFor('review-fix-code', ['read-only']), { cwd: root });
+  const dot = resolveRouteTargetMetadata(parsedFor('review-fix-code', ['scope=.', 'read-only']), { cwd: root });
+  const src = resolveRouteTargetMetadata(parsedFor('review-fix-code', ['scope=src', 'read-only']), { cwd: root });
+  const dotSrc = resolveRouteTargetMetadata(parsedFor('review-fix-code', ['scope=./src', 'read-only']), { cwd: root });
+
+  assert.equal(bare.targetKey, dot.targetKey, 'bare CODE review and scope=. must share state identity');
+  assert.deepEqual(bare.scopes, []);
+  assert.equal(src.targetKey, dotSrc.targetKey, 'equivalent scope syntax must share state identity');
+  assert.deepEqual(src.scopes, ['src']);
+});
+
+test('resolveRouteTargetMetadata does not throw on an invalid CODE scope (resolver reports it as blocked)', (t) => {
+  const root = freshRepo(t);
+  // Identity-only normalization must never throw: an outside-root scope still derives a
+  // deterministic (throwaway) key here, and the scope error surfaces uniformly as a clean
+  // blocked result at the resolver layer, not as an uncaught throw during metadata resolution.
+  let metadata;
+  assert.doesNotThrow(() => {
+    metadata = resolveRouteTargetMetadata(parsedFor('review-fix-code', ['scope=../outside', 'read-only']), { cwd: root });
+  });
+  assert.equal(metadata.routeKind, 'code');
+  assert.match(metadata.targetKey, /^code-[0-9a-f]{12}$/);
+});
+
 test('a different PR base produces a different file-set target key', (t) => {
   const keyMain = deriveFileSetTargetKey(parsedFor('review-fix-pr', ['base=main']));
   const keyDev = deriveFileSetTargetKey(parsedFor('review-fix-pr', ['base=develop']));
   assert.notEqual(keyMain, keyDev);
+});
+
+test('file-set write eligibility preflight supports PR review-and-fix routes', async (t) => {
+  const root = freshRepo(t);
+  git(root, ['checkout', '-b', 'feature']);
+  const result = await runWorkflowCommand('preflight', [
+    'review-fix-pr',
+    'base=main',
+    'review-and-fix',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    '--json'
+  ], { cwd: root });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.status, 'write-eligible');
+  assert.equal(result.routeKind, 'pr');
+  assert.match(result.targetKey, /^pr-[0-9a-f]{12}$/);
+});
+
+test('file-set write eligibility preflight supports bare CODE review-and-fix routes', async (t) => {
+  const root = freshRepo(t);
+  const result = await runWorkflowCommand('preflight', [
+    'review-fix-code',
+    'review-and-fix',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    '--json'
+  ], { cwd: root });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.status, 'write-eligible');
+  assert.equal(result.routeKind, 'code');
+  assert.deepEqual(result.scopes, []);
 });
 
 test('advisory review-and-fix PR start dispatches to unsupported (file-set context resolved, no crash)', async (t) => {

@@ -752,7 +752,7 @@ test('file-set snapshot validate reports which monitored files changed', (t) => 
   assert.deepEqual(result.changedFiles, ['docs/target.md']);
 });
 
-test('file-set snapshot validate blocks when a monitored file goes missing', (t) => {
+test('file-set snapshot validate reports when a monitored file goes missing', (t) => {
   const fixture = makeWorkspace(t);
   const baseline = captureFileSetBaseline({
     projectRoot: fixture.root,
@@ -764,8 +764,53 @@ test('file-set snapshot validate blocks when a monitored file goes missing', (t)
     monitoredFiles: ['docs/target.md', 'docs/sibling.md'],
     baseline
   });
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(result.changedFiles, ['docs/sibling.md']);
+});
+
+test('file-set snapshot validate blocks a write outside the monitored file set', (t) => {
+  const fixture = makeWorkspace(t);
+  const baseline = captureFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md']
+  });
+  fs.appendFileSync(fixture.target, '\nAllowed change.\n');
+  fs.appendFileSync(fixture.other, '\nOutside file-set change.\n');
+  const result = validateFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md'],
+    baseline
+  });
   assert.equal(result.status, 'blocked');
   assert.equal(result.blockingReason, 'unexpected-worktree-change');
+});
+
+test('file-set snapshot baseline supports deleted PR members as missing monitored files', (t) => {
+  const fixture = makeWorkspace(t);
+  const deletedPath = path.join(fixture.root, 'docs', 'deleted.js');
+  const baseline = captureFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md', { path: 'docs/deleted.js', status: 'deleted' }]
+  });
+  assert.equal(baseline.status, 'passed');
+  assert.equal(baseline.entries.find((entry) => entry.path === 'docs/deleted.js').missing, true);
+
+  fs.writeFileSync(deletedPath, 'module.exports = 1;\n');
+  const result = validateFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md', { path: 'docs/deleted.js', status: 'deleted' }],
+    baseline
+  });
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(result.changedFiles, ['docs/deleted.js']);
+
+  const restored = restoreFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md', { path: 'docs/deleted.js', status: 'deleted' }],
+    baseline
+  });
+  assert.equal(restored.status, 'passed');
+  assert.equal(fs.existsSync(deletedPath), false);
 });
 
 test('file-set snapshot restore limits writes to monitored files only', (t) => {

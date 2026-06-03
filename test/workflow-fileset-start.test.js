@@ -99,6 +99,24 @@ test('CODE review-and-fix start writes a parseable code file-set MANIFEST.md wit
   assert.match(manifest.fileSetFingerprint, /^[0-9a-f]{64}$/);
 });
 
+test('CODE start uses normalized scope identity before refusing existing state', async (t) => {
+  const scopedRoot = makePrRepo(t);
+  const scoped = await runWorkflowCommand('start', practicalArgs(['review-fix-code', 'scope=src']), { cwd: scopedRoot });
+  assert.equal(scoped.ok, true);
+  await assert.rejects(
+    runWorkflowCommand('start', practicalArgs(['review-fix-code', 'scope=./src']), { cwd: scopedRoot }),
+    (error) => error.code === 'ERR_STATE_EXISTS'
+  );
+
+  const bareRoot = makePrRepo(t);
+  const bare = await runWorkflowCommand('start', practicalArgs(['review-fix-code']), { cwd: bareRoot });
+  assert.equal(bare.ok, true);
+  await assert.rejects(
+    runWorkflowCommand('start', practicalArgs(['review-fix-code', 'scope=.']), { cwd: bareRoot }),
+    (error) => error.code === 'ERR_STATE_EXISTS'
+  );
+});
+
 test('a second fresh PR start over existing state is refused (no silent resume)', async (t) => {
   const root = makePrRepo(t);
   const first = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });

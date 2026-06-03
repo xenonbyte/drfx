@@ -47,6 +47,23 @@ function makePrRepo(t) {
   return root;
 }
 
+function makePrRepoWithDeletedFile(t) {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-fs-delete-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  git(root, ['init', '-b', 'main']);
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 1;\n');
+  fs.writeFileSync(path.join(root, 'src', 'remove-me.js'), 'module.exports = "remove";\n');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'init']);
+  git(root, ['checkout', '-b', 'feature']);
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 2;\n');
+  fs.rmSync(path.join(root, 'src', 'remove-me.js'));
+  git(root, ['add', '-A']);
+  git(root, ['commit', '-m', 'feature deletes a file']);
+  return root;
+}
+
 function practicalArgs(extra, mode = 'review-and-fix') {
   return [
     ...extra,
@@ -177,6 +194,25 @@ function finalPass(filesChanged) {
     'Residual risk: none identified',
     'Redaction statement: no sensitive values persisted',
     'Coordinator agreement: approved after full re-review'
+  ].join('\n');
+}
+
+function noStateReadOnlyFindings() {
+  return [
+    'Final status: read-only-findings',
+    'Assurance: advisory',
+    'Runtime platform: codex',
+    'Mode: read-only',
+    'Target: none',
+    'Files changed: none',
+    'Fixed issue IDs: none',
+    'Verification performed: full file-set read-only review',
+    'Deferrals or blockers: read-only findings',
+    'Blocking reason: none',
+    'Status reason: none',
+    'Residual risk: unresolved read-only findings remain',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: none'
   ].join('\n');
 }
 
@@ -385,6 +421,32 @@ test('PR file-set end-fix blocks a fix that writes outside the recorded file set
   assert.equal(endFix.status, 'blocked');
 });
 
+test('PR file-set snapshot begin-fix supports deleted files in the PR file set', async (t) => {
+  const root = makePrRepoWithDeletedFile(t);
+  const args = practicalArgs(['review-fix-pr', 'base=main', 'guard=snapshot']);
+  const start = await runWorkflowCommand('start', args, { cwd: root });
+  assert.equal(start.ok, true, JSON.stringify(start));
+
+  await runWorkflowCommand('context', args, { cwd: root });
+  await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_FAIL });
+  await runWorkflowCommand('record-triage', [
+    ...args,
+    '--triage-stdin'
+  ], { cwd: root, stdin: TRIAGE_ACCEPT });
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+  assert.equal(beginFix.status, 'begin-fix');
+});
+
 test('CODE file-set snapshot-guard fix loop reaches pass and abort restores the baseline', async (t) => {
   const root = makePrRepo(t);
   const codeReviewFail = REVIEW_FAIL;
@@ -428,6 +490,41 @@ test('CODE file-set snapshot-guard fix loop reaches pass and abort restores the 
   assert.equal(fs.readFileSync(path.join(root, 'src', 'a.js'), 'utf8'), before, 'abort restores the snapshot baseline');
 });
 
+test('CODE file-set snapshot end-fix blocks writes outside the recorded file set', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-code', 'scope=src', 'guard=snapshot']);
+
+  const start = await runWorkflowCommand('start', args, { cwd: root });
+  await runWorkflowCommand('context', args, { cwd: root });
+  await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_FAIL });
+  await runWorkflowCommand('record-triage', [
+    ...args,
+    '--triage-stdin'
+  ], { cwd: root, stdin: TRIAGE_ACCEPT });
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 42;\n');
+  fs.writeFileSync(path.join(root, 'outside.js'), 'module.exports = "outside";\n');
+
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+  assert.equal(endFix.ok, false);
+  assert.equal(endFix.status, 'blocked');
+  assert.equal(endFix.blockingReason, 'unexpected-worktree-change');
+});
+
 test('no-state read-only CODE advisory review runs without auto-fix state and never claims pass', async (t) => {
   const root = makePrRepo(t);
   const result = await runWorkflowCommand('context', [
@@ -451,12 +548,13 @@ test('no-state read-only CODE advisory review runs without auto-fix state and ne
   assert.equal(result.targetStateDir, null);
   assert.equal(result.contextPackSkeleton.fileSet.routeKind, 'code');
   assert.ok(result.contextPackSkeleton.fileSet.fileCount >= 2);
+  assert.equal(typeof result.reviewGuard, 'string');
   assert.equal(fs.existsSync(path.join(root, '.docs-review-fix', 'targets')), false);
 });
 
-test('no-state PR advisory record-review refuses cleanly (advisory, never pass)', async (t) => {
+test('no-state PR advisory read-only records review, triage, and finalize without persistent state', async (t) => {
   const root = makePrRepo(t);
-  const result = await runWorkflowCommand('record-review', [
+  const context = await runWorkflowCommand('context', [
     'review-fix-pr',
     'base=main',
     'read-only',
@@ -469,11 +567,70 @@ test('no-state PR advisory record-review refuses cleanly (advisory, never pass)'
     'ready',
     '--phase',
     'initial-review',
+    '--json'
+  ], { cwd: root });
+  assert.equal(context.ok, true);
+  assert.equal(typeof context.reviewGuard, 'string');
+
+  const review = await runWorkflowCommand('record-review', [
+    'review-fix-pr',
+    'base=main',
+    'read-only',
+    '--no-state',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--phase',
+    'initial-review',
+    '--review-guard',
+    context.reviewGuard,
     '--result-stdin'
-  ], { cwd: root, stdin: REVIEW_PASS });
-  assert.equal(result.ok, false);
-  assert.equal(result.status, 'unsupported');
-  assert.notEqual(result.status, 'pass');
+  ], { cwd: root, stdin: REVIEW_FAIL });
+  assert.equal(review.ok, true);
+  assert.equal(review.status, 'recorded-review');
+  assert.equal(typeof review.stateToken, 'string');
+
+  const triage = await runWorkflowCommand('record-triage', [
+    'review-fix-pr',
+    'base=main',
+    'read-only',
+    '--no-state',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--phase',
+    'initial-review',
+    '--state-token',
+    review.stateToken,
+    '--triage-stdin'
+  ], { cwd: root, stdin: TRIAGE_ACCEPT });
+  assert.equal(triage.ok, true);
+  assert.equal(triage.status, 'recorded-triage');
+
+  const final = await runWorkflowCommand('finalize', [
+    'review-fix-pr',
+    'base=main',
+    'read-only',
+    '--no-state',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--state-token',
+    triage.stateToken,
+    '--final-response-stdin'
+  ], { cwd: root, stdin: noStateReadOnlyFindings() });
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'read-only-findings');
+  assert.notEqual(final.status, 'pass');
   assert.equal(fs.existsSync(path.join(root, '.docs-review-fix', 'targets')), false);
 });
 

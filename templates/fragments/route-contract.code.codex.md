@@ -1,4 +1,4 @@
-- This route reviews a source scope: the file set under one or more `scope=<path>` roots.
+- This route reviews a source scope: the file set under one or more `scope=<path>` roots, or the whole project root when `scope=` is omitted.
 - Users must not pass `target=`, `type`, `ref=`, `base=`, `assurance=`, `strict`, `normal`, or `ledger=`; this route has no document type and no reference documents.
 - The review judges the resolved source file set, not a single document. Discover the in-scope source files deterministically, then review correctness, architecture, state-and-io, safety, tests, contracts, and maintainability.
 - Code review is actionable-only: pure style preferences, no-risk refactors, and over-abstraction are not blocking.
