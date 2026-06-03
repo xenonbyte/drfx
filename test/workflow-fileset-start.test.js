@@ -146,27 +146,47 @@ test('read-only CODE start creates no automatic-fix target state and claims no p
   assert.equal(fs.existsSync(path.join(root, '.docs-review-fix', 'targets')), false);
 });
 
-test('PR persistent lifecycle commands refuse cleanly after start (no crash, no pass)', async (t) => {
+test('PR persistent context executes over the file set after start (Phase C)', async (t) => {
   const root = makePrRepo(t);
   const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
   assert.equal(start.ok, true);
 
-  // context (invocation-based) refuses cleanly rather than crashing on undefined target.
+  // context (invocation-based) now executes a real file-set reviewer context-pack.
   const context = await runWorkflowCommand('context', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
-  assert.equal(context.ok, false);
-  assert.equal(context.status, 'unsupported');
-  assert.notEqual(context.status, 'pass');
+  assert.equal(context.ok, true);
+  assert.equal(context.status, 'context');
+  assert.equal(context.contextPackSkeleton.fileSet.routeKind, 'pr');
+  assert.ok(context.contextPackSkeleton.fileSet.fileCount >= 1);
+  assert.equal(context.contextPackSkeleton.target, 'none');
+});
 
-  // begin-fix (state-dir-based) refuses cleanly via the file-set manifest guard.
-  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], { cwd: root });
-  assert.equal(beginFix.ok, false);
-  assert.equal(beginFix.status, 'blocked');
-  assert.equal(beginFix.blockingReason, 'state-validation-failed');
+test('PR explicit resume with a matching identity resumes (no silent reuse)', async (t) => {
+  const root = makePrRepo(t);
+  const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
+  assert.equal(start.ok, true);
 
-  // explicit resume refuses cleanly (no silent reuse, no crash) until the lifecycle lands.
+  // explicit resume with an unchanged file set resumes to the manifest current phase.
+  const resume = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main', 'resume']), { cwd: root });
+  assert.equal(resume.ok, true);
+  assert.equal(resume.status, 'review');
+  assert.equal(resume.routeKind, 'pr');
+});
+
+test('PR explicit resume refuses a stale identity (changed file set)', async (t) => {
+  const root = makePrRepo(t);
+  const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
+  assert.equal(start.ok, true);
+
+  // Add a new commit so the PR file set / head drifts from the recorded identity.
+  fs.writeFileSync(path.join(root, 'src', 'c.js'), 'module.exports = 4;\n');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'more feature work']);
+
   const resume = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main', 'resume']), { cwd: root });
   assert.equal(resume.ok, false);
-  assert.equal(resume.status, 'unsupported');
+  assert.equal(resume.status, 'blocked');
+  assert.equal(resume.blockingReason, 'state-validation-failed');
+  assert.ok(Array.isArray(resume.staleIdentityFields) && resume.staleIdentityFields.length > 0);
 });
 
 test('read-only no-state CODE review never creates auto-fix state and never claims pass', async (t) => {

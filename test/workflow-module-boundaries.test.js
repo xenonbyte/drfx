@@ -31,7 +31,16 @@ const MODULE_RULES = {
   ]),
   'diff-review.js': new Set(['runRecordDiffReview']),
   'finalize.js': new Set(['runPersistentFinalize', 'runPersistentResume']),
-  'start.js': new Set(['runPersistentStart'])
+  'start.js': new Set(['runPersistentStart']),
+  // PLAN-TASK-009 (Phase C): file-set (PR/CODE) persistent lifecycle submodules.
+  'file-set-context.js': new Set([
+    'runFileSetContext',
+    'runFileSetRecordReview',
+    'runFileSetRecordTriage'
+  ]),
+  'file-set-finalize.js': new Set([
+    'runFileSetResume'
+  ])
 };
 
 const FORBIDDEN_ENTRYPOINTS = [
