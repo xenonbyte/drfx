@@ -963,3 +963,60 @@ test('generatePlatformFiles generates only the four document routes (not PR or c
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// PR and CODE rubric content assertions
+// ---------------------------------------------------------------------------
+
+test('pr.md rubric covers all required PR categories', () => {
+  const pr = read('shared/rubrics/pr.md');
+
+  for (const category of ['correctness', 'regression', 'safety', 'tests', 'contracts', 'maintainability', 'platform']) {
+    assert.match(pr, new RegExp(`\\b${category}\\b`, 'i'), `pr.md must cover category: ${category}`);
+  }
+});
+
+test('code.md rubric covers all required CODE categories', () => {
+  const code = read('shared/rubrics/code.md');
+
+  for (const category of ['correctness', 'architecture', 'state-and-io', 'safety', 'tests', 'contracts', 'maintainability', 'platform']) {
+    assert.match(code, new RegExp(category.replace('-', '[- ]'), 'i'), `code.md must cover category: ${category}`);
+  }
+});
+
+test('pr.md and code.md encode the actionable-only triage boundary', () => {
+  const pr = read('shared/rubrics/pr.md');
+  const code = read('shared/rubrics/code.md');
+
+  for (const [label, text] of [['pr.md', pr], ['code.md', code]]) {
+    // Must say pure style preferences are NOT blocking
+    assert.match(text, /pure style/i, `${label} must mention pure style as non-blocking`);
+    // Must say no-risk refactors are NOT blocking
+    assert.match(text, /no.risk refactor|no-risk refactor/i, `${label} must mention no-risk refactors as non-blocking`);
+    // Must say over-abstraction is NOT blocking
+    assert.match(text, /over.abstraction|over-abstraction/i, `${label} must mention over-abstraction as non-blocking`);
+  }
+});
+
+test('code.md lists the required CODE priority-scan surfaces', () => {
+  const code = read('shared/rubrics/code.md');
+
+  const surfaces = [
+    'entry point',
+    'public api',
+    'cli',
+    'config',
+    'schema',
+    'template generation',
+    'install',
+    'uninstall',
+    'state machine',
+    'persistence',
+    'test fixture',
+    'cross-platform'
+  ];
+
+  for (const surface of surfaces) {
+    assert.match(code, new RegExp(surface.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `code.md must mention priority-scan surface: ${surface}`);
+  }
+});

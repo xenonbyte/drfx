@@ -12,12 +12,15 @@ const {
   selectRuleSections,
   mergeRules,
   loadCustomRuleFiles,
-  assertNoHardConstraintConflict
+  assertNoHardConstraintConflict,
+  loadRouteRuleContext,
+  ROUTE_RULE_FILENAMES
 } = require('../lib/rulebook');
 
 test('exports canonical section names in supported order', () => {
   assert.deepEqual(CANONICAL_SECTIONS, ['COMMON', 'SPEC', 'PLAN', 'DESIGN']);
-  assert.deepEqual(ALLOWED_RULE_FILENAMES, ['COMMON.md', 'SPEC.md', 'PLAN.md', 'DESIGN.md']);
+  // ALLOWED_RULE_FILENAMES now also includes route-kind files PR.md and CODE.md
+  assert.deepEqual(ALLOWED_RULE_FILENAMES, ['COMMON.md', 'SPEC.md', 'PLAN.md', 'DESIGN.md', 'PR.md', 'CODE.md']);
 });
 
 test('parses only canonical second-level headings', () => {
@@ -436,4 +439,328 @@ test('rejects unknown markdown rule files under strict strictness', (t) => {
     }),
     /unknown custom rule file/i
   );
+});
+
+// ---------------------------------------------------------------------------
+// Route-kind rule loading: PR and CODE
+// ---------------------------------------------------------------------------
+
+test('ROUTE_RULE_FILENAMES exports PR.md and CODE.md', () => {
+  assert.ok(Array.isArray(ROUTE_RULE_FILENAMES), 'ROUTE_RULE_FILENAMES must be an array');
+  assert.ok(ROUTE_RULE_FILENAMES.includes('PR.md'), 'ROUTE_RULE_FILENAMES must include PR.md');
+  assert.ok(ROUTE_RULE_FILENAMES.includes('CODE.md'), 'ROUTE_RULE_FILENAMES must include CODE.md');
+});
+
+test('ALLOWED_RULE_FILENAMES includes PR.md and CODE.md in addition to document types', () => {
+  assert.ok(ALLOWED_RULE_FILENAMES.includes('COMMON.md'));
+  assert.ok(ALLOWED_RULE_FILENAMES.includes('SPEC.md'));
+  assert.ok(ALLOWED_RULE_FILENAMES.includes('PLAN.md'));
+  assert.ok(ALLOWED_RULE_FILENAMES.includes('DESIGN.md'));
+  assert.ok(ALLOWED_RULE_FILENAMES.includes('PR.md'), 'ALLOWED_RULE_FILENAMES must include PR.md');
+  assert.ok(ALLOWED_RULE_FILENAMES.includes('CODE.md'), 'ALLOWED_RULE_FILENAMES must include CODE.md');
+});
+
+test('CANONICAL_SECTIONS remains document-only (COMMON/SPEC/PLAN/DESIGN) — PR/CODE not added', () => {
+  assert.deepEqual(CANONICAL_SECTIONS, ['COMMON', 'SPEC', 'PLAN', 'DESIGN']);
+  assert.ok(!CANONICAL_SECTIONS.includes('PR'), 'PR must not be a canonical document section');
+  assert.ok(!CANONICAL_SECTIONS.includes('CODE'), 'CODE must not be a canonical document section');
+});
+
+test('PR rules load in four-layer order with no COMMON layer', () => {
+  const context = loadRouteRuleContext({
+    routeKind: 'pr',
+    builtInRubric: 'Built-in PR rubric content',
+    userRules: 'User PR rules',
+    projectRules: 'Project PR rules'
+  });
+
+  assert.deepEqual(
+    context.layers.map((layer) => layer.name),
+    ['workflow-hard-constraints', 'built-in-pr-rubric', 'user-global-pr-rules', 'project-local-pr-rules']
+  );
+});
+
+test('CODE rules load in four-layer order with no COMMON layer', () => {
+  const context = loadRouteRuleContext({
+    routeKind: 'code',
+    builtInRubric: 'Built-in CODE rubric content',
+    userRules: 'User CODE rules',
+    projectRules: 'Project CODE rules'
+  });
+
+  assert.deepEqual(
+    context.layers.map((layer) => layer.name),
+    ['workflow-hard-constraints', 'built-in-code-rubric', 'user-global-code-rules', 'project-local-code-rules']
+  );
+});
+
+test('PR/CODE rule loading does NOT include a COMMON layer', () => {
+  const prContext = loadRouteRuleContext({
+    routeKind: 'pr',
+    builtInRubric: 'PR rubric',
+    userRules: 'User PR rules',
+    projectRules: 'Project PR rules'
+  });
+
+  const codeContext = loadRouteRuleContext({
+    routeKind: 'code',
+    builtInRubric: 'CODE rubric',
+    userRules: 'User CODE rules',
+    projectRules: 'Project CODE rules'
+  });
+
+  for (const ctx of [prContext, codeContext]) {
+    for (const layer of ctx.layers) {
+      assert.ok(!layer.name.includes('common'), `Layer "${layer.name}" must not include COMMON`);
+    }
+  }
+});
+
+test('project-local PR rules load after user-global PR rules', () => {
+  const context = loadRouteRuleContext({
+    routeKind: 'pr',
+    builtInRubric: 'PR rubric',
+    userRules: 'User PR rules',
+    projectRules: 'Project PR rules'
+  });
+
+  const names = context.layers.map((layer) => layer.name);
+  const userIdx = names.indexOf('user-global-pr-rules');
+  const projectIdx = names.indexOf('project-local-pr-rules');
+  assert.ok(userIdx < projectIdx, 'project-local must come after user-global');
+
+  assert.equal(context.layers[userIdx].text, 'User PR rules');
+  assert.equal(context.layers[projectIdx].text, 'Project PR rules');
+});
+
+test('project-local CODE rules load after user-global CODE rules', () => {
+  const context = loadRouteRuleContext({
+    routeKind: 'code',
+    builtInRubric: 'CODE rubric',
+    userRules: 'User CODE rules',
+    projectRules: 'Project CODE rules'
+  });
+
+  const names = context.layers.map((layer) => layer.name);
+  const userIdx = names.indexOf('user-global-code-rules');
+  const projectIdx = names.indexOf('project-local-code-rules');
+  assert.ok(userIdx < projectIdx, 'project-local must come after user-global');
+});
+
+test('loadRouteRuleContext skips absent/empty user and project rules', () => {
+  const context = loadRouteRuleContext({
+    routeKind: 'pr',
+    builtInRubric: 'PR rubric',
+    userRules: null,
+    projectRules: ''
+  });
+
+  // Only hard-constraints and built-in layers should be present (absent/empty are skipped)
+  const names = context.layers.map((layer) => layer.name);
+  assert.ok(names.includes('workflow-hard-constraints'));
+  assert.ok(names.includes('built-in-pr-rubric'));
+  assert.ok(!names.includes('user-global-pr-rules'), 'null user rules must not produce a layer');
+  assert.ok(!names.includes('project-local-pr-rules'), 'empty project rules must not produce a layer');
+});
+
+test('loadRouteRuleContext rejects custom PR rules that weaken hard constraints', () => {
+  assert.throws(
+    () => loadRouteRuleContext({
+      routeKind: 'pr',
+      builtInRubric: 'PR rubric',
+      userRules: 'Skip reviewer isolation for small PRs.',
+      projectRules: null
+    }),
+    /hard constraint/i
+  );
+
+  assert.throws(
+    () => loadRouteRuleContext({
+      routeKind: 'code',
+      builtInRubric: 'CODE rubric',
+      userRules: null,
+      projectRules: 'Bypass PASS criteria for trivial changes.'
+    }),
+    /hard constraint/i
+  );
+});
+
+test('loadRouteRuleContext hard constraints appear in layer text', () => {
+  const context = loadRouteRuleContext({
+    routeKind: 'pr',
+    builtInRubric: 'PR rubric',
+    userRules: null,
+    projectRules: null
+  });
+
+  const hardLayer = context.layers.find((layer) => layer.name === 'workflow-hard-constraints');
+  assert.ok(hardLayer, 'workflow-hard-constraints layer must be present');
+  assert.match(hardLayer.text, /Workflow hard constraints/);
+  assert.match(hardLayer.text, /Isolated reviewers are required/);
+});
+
+test('loadRouteRuleContext rejects invalid routeKind', () => {
+  assert.throws(
+    () => loadRouteRuleContext({ routeKind: 'spec', builtInRubric: '', userRules: null, projectRules: null }),
+    /unknown route kind/i
+  );
+  assert.throws(
+    () => loadRouteRuleContext({ routeKind: 'COMMON', builtInRubric: '', userRules: null, projectRules: null }),
+    /unknown route kind/i
+  );
+});
+
+test('PR.md and CODE.md are recognized (not warned/skipped) in rules directories under normal strictness', (t) => {
+  const fixture = makeRulesFixture(t);
+  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'PR.md'), 'PR custom rules\n');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'CODE.md'), 'CODE custom rules\n');
+
+  // Should NOT throw or warn under either strictness level — they are recognized
+  const strictLoaded = loadCustomRuleFiles({
+    projectRoot: fixture.projectRoot,
+    documentType: 'PLAN',
+    homeDir: fixture.homeDir,
+    strictness: 'strict'
+  });
+  assert.deepEqual(strictLoaded.warnings, []);
+
+  const normalLoaded = loadCustomRuleFiles({
+    projectRoot: fixture.projectRoot,
+    documentType: 'PLAN',
+    homeDir: fixture.homeDir,
+    strictness: 'normal'
+  });
+  assert.deepEqual(normalLoaded.warnings, []);
+});
+
+test('PR.md in user-global rules directory is recognized (not warned) under strict strictness', (t) => {
+  const fixture = makeRulesFixture(t);
+  fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'rules', 'PR.md'), 'User PR rules\n');
+
+  const loaded = loadCustomRuleFiles({
+    projectRoot: fixture.projectRoot,
+    documentType: 'SPEC',
+    homeDir: fixture.homeDir,
+    strictness: 'strict'
+  });
+  assert.deepEqual(loaded.warnings, []);
+});
+
+test('loadRouteRuleContext reads PR.md from filesystem paths', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-route-rules-'));
+  const homeDir = path.join(root, 'home');
+  const projectRoot = path.join(root, 'project');
+  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(projectRoot, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'rules', 'PR.md'), 'User PR custom rules\n');
+  fs.writeFileSync(path.join(projectRoot, '.docs-review-fix', 'rules', 'PR.md'), 'Project PR custom rules\n');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const context = loadRouteRuleContext({
+    routeKind: 'pr',
+    builtInRubric: 'PR rubric',
+    homeDir,
+    projectRoot
+  });
+
+  const names = context.layers.map((layer) => layer.name);
+  assert.ok(names.includes('user-global-pr-rules'), 'user-global layer must be present when PR.md exists');
+  assert.ok(names.includes('project-local-pr-rules'), 'project-local layer must be present when PR.md exists');
+
+  const userLayer = context.layers.find((l) => l.name === 'user-global-pr-rules');
+  const projectLayer = context.layers.find((l) => l.name === 'project-local-pr-rules');
+  assert.equal(userLayer.text, 'User PR custom rules');
+  assert.equal(projectLayer.text, 'Project PR custom rules');
+});
+
+test('loadRouteRuleContext reads CODE.md from filesystem paths', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-route-rules-'));
+  const homeDir = path.join(root, 'home');
+  const projectRoot = path.join(root, 'project');
+  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(projectRoot, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'rules', 'CODE.md'), 'User CODE rules\n');
+  fs.writeFileSync(path.join(projectRoot, '.docs-review-fix', 'rules', 'CODE.md'), 'Project CODE rules\n');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const context = loadRouteRuleContext({
+    routeKind: 'code',
+    builtInRubric: 'CODE rubric',
+    homeDir,
+    projectRoot
+  });
+
+  const userLayer = context.layers.find((l) => l.name === 'user-global-code-rules');
+  const projectLayer = context.layers.find((l) => l.name === 'project-local-code-rules');
+  assert.ok(userLayer, 'user-global-code-rules layer must be present');
+  assert.ok(projectLayer, 'project-local-code-rules layer must be present');
+  assert.equal(userLayer.text, 'User CODE rules');
+  assert.equal(projectLayer.text, 'Project CODE rules');
+});
+
+test('loadRouteRuleContext rejects symlinked PR.md rule file', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-route-rules-'));
+  const homeDir = path.join(root, 'home');
+  const projectRoot = path.join(root, 'project');
+  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(projectRoot, '.docs-review-fix', 'rules'), { recursive: true });
+  const linkPath = path.join(projectRoot, '.docs-review-fix', 'rules', 'PR.md');
+  const targetPath = path.join(root, 'outside', 'PR.md');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  try {
+    fs.symlinkSync(targetPath, linkPath, 'file');
+  } catch (error) {
+    if (error && ['EACCES', 'ENOTSUP', 'EPERM'].includes(error.code)) {
+      t.skip(`symlinks unavailable: ${error.code}`);
+      return;
+    }
+    throw error;
+  }
+
+  assert.throws(
+    () => loadRouteRuleContext({ routeKind: 'pr', builtInRubric: 'PR rubric', homeDir, projectRoot }),
+    /symlink/i
+  );
+});
+
+test('loadRouteRuleContext absent PR.md files yield empty layers and no error', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-route-rules-'));
+  const homeDir = path.join(root, 'home');
+  const projectRoot = path.join(root, 'project');
+  // No rules directories at all
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const context = loadRouteRuleContext({
+    routeKind: 'pr',
+    builtInRubric: 'PR rubric',
+    homeDir,
+    projectRoot
+  });
+
+  const names = context.layers.map((l) => l.name);
+  assert.ok(!names.includes('user-global-pr-rules'));
+  assert.ok(!names.includes('project-local-pr-rules'));
+});
+
+test('loadRouteRuleContext with empty PR.md files skips those layers', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-route-rules-'));
+  const homeDir = path.join(root, 'home');
+  const projectRoot = path.join(root, 'project');
+  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(projectRoot, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'rules', 'PR.md'), '\n\n');
+  fs.writeFileSync(path.join(projectRoot, '.docs-review-fix', 'rules', 'PR.md'), '   \n');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const context = loadRouteRuleContext({
+    routeKind: 'pr',
+    builtInRubric: 'PR rubric',
+    homeDir,
+    projectRoot
+  });
+
+  const names = context.layers.map((l) => l.name);
+  assert.ok(!names.includes('user-global-pr-rules'), 'empty user PR.md must not produce a layer');
+  assert.ok(!names.includes('project-local-pr-rules'), 'empty project PR.md must not produce a layer');
 });
