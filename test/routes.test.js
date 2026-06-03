@@ -133,6 +133,17 @@ test('listDocumentRoutes returns exactly the four document routes in order', () 
   }
 });
 
+test('listRoutes and listDocumentRoutes return frozen, stable arrays', () => {
+  assert.ok(Object.isFrozen(listRoutes()), 'listRoutes() must be frozen');
+  assert.ok(Object.isFrozen(listDocumentRoutes()), 'listDocumentRoutes() must be frozen');
+  assert.equal(listRoutes(), listRoutes(), 'listRoutes() identity is stable across calls');
+  assert.equal(
+    listDocumentRoutes(),
+    listDocumentRoutes(),
+    'listDocumentRoutes() identity is stable across calls'
+  );
+});
+
 // ---------------------------------------------------------------------------
 // getRouteDescriptor error behavior
 // ---------------------------------------------------------------------------
