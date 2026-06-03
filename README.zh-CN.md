@@ -2,7 +2,7 @@
 
 # document-review-fix
 
-`@xenonbyte/document-review-fix` 为 SPEC、PLAN、DESIGN 和 COMMON Markdown 文档安装 review routes。路由可以执行 read-only review，也可以执行只修改目标文档的 review-and-fix loop。
+`@xenonbyte/document-review-fix` 安装六条 review routes：四条 document routes（SPEC、PLAN、DESIGN、COMMON）和两条 code routes（`review-fix-pr` 用于 pull request diff，`review-fix-code` 用于 source scope review）。所有路由均支持 read-only review 或 review-and-fix loop。
 
 ## Requirements
 
@@ -59,9 +59,11 @@ review-fix-spec   SPEC documents
 review-fix-plan   PLAN documents
 review-fix-design DESIGN documents
 review-fix-doc    COMMON documents
+review-fix-pr     PR diff (base..HEAD file set)
+review-fix-code   source scope file set
 ```
 
-路由名选择 document type。不要传 `type=`。
+路由名选择 review target。Document routes：不要传 `type=`。Code routes（`review-fix-pr`、`review-fix-code`）：不要传 `target=`、`ref=`、`strict`、`normal`、`assurance=` 或 `ledger=`。
 
 ## Quick Start
 
@@ -119,7 +121,77 @@ review-fix-spec docs/spec.md review-and-fix assurance=practical guard=snapshot
 review-fix-design docs/design.md ref=docs/requirements.md read-only assurance=advisory
 ```
 
+运行 document route 修复循环（最多 3 轮）：
+
+```text
+review-fix-plan docs/plan.md rounds=3
+```
+
+## Code Review Routes
+
+Review pull request diff（本地 git，不 fetch）：
+
+```text
+review-fix-pr base=main
+```
+
+Review-and-fix PR diff，显式使用 snapshot guard：
+
+```text
+review-fix-pr base=main guard=snapshot
+```
+
+Read-only PR review：
+
+```text
+review-fix-pr base=main read-only
+```
+
+显式 PR resume：
+
+```text
+review-fix-pr base=main resume
+```
+
+PR review with repair loop（最多 2 轮）：
+
+```text
+review-fix-pr base=main rounds=2
+```
+
+Review 整个 project root（省略 `scope=` 表示全项目）：
+
+```text
+review-fix-code scope=lib
+```
+
+Scoped code review（一个或多个根目录）：
+
+```text
+review-fix-code scope=lib scope=test
+```
+
+Read-only code review 单目录：
+
+```text
+review-fix-code scope=lib read-only
+```
+
+显式 snapshot guard code review：
+
+```text
+review-fix-code scope=lib guard=snapshot
+```
+
+显式 CODE resume：
+
+```text
+review-fix-code scope=lib resume
+```
+
 ## Invocation Syntax
+
+### Document routes (review-fix-spec / plan / design / doc)
 
 Supported tokens:
 
@@ -134,10 +206,44 @@ Supported tokens:
 - `assurance=strict-verified` 要求 same-flow `drfx check --platform <platform> --json` proof。
 - `assurance=advisory` 仅允许 read-only advisory review。
 - `resume` 从 target-local state 继续。
+- `rounds=<n>` 设置最大修复循环次数（正整数）。与 `read-only` 不兼容。
 - `debug` 打印 redacted workflow audit details。默认输出保持 concise。
 - `root=<path>` 设置用于 containment 和 state layout 的 project root。
 - `ledger=<path>` 选择 target state directory 内的 custom issue ledger path。
-- `guard=git|snapshot` 选择 rollback 和 target-only guard family。`git` 是默认值；Git rollback anchor 不可用时，`snapshot` 使用 file snapshots。
+- `guard=git|snapshot` 选择 rollback 和 target-only guard family。`guard=git` 是默认值；Git rollback anchor 不可用时，`guard=snapshot` 使用 file snapshots。路由永远不会静默切换 guard mode。
+
+### review-fix-pr
+
+Syntax:
+
+```text
+review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<path>] [debug]
+```
+
+- `base=<branch>` 为必填。diff 为 `base..HEAD`，使用本地 git 解析，no fetch、push 或 ref mutation。
+- `read-only` 或 `review-and-fix`（Claude Code 和 Codex 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
+- `guard=git` 为默认值；Git rollback anchor 不可用时使用 `guard=snapshot`。路由永远不会静默切换 guard mode。
+- `resume` 显式从已保存的 state 继续。拒绝 stale state，不存在静默复用。
+- `rounds=<n>` 设置最大修复循环次数（正整数）。与 `read-only` 不兼容。
+- `root=<path>` 设置 project root。
+- 不接受 `target=`、`ref=`、`strict`、`normal`、`assurance=` 或 `ledger=`。
+
+### review-fix-code
+
+Syntax:
+
+```text
+review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<path>] [debug]
+```
+
+- `scope=<path>` 指定要 review 的 source root（repeatable，可重复传入多个 `scope=`）。省略 scope 表示整个 project root。
+- 强制排除：`.git`、`.docs-review-fix`、`node_modules`、build outputs 及类似 infrastructure 目录始终排除在 reviewed file set 之外。
+- `read-only` 或 `review-and-fix`（Claude Code 和 Codex 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
+- `guard=git` 为默认值；Git rollback anchor 不可用时使用 `guard=snapshot`。路由永远不会静默切换 guard mode。
+- `resume` 显式从已保存的 state 继续。拒绝 stale state，不存在静默复用。
+- `rounds=<n>` 设置最大修复循环次数（正整数）。与 `read-only` 不兼容。
+- `root=<path>` 设置 project root。
+- 不接受 `target=`、`ref=`、`base=`、`strict`、`normal`、`assurance=` 或 `ledger=`。
 
 `guard=snapshot` monitoring details:
 
@@ -178,6 +284,10 @@ Help-style 或 invalid invocations 只解释用法，不得读取文件、运行
 - accepted issues 仍存在时报告 `Unfixed:`。
 
 Gemini 支持 advisory read-only review。Gemini 不支持 `review-and-fix` 或 `assurance=strict-verified`。
+
+Code routes（`review-fix-pr`、`review-fix-code`）在 Gemini 上为 advisory-only：`review-and-fix` 不支持，workflow PASS 不可用，自动修复永远不会运行。如需 code route 自动修复，请使用 Claude Code 或 Codex。
+
+`read-only` 路径在任何平台上都不声明 PASS，也不创建 auto-fix state。
 
 ## Output
 
@@ -237,7 +347,9 @@ Next: Commit or restore the target, rerun with read-only, or use guard=snapshot 
 
 ## Review Rules
 
-所有路由先应用 COMMON rubric。Specialized routes 会额外添加一个 type-specific rubric：
+### Document routes
+
+所有 document routes 先应用 COMMON rubric。Specialized routes 会额外添加一个 type-specific rubric：
 
 - `review-fix-spec`: COMMON plus SPEC。
 - `review-fix-plan`: COMMON plus PLAN。
@@ -250,6 +362,15 @@ Built-in rubrics:
 - SPEC: requirements、product behavior、API behavior、scope、actors、permissions、integrations、acceptance criteria、edge cases 和 verifiability。
 - PLAN: implementation steps、prerequisites、tooling、verification、rollback、failure handling、data safety、compatibility 和 handoff readiness。
 - DESIGN: UX、UI、product workflows、system or architecture design、states、transitions、contracts、data flow、accessibility、responsiveness、localization、constraints 和 risks。
+
+### Code routes
+
+Code routes（`review-fix-pr`、`review-fix-code`）使用自包含的 rubric，没有 COMMON layer：
+
+- `review-fix-pr`：correctness、regression、safety、tests、contracts、maintainability 和 platform。
+- `review-fix-code`：correctness、architecture、state-and-io、safety、tests、contracts、maintainability 和 platform。
+
+Code review 只对 actionable 问题报告：纯 style 偏好、无风险 refactor 和 over-abstraction 意见不属于 blocking findings。
 
 ### Reference Conformance
 
@@ -274,21 +395,27 @@ Supported V3 custom rule files:
 ~/.docs-review-fix/rules/SPEC.md
 ~/.docs-review-fix/rules/PLAN.md
 ~/.docs-review-fix/rules/DESIGN.md
+~/.docs-review-fix/rules/PR.md
+~/.docs-review-fix/rules/CODE.md
 .docs-review-fix/rules/COMMON.md
 .docs-review-fix/rules/SPEC.md
 .docs-review-fix/rules/PLAN.md
 .docs-review-fix/rules/DESIGN.md
+.docs-review-fix/rules/PR.md
+.docs-review-fix/rules/CODE.md
 ```
 
-每个 custom rule file 都是 plain Markdown fragment。不需要包一层 `## SPEC`、`## PLAN`、`## DESIGN` 或 `## COMMON` heading。
+每个 custom rule file 都是 plain Markdown fragment。不需要包一层 heading。
 
 对 typed review，loader 只读取 user-global 和 project-local rules 中的 `COMMON.md` 加当前 document type 文件。`SPEC` review 不读取 `PLAN.md` 或 `DESIGN.md`；`PLAN` review 不读取 `SPEC.md` 或 `DESIGN.md`；`DESIGN` review 不读取 `SPEC.md` 或 `PLAN.md`；COMMON document review 只读取 `COMMON.md`。
+
+Code routes（`review-fix-pr`、`review-fix-code`）没有 COMMON layer。`PR` review 只读取 `PR.md`；`CODE` review 只读取 `CODE.md`。Code routes 的 user-global 和 project-local rule files 遵循与 document routes 相同的两层布局。
 
 Legacy `RULE.md` 是 stale configuration。如果存在 `~/.docs-review-fix/RULE.md` 或 `.docs-review-fix/RULE.md`，workflow start 会在写入 target state 前以 `state-validation-failed` 阻断。
 
 Unknown Markdown files under `rules/`，例如 `Spec.md`、`SPEC-RULE.md` 或 `REQUIREMENTS.md`，会在 normal mode 下输出 warning 并继续。在 strict mode 下，它们会在 target state 写入前阻断。
 
-Rule precedence:
+Rule precedence（document routes）：
 
 1. workflow hard constraints
 2. built-in COMMON rubric
@@ -297,6 +424,13 @@ Rule precedence:
 5. user-global document-type rules
 6. project-local COMMON rules
 7. project-local document-type rules
+
+Rule precedence（code routes — 无 COMMON layer）：
+
+1. workflow hard constraints
+2. built-in code-route rubric（PR 或 CODE）
+3. user-global PR.md 或 CODE.md rules
+4. project-local PR.md 或 CODE.md rules
 
 Project-local rules 比 user-global rules 更具体。Custom rules 不能覆盖 workflow hard constraints。
 
@@ -380,7 +514,7 @@ Guard blocker wording:
 
 `Unsupported: review-and-fix or strict-verified is unavailable on Gemini.`
 
-使用 Gemini 进行 advisory read-only review，或使用 Codex/Claude Code 自动修复。
+使用 Gemini 进行 advisory read-only review，或使用 Codex/Claude Code 自动修复。对于 code routes（`review-fix-pr`、`review-fix-code`），Gemini 在所有平台上均为 advisory-only：`review-and-fix` 不支持，workflow PASS 不可用，不会编辑任何文件。如需 code route 自动修复，请使用 Claude Code 或 Codex。
 
 `Unfixed:` appears after review-and-fix.
 

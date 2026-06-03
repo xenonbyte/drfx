@@ -2,7 +2,7 @@ English | [简体中文](README.zh-CN.md)
 
 # document-review-fix
 
-`@xenonbyte/document-review-fix` installs document review routes for SPEC, PLAN, DESIGN, and COMMON Markdown documents. The routes can run a read-only review or a review-and-fix loop that edits only the target document.
+`@xenonbyte/document-review-fix` installs six review routes: four document routes (SPEC, PLAN, DESIGN, COMMON) and two code routes (`review-fix-pr` for pull request diffs and `review-fix-code` for source scope review). All routes can run a read-only review or a review-and-fix loop.
 
 ## Requirements
 
@@ -59,9 +59,11 @@ review-fix-spec   SPEC documents
 review-fix-plan   PLAN documents
 review-fix-design DESIGN documents
 review-fix-doc    COMMON documents
+review-fix-pr     PR diff (base..HEAD file set)
+review-fix-code   source scope file set
 ```
 
-The route name selects the document type. Do not pass `type=`.
+The route name selects the review target. Document routes: do not pass `type=`. Code routes (`review-fix-pr`, `review-fix-code`): do not pass `target=`, `ref=`, `strict`, `normal`, `assurance=`, or `ledger=`.
 
 ## Quick Start
 
@@ -119,7 +121,77 @@ Use advisory read-only review:
 review-fix-design docs/design.md ref=docs/requirements.md read-only assurance=advisory
 ```
 
+Run a document route repair loop (maximum 3 rounds):
+
+```text
+review-fix-plan docs/plan.md rounds=3
+```
+
+## Code Review Routes
+
+Review a pull request diff (local git only, no fetch):
+
+```text
+review-fix-pr base=main
+```
+
+Review-and-fix a PR diff with explicit snapshot guard:
+
+```text
+review-fix-pr base=main guard=snapshot
+```
+
+Read-only PR review:
+
+```text
+review-fix-pr base=main read-only
+```
+
+PR review with explicit resume:
+
+```text
+review-fix-pr base=main resume
+```
+
+PR review with repair loop (maximum 2 rounds):
+
+```text
+review-fix-pr base=main rounds=2
+```
+
+Review the whole project root (`scope=` omitted means whole project):
+
+```text
+review-fix-code scope=lib
+```
+
+Scoped code review (one or more roots):
+
+```text
+review-fix-code scope=lib scope=test
+```
+
+Read-only code review of a single directory:
+
+```text
+review-fix-code scope=lib read-only
+```
+
+Code review with explicit snapshot guard:
+
+```text
+review-fix-code scope=lib guard=snapshot
+```
+
+Code review with explicit resume:
+
+```text
+review-fix-code scope=lib resume
+```
+
 ## Invocation Syntax
+
+### Document routes (review-fix-spec / plan / design / doc)
 
 Supported tokens:
 
@@ -134,10 +206,44 @@ Supported tokens:
 - `assurance=strict-verified` requires same-flow `drfx check --platform <platform> --json` proof.
 - `assurance=advisory` allows read-only advisory review only.
 - `resume` continues from target-local state.
+- `rounds=<n>` sets the maximum repair-loop count (positive integer). Unsupported with `read-only`.
 - `debug` prints redacted workflow audit details. Default output is concise.
 - `root=<path>` sets the project root used for containment and state layout.
 - `ledger=<path>` selects a custom issue ledger path inside the target state directory.
-- `guard=git|snapshot` selects the rollback and target-only guard family. `git` is the default; `snapshot` uses file snapshots when a Git rollback anchor is unavailable.
+- `guard=git|snapshot` selects the rollback and target-only guard family. `guard=git` is the default; `guard=snapshot` uses file snapshots when a Git rollback anchor is unavailable. The route never silently switches guard modes.
+
+### review-fix-pr
+
+Syntax:
+
+```text
+review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<path>] [debug]
+```
+
+- `base=<branch>` is required. The diff is `base..HEAD`, resolved locally with no fetch, push, or ref mutation.
+- `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code and Codex; advisory read-only on Gemini).
+- `guard=git` is the default; use `guard=snapshot` when a Git rollback anchor is unavailable. The route never silently switches guard modes.
+- `resume` explicitly continues from saved state. Stale state is refused; there is no silent reuse.
+- `rounds=<n>` sets the maximum repair-loop count (positive integer). Unsupported with `read-only`.
+- `root=<path>` sets the project root.
+- Does not accept `target=`, `ref=`, `strict`, `normal`, `assurance=`, or `ledger=`.
+
+### review-fix-code
+
+Syntax:
+
+```text
+review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<path>] [debug]
+```
+
+- `scope=<path>` names a source root to review. Repeat `scope=` for multiple roots. Empty scope means the whole project root.
+- Mandatory exclusions: `.git`, `.docs-review-fix`, `node_modules`, build outputs, and similar infrastructure directories are always excluded from the reviewed file set.
+- `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code and Codex; advisory read-only on Gemini).
+- `guard=git` is the default; use `guard=snapshot` when a Git rollback anchor is unavailable. The route never silently switches guard modes.
+- `resume` explicitly continues from saved state. Stale state is refused; there is no silent reuse.
+- `rounds=<n>` sets the maximum repair-loop count (positive integer). Unsupported with `read-only`.
+- `root=<path>` sets the project root.
+- Does not accept `target=`, `ref=`, `base=`, `strict`, `normal`, `assurance=`, or `ledger=`.
 
 `guard=snapshot` monitoring details:
 
@@ -178,6 +284,10 @@ Help-style or invalid invocations explain usage only and must not read files, ru
 - Reports `Unfixed:` when accepted issues remain.
 
 Gemini supports advisory read-only review. Gemini does not support `review-and-fix` or `assurance=strict-verified`.
+
+Code routes (`review-fix-pr`, `review-fix-code`) on Gemini are advisory-only: `review-and-fix` is unsupported, workflow PASS is unavailable, and automatic fixing never runs. Use Claude Code or Codex for automatic code fixing.
+
+`read-only` paths never claim PASS and create no auto-fix state, on any platform.
 
 ## Output
 
@@ -237,7 +347,9 @@ Other guard blockers use different wording: `target-only-guard-unavailable` mean
 
 ## Review Rules
 
-Every route applies the COMMON rubric first. Specialized routes add one type-specific rubric:
+### Document routes
+
+Every document route applies the COMMON rubric first. Specialized routes add one type-specific rubric:
 
 - `review-fix-spec`: COMMON plus SPEC.
 - `review-fix-plan`: COMMON plus PLAN.
@@ -250,6 +362,15 @@ Built-in rubrics:
 - SPEC: requirements, product behavior, API behavior, scope, actors, permissions, integrations, acceptance criteria, edge cases, and verifiability.
 - PLAN: implementation steps, prerequisites, tooling, verification, rollback, failure handling, data safety, compatibility, and handoff readiness.
 - DESIGN: UX, UI, product workflows, system or architecture design, states, transitions, contracts, data flow, accessibility, responsiveness, localization, constraints, and risks.
+
+### Code routes
+
+Code routes (`review-fix-pr`, `review-fix-code`) use self-contained rubrics with no COMMON layer:
+
+- `review-fix-pr`: correctness, regression, safety, tests, contracts, maintainability, and platform.
+- `review-fix-code`: correctness, architecture, state-and-io, safety, tests, contracts, maintainability, and platform.
+
+Code review is actionable-only: pure style preferences, no-risk refactors, and over-abstraction opinions are not blocking findings.
 
 ### Reference Conformance
 
@@ -274,21 +395,27 @@ Supported V3 custom rule files:
 ~/.docs-review-fix/rules/SPEC.md
 ~/.docs-review-fix/rules/PLAN.md
 ~/.docs-review-fix/rules/DESIGN.md
+~/.docs-review-fix/rules/PR.md
+~/.docs-review-fix/rules/CODE.md
 .docs-review-fix/rules/COMMON.md
 .docs-review-fix/rules/SPEC.md
 .docs-review-fix/rules/PLAN.md
 .docs-review-fix/rules/DESIGN.md
+.docs-review-fix/rules/PR.md
+.docs-review-fix/rules/CODE.md
 ```
 
-Each custom rule file is a plain Markdown fragment. It does not need a wrapping `## SPEC`, `## PLAN`, `## DESIGN`, or `## COMMON` heading.
+Each custom rule file is a plain Markdown fragment. It does not need a wrapping heading.
 
 For a typed review, the loader reads only `COMMON.md` plus the current document type file from user-global and project-local rules. A `SPEC` review does not read `PLAN.md` or `DESIGN.md`; a `PLAN` review does not read `SPEC.md` or `DESIGN.md`; a `DESIGN` review does not read `SPEC.md` or `PLAN.md`; a COMMON document review reads only `COMMON.md`.
+
+Code routes (`review-fix-pr`, `review-fix-code`) have no COMMON layer. A `PR` review reads only `PR.md`; a `CODE` review reads only `CODE.md`. The user-global and project-local rule files for code routes follow the same two-tier layout as document routes.
 
 Legacy `RULE.md` is stale configuration. If `~/.docs-review-fix/RULE.md` or `.docs-review-fix/RULE.md` exists, workflow start blocks with `state-validation-failed` before writing target state.
 
 Unknown Markdown files under `rules/`, such as `Spec.md`, `SPEC-RULE.md`, or `REQUIREMENTS.md`, produce a normal-mode warning and continue. In strict mode, they block before target state is written.
 
-Rule precedence:
+Rule precedence (document routes):
 
 1. workflow hard constraints
 2. built-in COMMON rubric
@@ -297,6 +424,13 @@ Rule precedence:
 5. user-global document-type rules
 6. project-local COMMON rules
 7. project-local document-type rules
+
+Rule precedence (code routes — no COMMON layer):
+
+1. workflow hard constraints
+2. built-in code-route rubric (PR or CODE)
+3. user-global PR.md or CODE.md rules
+4. project-local PR.md or CODE.md rules
 
 Project-local rules are more specific than user-global rules. Custom rules cannot override workflow hard constraints.
 
@@ -380,7 +514,7 @@ Remove stale `RULE.md` files. Unknown Markdown files under `.docs-review-fix/rul
 
 `Unsupported: review-and-fix or strict-verified is unavailable on Gemini.`
 
-Use Gemini for advisory read-only review, or use Codex/Claude Code for automatic fixing.
+Use Gemini for advisory read-only review, or use Codex/Claude Code for automatic fixing. For code routes (`review-fix-pr`, `review-fix-code`), Gemini is advisory-only on all platforms: `review-and-fix` is unsupported, workflow PASS is unavailable, and no files are edited. Use Claude Code or Codex for code route automatic fixing.
 
 `Unfixed:` appears after review-and-fix.
 
