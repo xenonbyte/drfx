@@ -11,7 +11,9 @@ const {
   checkTargetOnlyWorktree,
   inspectActualChangedFiles,
   formatFixGuardReport,
-  parsePorcelainStatus
+  parsePorcelainStatus,
+  classifyFileSetChanges,
+  checkFileSetWorktree
 } = require('../lib/fix-guard');
 const { formatLedger, parseLedger } = require('../lib/ledger');
 const { readLease } = require('../lib/lock');
@@ -715,5 +717,160 @@ test('checkGitRollbackAnchor: priorFix rejects a staged target change', (t) => {
   assert.throws(
     () => checkGitRollbackAnchor({ projectRoot: root, targetPath: target, priorFix: true }),
     /rollback-unavailable/
+  );
+});
+
+// --- File-set git guard (PLAN-TASK-006) ---
+// classifyFileSetChanges is the PURE core: caller-supplied paths only, no git read.
+
+test('classifyFileSetChanges passes a clean baseline with no changes', () => {
+  const result = classifyFileSetChanges({ changedPaths: [], allowedSet: ['lib/a.js'] });
+  assert.equal(result.status, 'ok');
+  assert.deepEqual(result.offending, []);
+  assert.deepEqual(result.changedFiles, []);
+});
+
+test('classifyFileSetChanges allows route-owned prior-round changes only', () => {
+  const result = classifyFileSetChanges({
+    changedPaths: ['lib/a.js'],
+    allowedSet: ['lib/a.js', 'lib/b.js']
+  });
+  assert.equal(result.status, 'ok');
+  assert.deepEqual(result.offending, []);
+  assert.deepEqual(result.changedFiles, ['lib/a.js']);
+});
+
+test('classifyFileSetChanges blocks a change outside the allowed set', () => {
+  const result = classifyFileSetChanges({
+    changedPaths: ['lib/a.js', 'README.md'],
+    allowedSet: ['lib/a.js']
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+  assert.deepEqual(result.offending, ['README.md']);
+});
+
+test('classifyFileSetChanges allows files inside the allowed state directory', () => {
+  const result = classifyFileSetChanges({
+    changedPaths: ['lib/a.js', '.docs-review-fix/targets/x/reports/r.md'],
+    allowedSet: ['lib/a.js'],
+    allowedStateRelative: '.docs-review-fix/targets/x'
+  });
+  assert.equal(result.status, 'ok');
+  assert.deepEqual(result.changedFiles, ['lib/a.js']);
+});
+
+// checkFileSetWorktree is the WRAPPER: it reads REAL git status, not injected paths.
+
+test('file-set git guard allows route-owned prior-round changes only', (t) => {
+  const { root, target } = makeGitRepo(t);
+  fs.writeFileSync(path.join(root, 'docs', 'dep.md'), '# Dep\n');
+  git(root, 'add docs/dep.md');
+  git(root, 'commit -m dep');
+  // Both target and a recorded dependency file changed; both are in the allowed set.
+  fs.appendFileSync(target, '\nRoute-owned target change.\n');
+  fs.appendFileSync(path.join(root, 'docs', 'dep.md'), '\nNecessary dependency change.\n');
+
+  const result = checkFileSetWorktree({
+    projectRoot: root,
+    allowedFiles: ['docs/target.md', { path: 'docs/dep.md', reason: 'necessary dependency', issueId: 'ISSUE-001' }]
+  });
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(result.changedFiles, ['docs/dep.md', 'docs/target.md']);
+});
+
+test('file-set git guard blocks unrelated local changes', (t) => {
+  const { root, target } = makeGitRepo(t);
+  fs.appendFileSync(target, '\nRoute-owned target change.\n');
+  fs.writeFileSync(path.join(root, 'README.md'), '# Unrelated\n');
+
+  const result = checkFileSetWorktree({
+    projectRoot: root,
+    allowedFiles: ['docs/target.md']
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+  // Offending entries are redacted (sha256 only), never raw paths.
+  assert.match(result.entries[0].pathSha256, /^[a-f0-9]{64}$/);
+  assert.equal(Object.hasOwn(result.entries[0], 'path'), false);
+});
+
+test('file-set git guard blocks a file outside the allowed set even when target is allowed', (t) => {
+  const { root } = makeGitRepo(t);
+  fs.writeFileSync(path.join(root, 'docs', 'dep.md'), '# Dep\n');
+  git(root, 'add docs/dep.md');
+  git(root, 'commit -m dep');
+  fs.appendFileSync(path.join(root, 'docs', 'dep.md'), '\nDep changed but not recorded.\n');
+
+  // dep.md is NOT in the allowed set -> blocked.
+  const result = checkFileSetWorktree({
+    projectRoot: root,
+    allowedFiles: ['docs/target.md']
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+});
+
+test('file-set git guard allows files inside the allowed state directory', (t) => {
+  const { root, target } = makeGitRepo(t);
+  const stateDir = path.join(root, '.docs-review-fix', 'targets', 'target-md-aaaaaaaaaaaa');
+  fs.mkdirSync(path.join(stateDir, 'reports'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'reports', 'fix-guard-round-001.md'), '# Guard\n');
+  fs.appendFileSync(target, '\nRoute-owned change.\n');
+
+  const result = checkFileSetWorktree({
+    projectRoot: root,
+    allowedFiles: ['docs/target.md'],
+    allowedStateDir: stateDir
+  });
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(result.changedFiles, ['docs/target.md']);
+  assert.equal(result.allowedStateEntryCount, 1);
+});
+
+test('file-set git guard reads REAL worktree state and ignores a misleading allowed set', (t) => {
+  const { root, target } = makeGitRepo(t);
+  // The worktree actually changes an UNRELATED file. Even if the caller (wrongly) lists
+  // it as not-changed, the guard must still read git and block it.
+  fs.writeFileSync(path.join(root, 'secret.md'), '# Secret unrelated change\n');
+  fs.appendFileSync(target, '\nTarget change.\n');
+
+  const result = checkFileSetWorktree({
+    projectRoot: root,
+    allowedFiles: ['docs/target.md']
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+});
+
+test('file-set git guard blocks (never silently passes) when git is unavailable', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-fileset-nogit-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'docs', 'target.md'), '# Target\n');
+
+  const result = checkFileSetWorktree({
+    projectRoot: root,
+    allowedFiles: ['docs/target.md']
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'target-only-guard-unavailable');
+});
+
+test('file-set git guard rejects unsafe allowed paths', (t) => {
+  const { root } = makeGitRepo(t);
+  assert.throws(
+    () => checkFileSetWorktree({
+      projectRoot: root,
+      allowedFiles: ['../escape.md']
+    }),
+    (error) => error.blockingReason === 'target-only-guard-unavailable'
+  );
+  assert.throws(
+    () => checkFileSetWorktree({
+      projectRoot: root,
+      allowedFiles: ['/absolute/path.md']
+    }),
+    (error) => error.blockingReason === 'target-only-guard-unavailable'
   );
 });

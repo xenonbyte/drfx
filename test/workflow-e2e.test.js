@@ -876,6 +876,44 @@ test('guard=git second fix still rejects a non-target worktree change', async (t
   assert.equal(beginFix2.blockingReason, 'unexpected-worktree-change');
 });
 
+// PLAN-TASK-006 compatibility: the selected guard must never silently switch. Under
+// guard=snapshot inside a git repo, a non-target change made DURING the fix is blocked by
+// the SNAPSHOT guard (monitored-tree fingerprints diffed against the begin-fix baseline),
+// NOT by git, and the persisted guardMode stays 'snapshot' throughout.
+test('guard=snapshot in a git repo blocks a non-target change without switching to git', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', { guardMode: 'snapshot' });
+  const opts = () => workflowOptions(fixture, { now: new Date('2026-05-21T00:00:00.000Z') });
+
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  assert.equal(start.ok, true);
+  assert.equal(start.guardMode, 'snapshot');
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [...startArgs, '--phase', 'initial-review', '--result-stdin'],
+    workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [...startArgs, '--triage-stdin'],
+    workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+
+  // An unrelated (non-target, non-reference) project file exists at baseline.
+  const unrelated = path.join(fixture.root, 'docs', 'unrelated.md');
+  fs.writeFileSync(unrelated, '# Unrelated\n');
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+  assert.equal(manifestAt(start.manifestPath).guardMode, 'snapshot');
+
+  // The fixer edits the target AND tampers the unrelated project file during the fix.
+  fs.writeFileSync(fixture.target, '# Practical Workflow Target\n\nFix output names the expected behavior.\n');
+  fs.writeFileSync(unrelated, '# Unrelated\n\nTampered mid-fix.\n');
+
+  const endFix = await runWorkflowCommand('end-fix', [start.targetStateDir, '--fix-report-stdin', '--json'],
+    workflowOptions(fixture, { stdin: FIX_REPORT }));
+  assert.equal(endFix.ok, false, JSON.stringify(endFix));
+  assert.equal(endFix.blockingReason, 'unexpected-worktree-change');
+  // The guard did not fall back to git: guardMode is unchanged in the manifest.
+  assert.equal(manifestAt(start.manifestPath).guardMode, 'snapshot');
+});
+
 test('guard=git second fix rejects an empty fix that did not change the target this round', async (t) => {
   const fixture = makeWorkflowRepo(t);
   const { start, opts } = await driveToSecondFixPhase(fixture);
