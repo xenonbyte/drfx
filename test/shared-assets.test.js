@@ -1153,6 +1153,12 @@ test('Gemini code routes are advisory only', () => {
     // Gemini code routes never silently default omitted mode to read-only; they
     // render the shared review-and-fix default as unsupported/advisory-only.
     assert.doesNotMatch(command, /missing mode selects `?read-only`?/i);
+    // The displayed invocation grammar line must match the advisory-only gate body:
+    // no review-and-fix, no rounds, no resume tokens advertised on Gemini code routes.
+    const targetToken = routeName === 'review-fix-pr' ? 'base=<branch>' : 'scope=<path>';
+    const grammar = command.match(new RegExp(`${routeName} ${targetToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\n]*`));
+    assert.ok(grammar, `${routeName} gemini grammar line must be present`);
+    assert.doesNotMatch(grammar[0], /review-and-fix|rounds=|resume/, `${routeName} gemini grammar must not advertise review-and-fix/rounds/resume`);
   }
 });
 

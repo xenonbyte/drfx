@@ -32,7 +32,7 @@ Route contract:
 - Do not call, wrap, or delegate to a platform-native code-review command; this route only produces advisory read-only findings.
 
 Invocation:
-review-fix-code scope=<path> [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<project-root>] [debug]
+review-fix-code scope=<path> [scope=<path>...] [read-only] [guard=git|snapshot] [root=<project-root>] [debug]
 
 Full form: review-fix-code scope=<path> [scope=<path>...] ... . At least one scope=<path> is required and names a source root to review; repeat scope=<path> for multiple roots. There is no bare-path or target= form for this route.
 
