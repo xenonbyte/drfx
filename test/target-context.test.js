@@ -109,6 +109,17 @@ test('pr resolver discovers modified, deleted, added, and renamed files', async 
   assert.ok(renamed, 'expected a renamed entry');
   assert.equal(renamed.path, 'src/new-name.js');
   assert.equal(renamed.fromPath, 'src/old-name.js');
+
+  // Every live-resolved entry must carry a per-file identity token that is a
+  // 40-hex git blob OID, or 'none' for a deleted path with no HEAD blob.
+  for (const entry of context.files) {
+    assert.match(
+      String(entry.contentId),
+      /^([0-9a-f]{40}|none)$/,
+      `${entry.path} contentId must be a blob OID or none`
+    );
+  }
+  assert.match(byPath.get('src/keep.js').contentId, /^[0-9a-f]{40}$/);
 });
 
 test('pr resolver rejects a missing base argument', async (t) => {
@@ -163,18 +174,18 @@ test('pr resolver resolves a tag base and a commit-sha base', async (t) => {
 
 test('computeFileSetFingerprint is order-independent and deterministic', () => {
   const a = computeFileSetFingerprint([
-    { path: 'b.js', sha256: 'b'.repeat(64), status: 'modified' },
-    { path: 'a.js', sha256: 'a'.repeat(64), status: 'modified' }
+    { path: 'b.js', contentId:'b'.repeat(64), status: 'modified' },
+    { path: 'a.js', contentId:'a'.repeat(64), status: 'modified' }
   ]);
   const b = computeFileSetFingerprint([
-    { path: 'a.js', sha256: 'a'.repeat(64), status: 'modified' },
-    { path: 'b.js', sha256: 'b'.repeat(64), status: 'modified' }
+    { path: 'a.js', contentId:'a'.repeat(64), status: 'modified' },
+    { path: 'b.js', contentId:'b'.repeat(64), status: 'modified' }
   ]);
   assert.equal(a, b);
   assert.match(a, /^[0-9a-f]{64}$/);
 
   const different = computeFileSetFingerprint([
-    { path: 'a.js', sha256: 'c'.repeat(64), status: 'modified' }
+    { path: 'a.js', contentId:'c'.repeat(64), status: 'modified' }
   ]);
   assert.notEqual(a, different);
 });
@@ -188,8 +199,8 @@ function sampleContext() {
     head: '3'.repeat(40),
     currentBranch: 'feature',
     files: [
-      { path: 'src/keep.js', status: 'modified', sha256: 'a'.repeat(64) },
-      { path: 'src/added.js', status: 'added', sha256: 'b'.repeat(64) }
+      { path: 'src/keep.js', status: 'modified', contentId:'a'.repeat(64) },
+      { path: 'src/added.js', status: 'added', contentId:'b'.repeat(64) }
     ]
   };
 }
@@ -244,7 +255,7 @@ test('comparePrIdentity flags any drift in base revision, merge-base, head, or f
   const changedFiles = buildPrIdentity({
     context: {
       ...sampleContext(),
-      files: [{ path: 'src/keep.js', status: 'modified', sha256: 'f'.repeat(64) }]
+      files: [{ path: 'src/keep.js', status: 'modified', contentId:'f'.repeat(64) }]
     },
     guardMode: 'git',
     roundLimit: 2
