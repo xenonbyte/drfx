@@ -151,6 +151,32 @@ test('code resolver rejects excluded scopes before review starts', async (t) => 
   }
 });
 
+test('code resolver blocks a scope that descends INTO an excluded directory', async (t) => {
+  const fixture = makeCodeFixture(t);
+  // node_modules/dep exists in the fixture; scoping into it must not leak
+  // dependency files just because the excluded dir is not the top segment.
+  const result = await resolveCodeTarget({ cwd: fixture.root, scopes: ['node_modules/dep'] });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.reason, 'excluded-scope');
+});
+
+test('code resolver rejects a scope that points to a file, not a directory', async (t) => {
+  const fixture = makeCodeFixture(t);
+  await assert.rejects(
+    resolveCodeTarget({ cwd: fixture.root, scopes: ['src/a.js'] }),
+    (error) => error.code === 'ERR_CODE_SCOPE_NOT_DIRECTORY'
+  );
+});
+
+test('code resolver de-duplicates overlapping scopes into one file set', async (t) => {
+  const fixture = makeCodeFixture(t);
+  const result = await resolveCodeTarget({ cwd: fixture.root, scopes: ['src', 'src/nested'] });
+  const paths = result.files.map((entry) => entry.path);
+  // src/nested/b.js is reachable via both scopes but must appear exactly once.
+  assert.deepEqual(paths, ['src/a.js', 'src/nested/b.js']);
+  assert.equal(new Set(paths).size, paths.length, 'no duplicate paths');
+});
+
 test('code resolver does not follow symlinks that escape the root during traversal', async (t) => {
   const fixture = makeCodeFixture(t);
   const outside = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-code-out2-')));
