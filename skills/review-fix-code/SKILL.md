@@ -5,17 +5,17 @@ description: Review and fix a source scope (the file set under one or more scope
 
 # review-fix-code
 
-Reviews a source scope: the file set under one or more `scope=<path>` roots. This is a code route, not a document route. It has no document type and no reference documents.
+Reviews a source scope: the file set under one or more `scope=<path>` roots, or the whole project root when `scope=` is omitted. This is a code route, not a document route. It has no document type and no reference documents.
 
 Users must not pass `target=`, `type`, `ref=`, `base=`, `assurance=`, `strict`, `normal`, or `ledger=`.
 
 Invocation syntax:
 
 ```text
-review-fix-code scope=<path> [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<project-root>] [debug]
+review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<project-root>] [debug]
 ```
 
-At least one `scope=<path>` is required and names a source root to review; repeat `scope=<path>` for multiple roots. There is no bare-path or `target=` form.
+`scope=<path>` names a source root to review; repeat `scope=<path>` for multiple roots. Omit `scope=` to review the whole project root. There is no bare-path or `target=` form.
 
 Valid invocations may omit mode. On Codex and Claude Code, missing mode selects `review-and-fix`. This code route exposes no user-facing `assurance=` token; for `review-and-fix` it internally materializes `practical` assurance (or `strict-verified` only on the same-flow strict proof path), so code auto-fix is never rejected as `advisory-review-and-fix-unsupported`. Gemini generated routes are advisory-only and render `review-and-fix` as unsupported; they produce read-only findings only and must not claim workflow PASS. Help-style or invalid invocations explain usage only and do not read files, run workflow commands, run probes, create state, or declare review results.
 

@@ -139,6 +139,33 @@ test('file-set write eligibility preflight supports PR review-and-fix routes', a
   assert.match(result.targetKey, /^pr-[0-9a-f]{12}$/);
 });
 
+test('file-set write eligibility preflight rejects dirty PR members before any route-owned fix', async (t) => {
+  const root = freshRepo(t);
+  git(root, ['checkout', '-b', 'feature']);
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 11;\n');
+  git(root, ['add', 'src/a.js']);
+  git(root, ['commit', '-m', 'feature changes src a']);
+  fs.appendFileSync(path.join(root, 'src', 'a.js'), '\n// local dirty edit before drfx owns a fix round\n');
+
+  const result = await runWorkflowCommand('preflight', [
+    'review-fix-pr',
+    'base=main',
+    'review-and-fix',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    '--json'
+  ], { cwd: root });
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+});
+
 test('file-set write eligibility preflight supports bare CODE review-and-fix routes', async (t) => {
   const root = freshRepo(t);
   const result = await runWorkflowCommand('preflight', [

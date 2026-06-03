@@ -740,6 +740,17 @@ test('classifyFileSetChanges allows route-owned prior-round changes only', () =>
   assert.deepEqual(result.changedFiles, ['lib/a.js']);
 });
 
+test('classifyFileSetChanges blocks dirty allowed files when prior-round allowance is disabled', () => {
+  const result = classifyFileSetChanges({
+    changedPaths: ['lib/a.js'],
+    allowedSet: ['lib/a.js', 'lib/b.js'],
+    allowAllowedFileChanges: false
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+  assert.deepEqual(result.offending, ['lib/a.js']);
+});
+
 test('classifyFileSetChanges blocks a change outside the allowed set', () => {
   const result = classifyFileSetChanges({
     changedPaths: ['lib/a.js', 'README.md'],

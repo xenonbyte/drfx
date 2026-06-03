@@ -1212,6 +1212,9 @@ test('PR and CODE source skills exist with code-route contract guidance', () => 
   // CODE skill
   assert.match(code, /^name: review-fix-code$/m);
   assert.match(code, /scope=<path>/);
+  assert.match(code, /review-fix-code \[scope=<path>\.\.\.\]/);
+  assert.match(code, /Omit `scope=` to review the whole project root/i);
+  assert.doesNotMatch(code, /At least one `scope=<path>` is required/i);
   assert.match(code, /must not pass `target=`, `type`, `ref=`, `base=`, `assurance=`, `strict`, `normal`, or `ledger=`/);
   assert.match(code, /internally materializes `practical` assurance/i);
   assert.match(code, /advisory-review-and-fix-unsupported/);
