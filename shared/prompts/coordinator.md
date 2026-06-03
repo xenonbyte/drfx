@@ -27,7 +27,7 @@ Constraints:
 - reviewer subagent is mandatory and read-only
 - fixer subagent is optional and serial
 - coordinator fixes directly by default
-- only the target document may be modified
+- only the target context may be modified: the target document for document routes, or the resolved file set plus recorded necessary dependency files for PR/CODE routes
 - reference documents are read-only
 - ref= documents are consistency sources, not mandatory upstream chains
 - no unconfirmed background, requirements, or external facts
@@ -71,8 +71,8 @@ Loop:
 12. Acquire the target lock before any target modification.
 13. Run the pre-fix guard: confirm the current target fingerprint matches the lock and manifest state.
 14. Fix accepted issues directly by default, or with one bounded serial fixer subagent.
-15. Review the diff. Confirm fixes map to accepted issue IDs and introduce no unrelated scope.
-16. Run a full-document re-review through a fresh isolated read-only reviewer.
+15. Review the diff. Confirm fixes map to accepted issue IDs and introduce no unrelated scope. For every fix round, record the verification command or inspection method used, its result, and the residual risk when no suitable verification can run.
+16. Run a full re-review of the whole target context through a fresh isolated read-only reviewer. Never claim PASS from a read-only, advisory-only, diff-review-only, or otherwise unverified path.
 17. Repeat triage, fix, diff review, and full re-review until a terminal or pause state.
 
 Rule file strictness:

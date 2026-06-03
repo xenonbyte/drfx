@@ -6,15 +6,23 @@ One-shot `read-only` without `ledger=` and without `resume` is no-state: do not 
 
 No-state read-only uses command-generated `reviewGuard` and `stateToken` values kept only in coordinator memory. These tokens are redacted normalized state, not document content. Do not write them to disk, do not edit them, and never finalize no-state as `pass`; clean read-only status is `read-only-clean`.
 
+## Route Target Contexts
+
+A route resolves one of three target contexts. The protocol below is identical across them; only the target identity differs.
+
+- Document routes (`review-fix-spec`/`plan`/`design`/`doc`): the target context is a single file. Its identity is the normalized target path relative to the project root.
+- PR route (`review-fix-pr`): the target context is the file set of a local PR diff (`base=<branch>` vs `HEAD`, via the local merge base). Its identity is the route kind plus the base ref, with a deterministic file-set fingerprint over the diff. PR resolution is local and read-only: never fetch, push, or mutate refs.
+- CODE route (`review-fix-code`): the target context is the file set discovered by traversing in-root source `scope=<path>` directories under mandatory exclusions. Its identity is the route kind plus the normalized scopes/exclusions, with a deterministic file-set fingerprint over the discovered files.
+
 ## Target State Directory
 
-All persistent state for one target lives under:
+All persistent state for one target context lives under:
 
 ```text
 .docs-review-fix/targets/<target-key>/
 ```
 
-The target key is derived from the normalized target path relative to the document project root, not from content. Use a readable slug plus a 12-hex SHA-256 prefix of the normalized path.
+For a document route the target key is derived from the normalized target path relative to the project root, not from content. For a file-set route (PR/CODE) the target key is derived from the route kind plus the base/scope identity, not from content. In both cases use a readable slug or route-kind prefix plus a 12-hex SHA-256 prefix of that identity.
 
 Target-local layout:
 
@@ -34,12 +42,12 @@ Project-root `.docs-review-fix/rules/` is shared project configuration, not targ
 
 ## Manifest Fields
 
-`MANIFEST.md` records enough state to resume safely:
+`MANIFEST.md` records enough state to resume safely. The manifest carries an optional `Target context kind` discriminator (`document`, `pr`, or `code`); absent means `document`, so existing document manifests are unchanged. The identity block varies by kind; the shared workflow fields below apply to every kind.
+
+Shared fields (all kinds):
 
 - Manifest schema: `2`.
-- Target path.
-- Normalized target path.
-- Document type: `SPEC`, `PLAN`, `DESIGN`, or `COMMON`.
+- Target context kind: `document`, `pr`, or `code` (omitted for document, which is the default).
 - Strictness: `normal` or `strict`.
 - Mode: `review-and-fix` or `read-only`.
 - Assurance: `practical`, `strict-verified`, or `advisory`.
@@ -51,13 +59,24 @@ Project-root `.docs-review-fix/rules/` is shared project configuration, not targ
 - Read-only clean status: `read-only-clean`.
 - Current round.
 - Current phase.
-- Initial content sha256.
-- Last known content sha256.
-- Last reviewed content sha256.
-- Last passed content sha256.
-- Last modified timestamp and file size when available.
-- Reference paths. The manifest records reference paths; read-only role is preserved in context packs/normalized references, not as per-reference manifest flags.
+- Round limit when `rounds=<n>` is supplied; omitted otherwise.
+- Last modified timestamp.
 - Created and updated timestamps.
+
+Document target context identity:
+
+- Target path and normalized target path.
+- Document type: `SPEC`, `PLAN`, `DESIGN`, or `COMMON`.
+- Initial, last known, last reviewed, and last passed content sha256.
+- File size when available.
+- Reference paths. The manifest records reference paths; read-only role is preserved in context packs/normalized references, not as per-reference manifest flags.
+
+File-set (PR/CODE) target context identity:
+
+- Document type is `none`; PR/CODE routes have no fixed document type and record no single-file content sha256 or file size.
+- A deterministic file-set fingerprint over the resolved files identifies the reviewed set; a changed fingerprint means the set drifted.
+- PR records the base ref plus the resolved base, merge-base, and HEAD commits.
+- CODE records the normalized scopes and the mandatory exclusion list.
 
 If `ledger=` is supplied, record the resolved target-local ledger path. A custom ledger must stay inside `.docs-review-fix/targets/<target-key>/` and must not point to reserved state files, `LOCK/`, `stale-locks/`, or `rounds/`.
 
@@ -128,23 +147,25 @@ Semantic payloads enter workflow commands through real stdin handoff. Do not use
 
 ## Resume Rules
 
+Resume is never silent. A matching target context without an explicit `resume` token is not reused; a fresh start over existing state stops as state-already-exists. An explicit `resume` whose recorded identity is stale (any mismatch, including the round limit) is refused, not silently continued.
+
 On `resume`:
 
-1. Derive the target key from the requested target path.
+1. Derive the target key from the requested target context identity (document: the normalized target path; PR/CODE: the route kind plus base/scope identity).
 2. Read that target's `MANIFEST.md`.
 3. Read the manifest `Ledger path`, defaulting to target-local `ISSUES.md`.
 4. Read `CONTINUITY.md` when present.
-5. Confirm the manifest target path matches the requested target.
+5. Confirm the manifest target context matches the requested one (document: the manifest target path matches the requested target; PR/CODE: the base/scope identity and file-set fingerprint match).
 6. Restore strictness and mode from the manifest unless the user explicitly asks to change them.
-7. Rebuild the merged rule set from current shared rubrics, user-global rules, and project-local rules.
-8. Compute the current target fingerprint and compare it with manifest fingerprints.
+7. Rebuild the merged rule set from current shared rubrics (document routes) or the route-kind rule stack (PR/CODE), plus user-global and project-local rules.
+8. Recompute the current target context identity and compare it with the manifest: document routes compare the content fingerprint; PR/CODE routes compare the file-set fingerprint.
 9. Continue from the recorded next action only when state is still valid.
 
 If the current invocation supplies different strictness or mode from the manifest, stop and ask whether to resume with manifest values or start a new review round. A `read-only` manifest must not resume into `review-and-fix` without explicit user confirmation.
 
 ## Stale PASS Clearing
 
-If manifest status is `pass` but the current content fingerprint differs from `Last passed content sha256`, clear the old PASS. Start a new full review round before claiming any current PASS.
+If manifest status is `pass` but the current target context identity no longer matches what was passed — document routes: the current content fingerprint differs from the last passed content sha256; PR/CODE routes: the current file-set fingerprint differs from the passed file-set fingerprint — clear the old PASS. Start a new full review round before claiming any current PASS.
 
 If the target changed while status was not `pass`, set status to `externally-changed`, require a full re-review, and reopen affected issues when uncertain.
 

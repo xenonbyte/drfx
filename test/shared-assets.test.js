@@ -1202,3 +1202,69 @@ test('PR and CODE source skills exist with code-route contract guidance', () => 
     }
   }
 });
+
+// ---------------------------------------------------------------------------
+// PLAN-TASK-009 (Phase D): shared protocol text describes generalized route target
+// contexts (document/PR/CODE) without leaking document-only claims. The Task-8
+// document SHELL snapshot masks embedded content; these are the SEMANTIC assertions
+// over the shared source and the embedded code-route content.
+// ---------------------------------------------------------------------------
+
+test('long-task.md describes route target contexts and file-set manifest identity', () => {
+  const longTask = read('shared/long-task.md');
+  assert.match(longTask, /Route Target Contexts/i);
+  assert.match(longTask, /review-fix-pr/);
+  assert.match(longTask, /review-fix-code/);
+  // File-set manifest identity: the discriminator and the file-set fingerprint.
+  assert.match(longTask, /Target context kind/i);
+  assert.match(longTask, /file-set fingerprint/i);
+  // File-set resume/stale rules are described (no silent reuse, stale refusal).
+  assert.match(longTask, /[Rr]esume is never silent/);
+  assert.match(longTask, /file-set fingerprint/i);
+  // PR resolution is local and read-only (no fetch/push/ref mutation).
+  assert.match(longTask, /never fetch, push, or mutate refs/i);
+});
+
+test('long-task.md does not leak document-only claims as universal target context truth', () => {
+  const longTask = read('shared/long-task.md');
+  // The old document-only target-key claim must no longer be stated as the only rule.
+  assert.doesNotMatch(
+    longTask,
+    /^The target key is derived from the normalized target path relative to the document project root, not from content\.$/m
+  );
+  // The document content-sha fields must be presented under the document identity block,
+  // not as a universal manifest requirement for every kind.
+  assert.match(longTask, /Document target context identity/i);
+  assert.match(longTask, /File-set \(PR\/CODE\) target context identity/i);
+  assert.match(longTask, /Document type is `none`/);
+});
+
+test('generated PR/CODE route content carries generalized target-context text and no document-only leak', () => {
+  for (const output of generatedCodeRoutes()) {
+    // The embedded long-task content (route target contexts) reaches the generated route.
+    assert.match(output.body, /Route Target Contexts/i, `${output.platform}:${output.routeName}`);
+    assert.match(output.body, /Target context kind/i, `${output.platform}:${output.routeName}`);
+    assert.match(output.body, /file-set fingerprint/i, `${output.platform}:${output.routeName}`);
+    // Must NOT leak the document-only target-key derivation claim verbatim.
+    assert.doesNotMatch(
+      output.body,
+      /target key is derived from the normalized target path relative to the document project root/i,
+      `${output.platform}:${output.routeName} leaks document-only target-key claim`
+    );
+    // Must NOT present single-file sha/size-only state as the only manifest identity.
+    assert.match(output.body, /File-set \(PR\/CODE\) target context identity/i, `${output.platform}:${output.routeName}`);
+  }
+});
+
+test('fixer/coordinator prompts describe the file-set dependency boundary and per-round verification', () => {
+  const fixer = read('shared/prompts/fixer.md');
+  const coordinator = read('shared/prompts/coordinator.md');
+  // Dependency-file boundary for PR/CODE routes (recorded, in-root, non-excluded, guarded).
+  assert.match(fixer, /recorded necessary dependency file/i);
+  assert.match(fixer, /in-root, non-excluded, and present in the monitored file set/i);
+  // Per-round verification recording.
+  assert.match(fixer, /record the verification command or inspection method used/i);
+  assert.match(coordinator, /record the verification command or inspection method used/i);
+  // Never PASS from read-only/advisory/diff-review-only/unverified.
+  assert.match(coordinator, /Never claim PASS from a read-only, advisory-only, diff-review-only, or otherwise unverified path/i);
+});

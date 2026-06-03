@@ -128,3 +128,26 @@ test('reports whether sensitive text was redacted', () => {
   assert.equal(result.value, 'Authorization: Bearer [REDACTED:api-token]');
   assertNoRawSecrets(result.value);
 });
+
+// PLAN-TASK-009 (Phase D): file-set (PR/CODE) state writes go through the same
+// atomicWriteFile → redactSensitive path as document state, so secrets in a file-set
+// manifest are redacted at write time exactly like document manifests. Confirm the
+// route-agnostic redaction holds for a file-set manifest base ref / scope value.
+test('file-set manifest writes redact secrets via the shared atomic-write path', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { atomicWriteFile } = require('../lib/workflow-state');
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-redact-fs-'));
+  try {
+    const target = path.join(dir, 'state.md');
+    // A base ref or scope value carrying an embedded credential must be redacted.
+    atomicWriteFile(target, 'Base: feature/Authorization: Bearer sk-live-1234567890abcdef\n');
+    const written = fs.readFileSync(target, 'utf8');
+    assert.match(written, /\[REDACTED:api-token\]/);
+    assertNoRawSecrets(written);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

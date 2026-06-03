@@ -1,6 +1,6 @@
 # Document Review Loop Core
 
-This file is the shared workflow source for `review-fix-spec`, `review-fix-plan`, `review-fix-design`, and `review-fix-doc`. Entry skills fix the document type; users must not pass type.
+This file is the shared workflow source for every route: the document routes `review-fix-spec`, `review-fix-plan`, `review-fix-design`, and `review-fix-doc`, and the file-set routes `review-fix-pr` and `review-fix-code`. Document entry skills fix the document type; users must not pass type. File-set routes (PR/CODE) have no fixed document type and resolve a file set rather than a single target document; the loop, guards, and terminal states below apply to that file set as the target context.
 
 ## Loop
 

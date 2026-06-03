@@ -11,7 +11,8 @@ Confirmed issues:
 
 Constraints:
 - Fix only coordinator-accepted issue IDs.
-- The fixer may modify only the target document.
+- For a document route, the fixer may modify only the target document.
+- For a PR/CODE route, the fixer may modify only files inside the resolved target file set, plus any recorded necessary dependency file. Each dependency file edited outside that set must be declared with its path, the reason it is necessary, and the issue ID it serves; it must be in-root, non-excluded, and present in the monitored file set before its first write. Never edit a dependency file that is not in this recorded, guarded set.
 - References and other files remain read-only.
 - Work serially and stop for coordinator lock refresh before writes after 60 seconds.
 - Do not expand scope.
@@ -35,5 +36,7 @@ Not fixed:
 Residual risk:
 - <risk, or none identified>
 
-If a requested fix cannot be made under the target-only rule, leave the target unchanged for that issue and report it under Not fixed.
+For every fix round, record the verification command or inspection method used, its result, and the residual risk when no suitable verification can run.
+
+If a requested fix cannot be made within the target context and its recorded dependency set, leave the affected files unchanged for that issue and report it under Not fixed.
 ```
