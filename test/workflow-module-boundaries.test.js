@@ -39,7 +39,16 @@ const MODULE_RULES = {
     'runFileSetRecordTriage'
   ]),
   'file-set-finalize.js': new Set([
-    'runFileSetResume'
+    'runFileSetResume',
+    'runFileSetRecordDiffReview',
+    'runFileSetFinalize'
+  ]),
+  'file-set-fix.js': new Set([
+    'runBeginFix',
+    'runRefreshLock',
+    'runEndFix',
+    'runAbortFix',
+    'runFileSetFixLifecycleCommand'
   ])
 };
 

@@ -141,6 +141,309 @@ test('CODE file-set context describes the scoped file set, never a single docume
   assert.equal(context.contextPackSkeleton.documentType, 'none');
 });
 
+const FIX_REPORT_FILESET = [
+  'Fixed:',
+  '- ISSUE-001: Restored the error handling around the call.',
+  '',
+  'Files changed:',
+  '- src/a.js',
+  '',
+  'Not fixed:',
+  '- none',
+  '',
+  'Verification:',
+  '- node --check src/a.js: passed',
+  '',
+  'Residual risk:',
+  '- none identified'
+].join('\n');
+
+const DIFF_OK = 'DIFF-OK\nSummary: File-set edit addresses ISSUE-001.\n';
+const REVIEW_PASS = 'PASS\nSummary: No blocking findings.\n';
+
+function finalPass(filesChanged) {
+  return [
+    'Final status: pass',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Mode: review-and-fix',
+    'Target: none',
+    `Files changed: ${filesChanged}`,
+    'Fixed issue IDs: ISSUE-001',
+    'Verification performed: node --check src/a.js',
+    'Deferrals or blockers: none',
+    'Blocking reason: none',
+    'Status reason: none',
+    'Residual risk: none identified',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: approved after full re-review'
+  ].join('\n');
+}
+
+test('PR file-set review-and-fix reaches pass through the file-set fix loop', async (t) => {
+  const root = makePrRepo(t);
+  const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
+  assert.equal(start.ok, true);
+
+  await runWorkflowCommand('context', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
+  await runWorkflowCommand('record-review', [
+    ...practicalArgs(['review-fix-pr', 'base=main']),
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_FAIL });
+  await runWorkflowCommand('record-triage', [
+    ...practicalArgs(['review-fix-pr', 'base=main']),
+    '--triage-stdin'
+  ], { cwd: root, stdin: TRIAGE_ACCEPT });
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+  assert.equal(beginFix.status, 'begin-fix');
+  assert.ok(beginFix.monitoredFileCount >= 2);
+
+  // The fixer edits a file IN the recorded file set.
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+  assert.equal(endFix.status, 'end-fix');
+  assert.deepEqual(endFix.verification, ['node --check src/a.js: passed']);
+  assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'diff-review');
+
+  const diff = await runWorkflowCommand('record-diff-review', [
+    start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], { cwd: root, stdin: DIFF_OK });
+  assert.equal(diff.ok, true);
+  assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'full-re-review');
+
+  await runWorkflowCommand('context', [
+    ...practicalArgs(['review-fix-pr', 'base=main']),
+    '--phase',
+    'full-re-review'
+  ], { cwd: root });
+  const fullReview = await runWorkflowCommand('record-review', [
+    ...practicalArgs(['review-fix-pr', 'base=main']),
+    '--phase',
+    'full-re-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_PASS });
+  assert.equal(fullReview.ok, true);
+
+  const final = await runWorkflowCommand('finalize', [
+    start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], { cwd: root, stdin: finalPass('src/a.js') });
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'pass');
+  assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'pass');
+
+  const ledger = parseLedger(fs.readFileSync(start.ledgerPath, 'utf8'));
+  assert.equal(ledger.issues.find((issue) => issue.id === 'ISSUE-001').status, 'fixed');
+});
+
+test('PR file-set cannot pass without a full re-review after the fix', async (t) => {
+  const root = makePrRepo(t);
+  const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
+  await runWorkflowCommand('context', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
+  await runWorkflowCommand('record-review', [
+    ...practicalArgs(['review-fix-pr', 'base=main']),
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_FAIL });
+  await runWorkflowCommand('record-triage', [
+    ...practicalArgs(['review-fix-pr', 'base=main']),
+    '--triage-stdin'
+  ], { cwd: root, stdin: TRIAGE_ACCEPT });
+  await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+  await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+  await runWorkflowCommand('record-diff-review', [
+    start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], { cwd: root, stdin: DIFF_OK });
+
+  // Skip the full re-review and try to pass directly: finalize must refuse.
+  const final = await runWorkflowCommand('finalize', [
+    start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], { cwd: root, stdin: finalPass('src/a.js') });
+  assert.equal(final.ok, false);
+  assert.equal(final.status, 'blocked');
+  assert.notEqual(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'pass');
+});
+
+test('PR file-set end-fix blocks a fix report missing per-round verification', async (t) => {
+  const root = makePrRepo(t);
+  const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
+  await runWorkflowCommand('context', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
+  await runWorkflowCommand('record-review', [
+    ...practicalArgs(['review-fix-pr', 'base=main']),
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_FAIL });
+  await runWorkflowCommand('record-triage', [
+    ...practicalArgs(['review-fix-pr', 'base=main']),
+    '--triage-stdin'
+  ], { cwd: root, stdin: TRIAGE_ACCEPT });
+  await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 99;\n');
+
+  const noVerification = [
+    'Fixed:',
+    '- ISSUE-001: Restored the error handling.',
+    '',
+    'Files changed:',
+    '- src/a.js',
+    '',
+    'Not fixed:',
+    '- none',
+    '',
+    'Residual risk:',
+    '- none identified'
+  ].join('\n');
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: noVerification });
+  assert.equal(endFix.ok, false);
+  assert.equal(endFix.status, 'blocked');
+});
+
+test('PR file-set end-fix blocks a fix that writes outside the recorded file set', async (t) => {
+  const root = makePrRepo(t);
+  const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
+  await runWorkflowCommand('context', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
+  await runWorkflowCommand('record-review', [
+    ...practicalArgs(['review-fix-pr', 'base=main']),
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_FAIL });
+  await runWorkflowCommand('record-triage', [
+    ...practicalArgs(['review-fix-pr', 'base=main']),
+    '--triage-stdin'
+  ], { cwd: root, stdin: TRIAGE_ACCEPT });
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  // Write a file NOT in the recorded set (src/a.js / src/b.js).
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 2;\n');
+  fs.writeFileSync(path.join(root, 'src', 'unrelated.js'), 'module.exports = 5;\n');
+
+  const declaresInSet = [
+    'Fixed:',
+    '- ISSUE-001: Restored the error handling.',
+    '',
+    'Files changed:',
+    '- src/a.js',
+    '',
+    'Not fixed:',
+    '- none',
+    '',
+    'Verification:',
+    '- node --check src/a.js: passed',
+    '',
+    'Residual risk:',
+    '- none identified'
+  ].join('\n');
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: declaresInSet });
+  // The unrelated.js untracked write makes the worktree fall outside the recorded set.
+  assert.equal(endFix.ok, false);
+  assert.equal(endFix.status, 'blocked');
+});
+
+test('CODE file-set snapshot-guard fix loop reaches pass and abort restores the baseline', async (t) => {
+  const root = makePrRepo(t);
+  const codeFix = [
+    'Fixed:',
+    '- ISSUE-001: Restored the error handling around the call.',
+    '',
+    'Files changed:',
+    '- src/a.js',
+    '',
+    'Not fixed:',
+    '- none',
+    '',
+    'Verification:',
+    '- node --check src/a.js: passed',
+    '',
+    'Residual risk:',
+    '- none identified'
+  ].join('\n');
+  const codeReviewFail = REVIEW_FAIL;
+
+  const start = await runWorkflowCommand('start', practicalArgs(['review-fix-code', 'scope=src', 'guard=snapshot']), { cwd: root });
+  assert.equal(start.ok, true);
+  assert.equal(start.guardMode, 'snapshot');
+
+  await runWorkflowCommand('context', practicalArgs(['review-fix-code', 'scope=src', 'guard=snapshot']), { cwd: root });
+  await runWorkflowCommand('record-review', [
+    ...practicalArgs(['review-fix-code', 'scope=src', 'guard=snapshot']),
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: codeReviewFail });
+  await runWorkflowCommand('record-triage', [
+    ...practicalArgs(['review-fix-code', 'scope=src', 'guard=snapshot']),
+    '--triage-stdin'
+  ], { cwd: root, stdin: TRIAGE_ACCEPT });
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  const before = fs.readFileSync(path.join(root, 'src', 'a.js'), 'utf8');
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+
+  // Abort restores the monitored file to its captured baseline body.
+  const aborted = await runWorkflowCommand('abort-fix', [
+    start.targetStateDir,
+    '--status',
+    'checkpoint',
+    '--reason',
+    'checkpoint-requested',
+    '--json'
+  ], { cwd: root });
+  assert.equal(aborted.ok, true, JSON.stringify(aborted));
+  assert.equal(aborted.status, 'checkpoint');
+  assert.equal(fs.readFileSync(path.join(root, 'src', 'a.js'), 'utf8'), before, 'abort restores the snapshot baseline');
+});
+
 test('PR file-set round-limit gate stops with deferrals instead of a clean pass', async (t) => {
   const root = makePrRepo(t);
   // rounds=1 with one already-completed fix attempt forces the limit at the loop boundary.
