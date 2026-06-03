@@ -1,6 +1,6 @@
 # CODE Rubric
 
-Use for focused code review of a file, module, or code area. Apply this rubric to evaluate the correctness, design, and safety of the code under review.
+Use for focused code review of a file, module, or code area. Apply this rubric to evaluate the correctness, design, and safety of the code under review. This rubric is self-contained: route-kind reviews have no COMMON layer, so do not apply `shared/rubrics/common.md`.
 
 ## Actionable-only triage boundary
 

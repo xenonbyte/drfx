@@ -1,6 +1,6 @@
 # PR Rubric
 
-Use for pull request code review. Apply this rubric to evaluate the correctness, safety, and maintainability impact of the changes introduced by the PR.
+Use for pull request code review. Apply this rubric to evaluate the correctness, safety, and maintainability impact of the changes introduced by the PR. This rubric is self-contained: route-kind reviews have no COMMON layer, so do not apply `shared/rubrics/common.md`.
 
 ## Actionable-only triage boundary
 
