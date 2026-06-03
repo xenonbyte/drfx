@@ -387,22 +387,6 @@ test('PR file-set end-fix blocks a fix that writes outside the recorded file set
 
 test('CODE file-set snapshot-guard fix loop reaches pass and abort restores the baseline', async (t) => {
   const root = makePrRepo(t);
-  const codeFix = [
-    'Fixed:',
-    '- ISSUE-001: Restored the error handling around the call.',
-    '',
-    'Files changed:',
-    '- src/a.js',
-    '',
-    'Not fixed:',
-    '- none',
-    '',
-    'Verification:',
-    '- node --check src/a.js: passed',
-    '',
-    'Residual risk:',
-    '- none identified'
-  ].join('\n');
   const codeReviewFail = REVIEW_FAIL;
 
   const start = await runWorkflowCommand('start', practicalArgs(['review-fix-code', 'scope=src', 'guard=snapshot']), { cwd: root });
