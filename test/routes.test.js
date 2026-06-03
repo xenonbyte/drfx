@@ -1,0 +1,179 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const { getRouteDescriptor, listRoutes, listDocumentRoutes } = require('../lib/routes');
+
+// ---------------------------------------------------------------------------
+// SPEC-FR-001: Six first-class routes
+// ---------------------------------------------------------------------------
+
+test('route registry exposes six supported routes with defaults', () => {
+  assert.deepEqual(listRoutes().map((route) => route.routeName), [
+    'review-fix-spec',
+    'review-fix-plan',
+    'review-fix-design',
+    'review-fix-doc',
+    'review-fix-pr',
+    'review-fix-code',
+  ]);
+  assert.equal(getRouteDescriptor('review-fix-pr').defaultMode, 'review-and-fix');
+  assert.equal(getRouteDescriptor('review-fix-pr').defaultGuard, 'git');
+});
+
+test('route registry exposes correct routeKind for each route', () => {
+  assert.equal(getRouteDescriptor('review-fix-spec').routeKind, 'document');
+  assert.equal(getRouteDescriptor('review-fix-plan').routeKind, 'document');
+  assert.equal(getRouteDescriptor('review-fix-design').routeKind, 'document');
+  assert.equal(getRouteDescriptor('review-fix-doc').routeKind, 'document');
+  assert.equal(getRouteDescriptor('review-fix-pr').routeKind, 'pr');
+  assert.equal(getRouteDescriptor('review-fix-code').routeKind, 'code');
+});
+
+test('all routes have defaultMode review-and-fix and defaultGuard git', () => {
+  for (const route of listRoutes()) {
+    assert.equal(route.defaultMode, 'review-and-fix', `${route.routeName}.defaultMode`);
+    assert.equal(route.defaultGuard, 'git', `${route.routeName}.defaultGuard`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// SPEC-IF-001: Route descriptor fields
+// ---------------------------------------------------------------------------
+
+test('document route descriptors expose documentType and rubric', () => {
+  const spec = getRouteDescriptor('review-fix-spec');
+  assert.equal(spec.documentType, 'SPEC');
+  assert.equal(spec.rubric, 'spec');
+  assert.equal(spec.targetContextKind, 'document');
+
+  const plan = getRouteDescriptor('review-fix-plan');
+  assert.equal(plan.documentType, 'PLAN');
+  assert.equal(plan.rubric, 'plan');
+  assert.equal(plan.targetContextKind, 'document');
+
+  const design = getRouteDescriptor('review-fix-design');
+  assert.equal(design.documentType, 'DESIGN');
+  assert.equal(design.rubric, 'design');
+  assert.equal(design.targetContextKind, 'document');
+
+  const doc = getRouteDescriptor('review-fix-doc');
+  assert.equal(doc.documentType, 'COMMON');
+  assert.equal(doc.rubric, null);
+  assert.equal(doc.targetContextKind, 'document');
+});
+
+test('pr and code route descriptors have null documentType and correct rubric', () => {
+  const pr = getRouteDescriptor('review-fix-pr');
+  assert.equal(pr.documentType, null);
+  assert.equal(pr.rubric, 'pr');
+  assert.equal(pr.targetContextKind, 'pr');
+
+  const code = getRouteDescriptor('review-fix-code');
+  assert.equal(code.documentType, null);
+  assert.equal(code.rubric, 'code');
+  assert.equal(code.targetContextKind, 'code');
+});
+
+test('route descriptors expose platform policy field', () => {
+  // Document routes: claude and codex support review-and-fix; gemini is advisory-only
+  const spec = getRouteDescriptor('review-fix-spec');
+  assert.ok(spec.platformPolicy, 'descriptor must have platformPolicy');
+  assert.equal(typeof spec.platformPolicy, 'object');
+
+  // PR/code routes: gemini is advisory-only (review-and-fix unsupported)
+  const pr = getRouteDescriptor('review-fix-pr');
+  assert.ok(pr.platformPolicy, 'pr descriptor must have platformPolicy');
+  assert.equal(typeof pr.platformPolicy, 'object');
+
+  const code = getRouteDescriptor('review-fix-code');
+  assert.ok(code.platformPolicy, 'code descriptor must have platformPolicy');
+  assert.equal(typeof code.platformPolicy, 'object');
+});
+
+test('platform policy marks gemini as advisory-only for all routes', () => {
+  for (const route of listRoutes()) {
+    assert.equal(
+      route.platformPolicy.gemini,
+      'advisory-only',
+      `${route.routeName} gemini policy must be advisory-only`
+    );
+  }
+});
+
+test('platform policy marks claude and codex as review-and-fix for all routes', () => {
+  for (const route of listRoutes()) {
+    assert.equal(
+      route.platformPolicy.claude,
+      'review-and-fix',
+      `${route.routeName} claude policy`
+    );
+    assert.equal(
+      route.platformPolicy.codex,
+      'review-and-fix',
+      `${route.routeName} codex policy`
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Document-only listing helper
+// ---------------------------------------------------------------------------
+
+test('listDocumentRoutes returns exactly the four document routes in order', () => {
+  const names = listDocumentRoutes().map((r) => r.routeName);
+  assert.deepEqual(names, [
+    'review-fix-spec',
+    'review-fix-plan',
+    'review-fix-design',
+    'review-fix-doc',
+  ]);
+  for (const route of listDocumentRoutes()) {
+    assert.equal(route.routeKind, 'document');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// getRouteDescriptor error behavior
+// ---------------------------------------------------------------------------
+
+test('getRouteDescriptor throws a coded error for unknown route names', () => {
+  let err;
+  try {
+    getRouteDescriptor('review-fix-unknown');
+  } catch (e) {
+    err = e;
+  }
+  assert.ok(err, 'should throw');
+  assert.equal(err.code, 'ERR_ROUTE');
+  assert.match(err.message, /unsupported route/i);
+});
+
+// ---------------------------------------------------------------------------
+// Document route compatibility assertions (SPEC-PLAN-001)
+// ---------------------------------------------------------------------------
+
+test('document route descriptors match the generator ROUTES shape exactly', () => {
+  // These values must stay identical to the current generator.js ROUTES for
+  // backwards compatibility with downstream code that consumes documentType/rubric.
+  const expectedDocRoutes = [
+    { routeName: 'review-fix-spec', documentType: 'SPEC', rubric: 'spec' },
+    { routeName: 'review-fix-plan', documentType: 'PLAN', rubric: 'plan' },
+    { routeName: 'review-fix-design', documentType: 'DESIGN', rubric: 'design' },
+    { routeName: 'review-fix-doc', documentType: 'COMMON', rubric: null },
+  ];
+
+  for (const expected of expectedDocRoutes) {
+    const descriptor = getRouteDescriptor(expected.routeName);
+    assert.equal(descriptor.routeName, expected.routeName);
+    assert.equal(descriptor.documentType, expected.documentType);
+    assert.equal(descriptor.rubric, expected.rubric);
+  }
+});
+
+test('descriptors are immutable (frozen)', () => {
+  const descriptor = getRouteDescriptor('review-fix-spec');
+  assert.throws(() => {
+    descriptor.routeName = 'mutated';
+  }, TypeError);
+});

@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { parseInvocation, parseNaturalLanguageInvocation, validateEntryPaths, DOCUMENT_TYPES } = require('../lib/input');
+const { getRouteDescriptor, listDocumentRoutes } = require('../lib/routes');
 
 function makeWorkspace() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-input-'));
@@ -197,4 +198,42 @@ test('uses realpaths for root containment and reference equality', () => {
   const refLinkToTarget = path.join(root, 'docs', 'ref-link.md');
   fs.symlinkSync(target, refLinkToTarget);
   assert.throws(() => validateEntryPaths({ target, refs: [refLinkToTarget], root }), /reference.*target/i);
+});
+
+// ---------------------------------------------------------------------------
+// Compatibility: DOCUMENT_TYPES in input.js must stay aligned with routes registry
+// ---------------------------------------------------------------------------
+
+test('DOCUMENT_TYPES aligns with route registry documentType values', () => {
+  for (const route of listDocumentRoutes()) {
+    assert.equal(
+      DOCUMENT_TYPES[route.routeName],
+      route.documentType,
+      `DOCUMENT_TYPES['${route.routeName}'] must match registry documentType`
+    );
+  }
+});
+
+test('parseInvocation still rejects PR and code entry skills as unknown', () => {
+  // PR/CODE parsing is PLAN-TASK-002; document parser must not recognize them yet
+  assert.throws(
+    () => parseInvocation('review-fix-pr', ['target=foo.md']),
+    /unknown entry skill/i
+  );
+  assert.throws(
+    () => parseInvocation('review-fix-code', ['target=foo.md']),
+    /unknown entry skill/i
+  );
+});
+
+test('route registry documentType matches getRouteDescriptor for all four document routes', () => {
+  const pairs = [
+    ['review-fix-spec', 'SPEC'],
+    ['review-fix-plan', 'PLAN'],
+    ['review-fix-design', 'DESIGN'],
+    ['review-fix-doc', 'COMMON'],
+  ];
+  for (const [routeName, expectedType] of pairs) {
+    assert.equal(getRouteDescriptor(routeName).documentType, expectedType);
+  }
 });

@@ -4,8 +4,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
-const { renderPlatformRoute } = require('../lib/generator');
+const { renderPlatformRoute, generatePlatformFiles } = require('../lib/generator');
 const { buildFinalResponseChecklist } = require('../lib/final-response');
+const { listDocumentRoutes } = require('../lib/routes');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -937,4 +938,28 @@ test('coordinator defines a recurrence + fix-attempt-cap convergence rule', () =
   const coordinator = read('shared/prompts/coordinator.md');
   assert.match(coordinator, /fix-attempt cap|recurr/i);
   assert.match(coordinator, /stopped-no-progress/);
+});
+
+// ---------------------------------------------------------------------------
+// Compatibility: generatePlatformFiles must still generate only document routes
+// ---------------------------------------------------------------------------
+
+test('generatePlatformFiles generates only the four document routes (not PR or code)', () => {
+  const documentRouteNames = listDocumentRoutes().map((r) => r.routeName);
+  assert.deepEqual(documentRouteNames, [
+    'review-fix-spec',
+    'review-fix-plan',
+    'review-fix-design',
+    'review-fix-doc',
+  ]);
+
+  for (const platform of ['claude', 'codex', 'gemini']) {
+    const files = generatePlatformFiles(platform, { packageVersion: '0.0.0-test' });
+    const generatedRouteNames = files.map((f) => f.routeName);
+    assert.deepEqual(
+      generatedRouteNames,
+      documentRouteNames,
+      `${platform} must only generate document routes`
+    );
+  }
 });
