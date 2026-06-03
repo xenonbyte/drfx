@@ -765,14 +765,27 @@ test('rendered gemini route keeps advisory next actions reachable', () => {
 });
 
 test('codex and claude routes run write eligibility preflight before semantic review', () => {
-  const codexTemplate = read('templates/codex-skill.md.tmpl');
-  const claudeTemplate = read('templates/claude-command.md.tmpl');
+  // The review-unit noun is route-aware (PLAN-TASK-009 Phase C3): a document route renders
+  // "semantic document review"; a PR/CODE route renders "semantic file-set review". Assert
+  // on the RENDERED routes so the route-aware substitution is covered, not the raw template.
+  const documentRoutes = [
+    renderPlatformRoute('codex', 'review-fix-spec', { packageVersion: '0.0.0-test' }),
+    renderPlatformRoute('claude', 'review-fix-spec', { packageVersion: '0.0.0-test' })
+  ];
+  for (const rendered of documentRoutes) {
+    assert.match(rendered, /Review-And-Fix Write Eligibility Preflight/i);
+    assert.match(rendered, /drfx workflow preflight/i);
+    assert.match(rendered, /before runtime readiness probe, semantic reviewer dispatch, semantic document review, and target-local workflow state creation/i);
+    assert.match(rendered, /cannot be auto-fixed because it lacks a clean rollback anchor/i);
+  }
 
-  for (const template of [codexTemplate, claudeTemplate]) {
-    assert.match(template, /Review-And-Fix Write Eligibility Preflight/i);
-    assert.match(template, /drfx workflow preflight/i);
-    assert.match(template, /before runtime readiness probe, semantic reviewer dispatch, semantic document review, and target-local workflow state creation/i);
-    assert.match(template, /cannot be auto-fixed because it lacks a clean rollback anchor/i);
+  const fileSetRoutes = [
+    renderPlatformRoute('codex', 'review-fix-pr', { packageVersion: '0.0.0-test' }),
+    renderPlatformRoute('claude', 'review-fix-code', { packageVersion: '0.0.0-test' })
+  ];
+  for (const rendered of fileSetRoutes) {
+    assert.match(rendered, /before runtime readiness probe, semantic reviewer dispatch, semantic file-set review, and target-local workflow state creation/i);
+    assert.doesNotMatch(rendered, /semantic document review/i);
   }
 });
 

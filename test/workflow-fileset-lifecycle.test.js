@@ -444,6 +444,55 @@ test('CODE file-set snapshot-guard fix loop reaches pass and abort restores the 
   assert.equal(fs.readFileSync(path.join(root, 'src', 'a.js'), 'utf8'), before, 'abort restores the snapshot baseline');
 });
 
+test('no-state read-only CODE advisory review runs without auto-fix state and never claims pass', async (t) => {
+  const root = makePrRepo(t);
+  const result = await runWorkflowCommand('context', [
+    'review-fix-code',
+    'scope=src',
+    'read-only',
+    '--no-state',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--json'
+  ], { cwd: root });
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'context');
+  assert.equal(result.mode, 'read-only');
+  assert.notEqual(result.status, 'pass');
+  assert.equal(result.createdTargetState, false);
+  assert.equal(result.targetStateDir, null);
+  assert.equal(result.contextPackSkeleton.fileSet.routeKind, 'code');
+  assert.ok(result.contextPackSkeleton.fileSet.fileCount >= 2);
+  assert.equal(fs.existsSync(path.join(root, '.docs-review-fix', 'targets')), false);
+});
+
+test('no-state PR advisory record-review refuses cleanly (advisory, never pass)', async (t) => {
+  const root = makePrRepo(t);
+  const result = await runWorkflowCommand('record-review', [
+    'review-fix-pr',
+    'base=main',
+    'read-only',
+    '--no-state',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_PASS });
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'unsupported');
+  assert.notEqual(result.status, 'pass');
+  assert.equal(fs.existsSync(path.join(root, '.docs-review-fix', 'targets')), false);
+});
+
 test('PR file-set round-limit gate stops with deferrals instead of a clean pass', async (t) => {
   const root = makePrRepo(t);
   // rounds=1 with one already-completed fix attempt forces the limit at the loop boundary.

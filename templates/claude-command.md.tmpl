@@ -47,7 +47,7 @@ For clean read-only runs:
 ```text
 Clean: <target> has no blocking findings.
 
-Verification: full-document read-only review completed.
+{{REVIEW_UNIT_VERIFICATION}}
 ```
 
 For fixed findings:
@@ -94,7 +94,7 @@ Generated routes must not pin concrete model names. Runtime readiness probes may
 
 ## Review-And-Fix Write Eligibility Preflight
 
-When effective mode is `review-and-fix`, run write eligibility preflight before runtime readiness probe, semantic reviewer dispatch, semantic document review, and target-local workflow state creation:
+When effective mode is `review-and-fix`, run write eligibility preflight before runtime readiness probe, semantic reviewer dispatch, {{REVIEW_SEMANTIC_NOUN}}, and target-local workflow state creation:
 
 ```text
 drfx workflow preflight {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --json
@@ -167,7 +167,7 @@ This persistent practical command is the materialized default path: `<selectedMo
 Then coordinate this loop:
 
 1. Run persistent context with `drfx workflow context {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json`.
-2. Build the reviewer prompt in memory from the context manifest plus target/reference reads. Do not write prompt text or document bodies to disk.
+2. Build the reviewer prompt in memory from the context manifest plus target/reference reads. Do not write prompt text or {{REVIEW_BODY_NOUN}} to disk.
 3. Spawn a read-only reviewer subagent and submit its exact output with `drfx workflow record-review {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --result-stdin --json`.
 4. Triage every finding semantically and submit the triage with `drfx workflow record-triage {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --triage-stdin --json`.
 5. For accepted or reopened blocking issues, run `drfx workflow begin-fix <targetStateDir> --json`.
