@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.1 - 2026-06-04
+
+File-set (PR/CODE) review-fix lifecycle hardening, agent/tool state exclusions, and a new `reset` token.
+
+### Added
+
+- `reset` token (PR/CODE/document routes): archives the existing target state to `.drfx/archived/<target-key>-<timestamp>` — never deleting it — and starts fresh under the current resolver policy. It is the explicit escape when stale state can no longer be resumed, and is mutually exclusive with `resume`.
+- CODE review and snapshot monitoring now exclude local agent/tool state directories (`.claude`, `.codex`, `.codegraph`, `.gemini`, `.req-to-plan`) so their churn no longer destabilizes the file-set fingerprint.
+
+### Changed
+
+- `record-review` re-anchors the stored file-set identity to the validated reviewed set, so `begin-fix` and `finalize` compare against what was actually reviewed rather than the start-time snapshot. This removes spurious `unexpected-worktree-change` blocks after benign or policy drift.
+- CODE resume tolerates additive default-exclusion drift when the file-set fingerprint is unchanged.
+
+### Fixed
+
+- `abort-fix` restores monitored files from the persisted baseline bodies instead of blocking as `rollback-unavailable`.
+- A fix round blocked as `fix-report-mismatch` or `unexpected-worktree-change` can be retried through `begin-fix` without consuming a fix attempt.
+- Workflow `--*-stdin` payload flags now read piped stdin; previously they always received empty input.
+
 ## 0.4.0 - 2026-06-04
 
 Renamed to `@xenonbyte/drfx` and added code review routes. This is a breaking release; see Migration below.
