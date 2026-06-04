@@ -355,9 +355,11 @@ test('PR file-set review-and-fix reaches pass through the file-set fix loop', as
   ], { cwd: root, stdin: finalPass('src/a.js') });
   assert.equal(final.ok, true, JSON.stringify(final));
   assert.equal(final.status, 'pass');
-  assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'pass');
+  const archivedManifestPath = path.join(final.archivedStatePath, path.relative(start.targetStateDir, start.manifestPath));
+  assert.equal(parseManifestV2(fs.readFileSync(archivedManifestPath, 'utf8')).status, 'pass');
 
-  const ledger = parseLedger(fs.readFileSync(start.ledgerPath, 'utf8'));
+  const archivedLedgerPath = path.join(final.archivedStatePath, path.relative(start.targetStateDir, start.ledgerPath));
+  const ledger = parseLedger(fs.readFileSync(archivedLedgerPath, 'utf8'));
   assert.equal(ledger.issues.find((issue) => issue.id === 'ISSUE-001').status, 'fixed');
 });
 
@@ -1481,4 +1483,53 @@ test('PR file-set round-limit gate stops with deferrals instead of a clean pass'
   const manifest = parseManifestV2(fs.readFileSync(manifestPath, 'utf8'));
   assert.equal(manifest.status, 'stopped-with-deferrals');
   assert.notEqual(manifest.status, 'pass');
+});
+
+test('PR file-set finalize archives the state dir on pass', async (t) => {
+  const root = makePrRepo(t);
+  const start = await reachFileSetFixStage(root, practicalArgs(['review-fix-pr', 'base=main']));
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+
+  await runWorkflowCommand('record-diff-review', [
+    start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], { cwd: root, stdin: DIFF_OK });
+
+  await runWorkflowCommand('context', [
+    ...practicalArgs(['review-fix-pr', 'base=main']),
+    '--phase', 'full-re-review'
+  ], { cwd: root });
+  const fullReview = await runWorkflowCommand('record-review', [
+    ...practicalArgs(['review-fix-pr', 'base=main']),
+    '--phase', 'full-re-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_PASS });
+  assert.equal(fullReview.ok, true, JSON.stringify(fullReview));
+
+  const targetStateDir = start.targetStateDir;
+  const final = await runWorkflowCommand('finalize', [
+    targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], { cwd: root, stdin: finalPass('src/a.js') });
+
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'pass');
+  assert.equal(fs.existsSync(targetStateDir), false);
+  assert.match(final.archivedStatePath, /\.drfx\/archived\/.+/);
+  assert.equal(fs.existsSync(final.archivedStatePath), true);
+  assert.equal(fs.existsSync(path.join(final.archivedStatePath, 'MANIFEST.md')), true);
 });
