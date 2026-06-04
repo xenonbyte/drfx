@@ -636,6 +636,34 @@ test('generated routes define concise default output and debug output', () => {
   }
 });
 
+test('generated routes surface archiveWarning in default output when finalization returns one', () => {
+  const sources = [
+    read('templates/codex-skill.md.tmpl'),
+    read('templates/claude-command.md.tmpl'),
+    read('templates/gemini-command.toml.tmpl')
+  ];
+
+  for (const source of sources) {
+    // Templates must document that archiveWarning requires a visible warning line in default output.
+    assert.match(source, /archiveWarning/i, 'template must mention archiveWarning');
+    assert.match(source, /archive warning/i, 'template must require an archive warning line in default output');
+    assert.match(source, /repair|reset|rerun/i, 'template must include a next action for archive failure');
+  }
+
+  // The shared core.md must also require archiveWarning surfacing in default output.
+  const core = read('shared/core.md');
+  assert.match(core, /archiveWarning/i, 'shared/core.md must mention archiveWarning');
+  assert.match(core, /archive warning/i, 'shared/core.md must require archive warning in concise default output');
+  assert.match(core, /repair\/reset\/rerun|repair.reset.rerun|repair, reset, or rerun/i, 'shared/core.md must include repair/reset/rerun next action for archiveWarning');
+
+  // Rendered routes must carry the archiveWarning output contract.
+  for (const platform of ['codex', 'claude', 'gemini']) {
+    const rendered = renderPlatformRoute(platform, 'review-fix-spec', { packageVersion: '0.0.0-test' });
+    assert.match(rendered, /archiveWarning/i, `${platform} rendered route must mention archiveWarning`);
+    assert.match(rendered, /archive warning/i, `${platform} rendered route must require archive warning line in default output`);
+  }
+});
+
 test('generated routes require coordinator-quality semantic subagents without model pins', () => {
   const sources = [
     read('templates/codex-skill.md.tmpl'),

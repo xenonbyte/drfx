@@ -79,8 +79,8 @@ Strict PASS additionally requires unresolved low issues to be fixed or explicitl
 
 The loop stops only at one of these states:
 
-- `pass`: the full-document review gate passes and the coordinator agrees.
-- `read-only-clean`: read-only mode found no blocking findings under selected strictness; this is not workflow PASS.
+- `pass`: the full-document review gate passes and the coordinator agrees. On `finalize`, `pass` archives its target-local state directory under `.drfx/archived/` so the next run starts fresh without `reset`.
+- `read-only-clean`: read-only mode found no blocking findings under selected strictness; this is not workflow PASS. On `finalize`, `read-only-clean` archives its target-local state directory under `.drfx/archived/` so the next run starts fresh without `reset`.
 - `stopped-with-deferrals`: high or medium issues are intentionally deferred with reason and owner; the internal workflow payload may include redacted issue IDs, reasons, owners, and next action. Default user output uses concise Unfixed/Next without internal issue IDs; debug may show redacted internal IDs and audit details.
 - `stopped-no-progress`: the fix loop hit the fix-attempt cap or a recurring unresolved finding; high or medium issues remain. This is a pause state, not PASS.
 - `read-only-findings`: read-only mode found issues that block PASS under the selected strictness.
@@ -219,7 +219,7 @@ Coordinator agreement: <required when Final status is pass; otherwise none>
 
 Internal payload checklist: include final status, assurance, runtime platform, mode, target, files changed, fixed issue IDs, verification performed, deferrals or blockers, blocker/status reason, residual risk, redaction statement, and coordinator agreement. Read-only finalization uses `read-only-clean` or `read-only-findings`, never `pass`.
 
-Default user output uses concise Route Output after workflow finalization. It must summarize status, locations, problems, fixes or needed actions, and verification without printing the 14-line machine block or internal issue IDs. Debug output may additionally show the redacted final-response machine block and redacted audit details.
+Default user output uses concise Route Output after workflow finalization. It must summarize status, locations, problems, fixes or needed actions, and verification without printing the 14-line machine block or internal issue IDs. If workflow finalization returns `archiveWarning`, the concise default output must include an archive warning line and one concrete repair/reset/rerun next action. Debug output may additionally show the redacted `archiveWarning` field and redacted audit details.
 
 ## Read-Only Behavior
 

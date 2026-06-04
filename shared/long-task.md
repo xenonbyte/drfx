@@ -151,6 +151,8 @@ Resume is never silent. A matching target context without an explicit `resume` t
 
 When stale state can no longer be resumed (for example after an exclusion-policy change shifted the CODE file set, drifting its fingerprint), use the explicit `reset` token. `reset` archives the existing target state under `.drfx/archived/<target-key>-<timestamp>` — never deleting or overwriting it — and then starts fresh, recomputing identity under the current resolver policy. `resume` and `reset` are mutually exclusive, and `reset` over no existing state is just a fresh start.
 
+`reset` is the escape for non-archived terminal and paused states: `stopped-with-deferrals`, `stopped-no-progress`, `blocked`, `checkpoint`, `externally-changed`, `possible-target-replacement`, `read-only-findings`, and mid-flight states. `reset` is no longer required after `pass` or `read-only-clean` — those are archived automatically at `finalize` time.
+
 On `resume`:
 
 1. Derive the target key from the requested target context identity (document: the normalized target path; PR/CODE: the route kind plus base/scope identity).
@@ -167,7 +169,11 @@ If the current invocation supplies different strictness or mode from the manifes
 
 ## Stale PASS Clearing
 
-If manifest status is `pass` but the current target context identity no longer matches what was passed — document routes: the current content fingerprint differs from the last passed content sha256; PR/CODE routes: the current file-set fingerprint differs from the passed file-set fingerprint — clear the old PASS. Start a new full review round before claiming any current PASS.
+On `finalize`, a `pass` or `read-only-clean` run archives its target state directory to `.drfx/archived/<target-key>-<timestamp>` (renamed, never deleted). The next run starts fresh without requiring `reset`. Archiving is best-effort: if it fails, the run still reports its terminal status plus an `archiveWarning`, the state directory stays in place, and a subsequent bare start falls back to `ERR_STATE_EXISTS` (use `reset` to clear it manually).
+
+On `resume`, if the target state directory contains a live `pass` or `read-only-clean` manifest (a leftover from a failed archive or a pre-upgrade run), the resume handler archives the directory and starts a fresh review — no `reset` needed. If archiving fails, the run blocks with a concrete repair/`reset` next action rather than re-reporting the old PASS or re-reviewing in place.
+
+Pre-existing or legacy leftover `pass` directories are not retroactively migrated; a bare `start` over one still returns `ERR_STATE_EXISTS`. Use `reset` to clear it once, then proceed normally.
 
 If the target changed while status was not `pass`, set status to `externally-changed`, require a full re-review, and reopen affected issues when uncertain.
 

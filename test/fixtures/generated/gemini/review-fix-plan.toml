@@ -99,7 +99,13 @@ State: <target-state-dir when persistent state exists>
 
 Blocked wording must distinguish normalized blocker codes. For `rollback-unavailable`, say the target lacks a clean rollback anchor. For `target-only-guard-unavailable`, say the target-only guard is unavailable or unparseable. For `unexpected-worktree-change`, say non-target worktree changes make automatic fixing unsafe.
 
-When debug is present, generated routes may print the final-response machine block, target state directory, receipt paths, normalized blocker/status reason, runtime probe results, relevant drfx workflow --json outputs, report paths, and issue IDs. Debug output must still redact sensitive values and must not print raw target body, must not print raw reference body, must not print raw prompts, must not print raw subagent transcripts, and must not print secrets, tokens, or raw logs. Debug must not change final status, effective mode, assurance, validation behavior, or persisted state.
+When workflow finalization returns archiveWarning, default output must include an archive warning line and a concrete next action to repair, reset, or rerun after the state directory can be archived. Example:
+
+Archive warning: state directory could not be archived; it remains at <state-dir>.
+
+Next: delete or reset the leftover state directory, then rerun.
+
+When debug is present, generated routes may print the final-response machine block, target state directory, receipt paths, normalized blocker/status reason, runtime probe results, relevant drfx workflow --json outputs, report paths, issue IDs, and the redacted archiveWarning field when present. Debug output must still redact sensitive values and must not print raw target body, must not print raw reference body, must not print raw prompts, must not print raw subagent transcripts, and must not print secrets, tokens, or raw logs. Debug must not change final status, effective mode, assurance, validation behavior, or persisted state.
 
 review-and-fix is unsupported on Gemini. Before reading target/reference bodies or generating any semantic payload, return the unsupported result through no-state preflight:
 
