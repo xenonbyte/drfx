@@ -211,6 +211,39 @@ test('PR explicit resume with a matching identity resumes (no silent reuse)', as
   assert.equal(resume.routeKind, 'pr');
 });
 
+test('PR explicit resume compares requested guard and rounds against stored identity', async (t) => {
+  const root = makePrRepo(t);
+  const start = await runWorkflowCommand('start', practicalArgs([
+    'review-fix-pr',
+    'base=main',
+    'guard=git',
+    'rounds=1'
+  ]), { cwd: root });
+  assert.equal(start.ok, true);
+
+  const guardMismatch = await runWorkflowCommand('start', practicalArgs([
+    'review-fix-pr',
+    'base=main',
+    'guard=snapshot',
+    'rounds=1',
+    'resume'
+  ]), { cwd: root });
+  assert.equal(guardMismatch.ok, false);
+  assert.equal(guardMismatch.status, 'blocked');
+  assert.ok(guardMismatch.staleIdentityFields.includes('guardMode'));
+
+  const roundsMismatch = await runWorkflowCommand('start', practicalArgs([
+    'review-fix-pr',
+    'base=main',
+    'guard=git',
+    'rounds=2',
+    'resume'
+  ]), { cwd: root });
+  assert.equal(roundsMismatch.ok, false);
+  assert.equal(roundsMismatch.status, 'blocked');
+  assert.ok(roundsMismatch.staleIdentityFields.includes('roundLimit'));
+});
+
 test('PR explicit resume refuses a stale identity (changed file set)', async (t) => {
   const root = makePrRepo(t);
   const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });

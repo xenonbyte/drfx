@@ -684,6 +684,30 @@ test('PR file-set git begin-fix rejects dirty PR members before the first route-
   assert.equal(beginFix.blockingReason, 'unexpected-worktree-change');
 });
 
+test('PR file-set snapshot begin-fix rejects clean file-set commits after triage before first fix', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-pr', 'base=main', 'guard=snapshot']);
+  const start = await reachFileSetFixStage(root, args);
+  const reviewedManifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 22;\n');
+  git(root, ['add', 'src/a.js']);
+  git(root, ['commit', '-m', 'unreviewed follow-up']);
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+
+  assert.equal(beginFix.ok, false);
+  assert.equal(beginFix.status, 'blocked');
+  assert.equal(beginFix.blockingReason, 'unexpected-worktree-change');
+  assert.equal(fs.existsSync(path.join(start.targetStateDir, 'file-set-baseline.json')), false);
+  const blockedManifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(blockedManifest.fixAttemptCount, 0);
+  assert.equal(blockedManifest.fileSetFingerprint, reviewedManifest.fileSetFingerprint);
+});
+
 test('PR file-set begin-fix allows diff members inside CODE-excluded directories', async (t) => {
   const root = makePrRepoWithDistFile(t);
   const args = practicalArgs(['review-fix-pr', 'base=main']);
@@ -699,7 +723,7 @@ test('PR file-set begin-fix allows diff members inside CODE-excluded directories
   assert.match(fs.readFileSync(beginFix.fixGuardReportPath, 'utf8'), /"dist\/app\.js"/);
 });
 
-test('CODE file-set snapshot-guard fix loop reaches pass and abort restores the baseline', async (t) => {
+test('CODE file-set begin-fix persists a metadata-only baseline and abort blocks content rollback', async (t) => {
   const root = makePrRepo(t);
   const codeReviewFail = REVIEW_FAIL;
 
@@ -724,11 +748,14 @@ test('CODE file-set snapshot-guard fix loop reaches pass and abort restores the 
     now: new Date('2026-06-03T00:00:00.000Z')
   });
   assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+  const persistedBaseline = JSON.parse(fs.readFileSync(path.join(start.targetStateDir, 'file-set-baseline.json'), 'utf8'));
+  assert.equal(persistedBaseline.entries.every((entry) => !Object.hasOwn(entry, 'body')), true);
 
-  const before = fs.readFileSync(path.join(root, 'src', 'a.js'), 'utf8');
-  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+  const targetPath = path.join(root, 'src', 'a.js');
+  const edited = 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n';
+  fs.writeFileSync(targetPath, edited);
 
-  // Abort restores the monitored file to its captured baseline body.
+  // Persisted state intentionally has no raw file body, so abort must not claim rollback.
   const aborted = await runWorkflowCommand('abort-fix', [
     start.targetStateDir,
     '--status',
@@ -737,9 +764,10 @@ test('CODE file-set snapshot-guard fix loop reaches pass and abort restores the 
     'checkpoint-requested',
     '--json'
   ], { cwd: root });
-  assert.equal(aborted.ok, true, JSON.stringify(aborted));
-  assert.equal(aborted.status, 'checkpoint');
-  assert.equal(fs.readFileSync(path.join(root, 'src', 'a.js'), 'utf8'), before, 'abort restores the snapshot baseline');
+  assert.equal(aborted.ok, false);
+  assert.equal(aborted.status, 'blocked');
+  assert.equal(aborted.blockingReason, 'rollback-unavailable');
+  assert.equal(fs.readFileSync(targetPath, 'utf8'), edited, 'abort must not restore without a persisted body');
 });
 
 test('CODE file-set abort-fix blocks rollback when the persisted baseline is missing', async (t) => {
@@ -772,7 +800,7 @@ test('CODE file-set abort-fix blocks rollback when the persisted baseline is mis
   assert.equal(fs.readFileSync(targetPath, 'utf8'), edited, 'abort must not claim rollback when baseline is missing');
 });
 
-test('CODE file-set abort-fix restores an originally empty monitored file', async (t) => {
+test('CODE file-set abort-fix blocks rollback for an originally empty monitored file without a body', async (t) => {
   const root = makePrRepo(t);
   fs.writeFileSync(path.join(root, 'src', 'empty.js'), '');
   git(root, ['add', 'src/empty.js']);
@@ -795,8 +823,10 @@ test('CODE file-set abort-fix restores an originally empty monitored file', asyn
     'checkpoint-requested',
     '--json'
   ], { cwd: root });
-  assert.equal(aborted.ok, true, JSON.stringify(aborted));
-  assert.equal(fs.readFileSync(emptyPath, 'utf8'), '');
+  assert.equal(aborted.ok, false);
+  assert.equal(aborted.status, 'blocked');
+  assert.equal(aborted.blockingReason, 'rollback-unavailable');
+  assert.equal(fs.readFileSync(emptyPath, 'utf8'), 'module.exports = "filled";\n');
 });
 
 test('PR file-set DIFF-FAIL stops at the round limit instead of scheduling another fix', async (t) => {
@@ -1024,6 +1054,27 @@ test('CODE file-set begin-fix returns corrupt-lock workflow JSON for invalid lea
   assert.equal(beginFix.status, 'blocked');
   assert.equal(beginFix.blockingReason, 'corrupt-lock');
   assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'blocked');
+});
+
+test('PR file-set concurrent begin-fix attempts preserve the active fix manifest', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-pr', 'base=main']);
+  const start = await reachFileSetFixStage(root, args);
+  const beginArgs = [start.targetStateDir, '--json'];
+  const now = new Date('2026-06-03T00:00:00.000Z');
+
+  const results = await Promise.all([
+    runWorkflowCommand('begin-fix', beginArgs, { cwd: root, now }),
+    runWorkflowCommand('begin-fix', beginArgs, { cwd: root, now })
+  ]);
+
+  assert.equal(results.every((result) => result.ok === true), true, JSON.stringify(results));
+  assert.equal(results.every((result) => result.status === 'begin-fix'), true, JSON.stringify(results));
+  assert.equal(new Set(results.map((result) => result.leaseId)).size, 1);
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'fix');
+  assert.equal(manifest.blockingReason, 'none');
+  assert.equal(manifest.fixAttemptCount, 1);
 });
 
 test('CODE file-set refresh-lock returns corrupt-lock workflow JSON for invalid leases', async (t) => {

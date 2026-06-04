@@ -9,7 +9,7 @@ const test = require('node:test');
 const {
   validateFinalResponse
 } = require('../lib/final-response');
-const { formatLedger } = require('../lib/ledger');
+const { formatLedger, parseLedger } = require('../lib/ledger');
 const { parseDiffReview } = require('../lib/semantic-parsers');
 const { computeFingerprint, deriveTargetKey } = require('../lib/target-state');
 const { runWorkflowCommand } = require('../lib/workflow');
@@ -474,6 +474,51 @@ test('record-diff-review DIFF-FAIL returns to fix and advances the round', async
   assert.equal(manifest.currentPhase, 'fix');
   assert.equal(manifest.currentRound, 2);
   assert.equal(manifest.lastDiffReviewReportPath, 'reports/diff-review-round-001.md');
+});
+
+test('record-diff-review DIFF-FAIL stops at the document round limit', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      roundLimit: '1',
+      fixAttemptCount: 1
+    },
+    ledgerIssues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'fixed',
+        location: 'docs/spec.md:3',
+        summary: 'Original issue',
+        resolution: 'Fixed: Updated required section.'
+      }
+    ]
+  });
+  writeFixReport(fixture);
+  const payload = [
+    'DIFF-FAIL',
+    'Findings:',
+    '- issue_id: ISSUE-001',
+    '  problem: Fix missed required detail.',
+    '  required_action: Add the missing detail.'
+  ].join('\n');
+
+  const result = await runWorkflowCommand('record-diff-review', [fixture.targetDir, '--result-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: payload
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'recorded-diff-review');
+  assert.equal(result.currentPhase, 'final');
+  assert.equal(result.stopReason, 'round-limit');
+  assert.equal(result.roundLimit, 1);
+
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'stopped-with-deferrals');
+  assert.equal(manifest.currentPhase, 'final');
+  assert.equal(manifest.statusReason, 'round-limit');
+  assert.equal(manifest.currentRound, 1);
+  const ledger = parseLedger(fs.readFileSync(fixture.ledgerPath, 'utf8'));
+  assert.equal(ledger.issues.find((issue) => issue.id === 'ISSUE-001').status, 'deferred');
 });
 
 test('persistent finalize validates response before persisting pass', async (t) => {
