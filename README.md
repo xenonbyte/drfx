@@ -30,6 +30,9 @@ It is built for repeatable, auditable review: every fix is confined to a declare
 | Codex | skill directory | Yes |
 | Gemini | TOML command | No — advisory read-only only |
 
+> [!WARNING]
+> Gemini routes are advisory read-only on every route: they never edit files, never run `review-and-fix`, and never claim a passing result. Use Claude Code or Codex for automatic fixing.
+
 ## Installation
 
 Requires Node.js 20 or newer and at least one supported agent platform (Claude Code, Codex, or Gemini). For automatic fixes, use `guard=git` with a tracked clean `HEAD` target, or `guard=snapshot` with a valid snapshot rollback anchor.
@@ -437,6 +440,9 @@ The default ledger is `.drfx/targets/<target-key>/ISSUES.md`. A custom `ledger=`
 
 ## Write Safety
 
+> [!NOTE]
+> `guard=git` is the default. Every automatic write must be proven to stay inside the target file set under the active guard, or the run blocks instead of writing — a passing result is earned, never assumed.
+
 Reference documents are read-only. Fixes must modify only the target document.
 
 Automatic target writes require:
@@ -448,7 +454,8 @@ Automatic target writes require:
 
 Before a fix, the route locks the target state directory and rechecks the target fingerprint. Concurrent edits, external changes, stale unsafe locks, or possible target replacement stop the workflow before a write is trusted.
 
-Sensitive values must not be printed or stored in ledgers, receipts, manifests, summaries, prompts, or final responses. Use `[REDACTED:<kind>]`, for example `[REDACTED:api-token]`, `[REDACTED:private-key]`, `[REDACTED:cookie]`, or `[REDACTED:credential]`.
+> [!CAUTION]
+> Sensitive values must never be printed or stored in ledgers, receipts, manifests, summaries, prompts, or final responses. Use `[REDACTED:<kind>]` — for example `[REDACTED:api-token]`, `[REDACTED:private-key]`, `[REDACTED:cookie]`, or `[REDACTED:credential]`.
 
 For sensitive findings, store location anchors and secret kind, not raw values, partial prefixes, suffixes, hashes, checksums, raw logs, or transcript excerpts.
 
@@ -479,7 +486,3 @@ The route fixed what it could safely fix and is reporting accepted issues that r
 `resume` refuses to continue.
 
 The target state no longer matches the current file fingerprints, target path, references, rules, or lock state. Start a fresh run after resolving the reported blocker.
-
-## License
-
-Released under the [MIT License](./LICENSE).

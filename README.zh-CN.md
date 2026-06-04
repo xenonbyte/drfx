@@ -30,6 +30,9 @@
 | Codex | skill directory | 支持 |
 | Gemini | TOML command | 不支持 —— 仅 advisory read-only |
 
+> [!WARNING]
+> Gemini 在所有 route 上都是 advisory read-only：从不编辑文件、从不运行 `review-and-fix`、也从不声称通过结果。需要自动修复请用 Claude Code 或 Codex。
+
 ## Installation
 
 需要 Node.js 20 或更新版本，以及至少一个支持的平台（Claude Code、Codex 或 Gemini）。自动修复可使用 `guard=git` 搭配 tracked、clean、由 `HEAD` 支撑的目标文件，或使用 `guard=snapshot` 搭配 valid snapshot rollback anchor。
@@ -437,6 +440,9 @@ Default target state layout:
 
 ## Write Safety
 
+> [!NOTE]
+> `guard=git` 是默认。每一次自动写入都必须被证明停留在 target file set 内（在当前 guard 下），否则 run 会阻断而非写入——通过结果是挣来的，绝不假定。
+
 Reference documents 是 read-only。Fixes 必须只修改 target document。
 
 Automatic target writes 要求：
@@ -448,7 +454,8 @@ Automatic target writes 要求：
 
 Fix 之前，route 会锁定 target state directory，并重新检查 target fingerprint。Concurrent edits、external changes、stale unsafe locks 或 possible target replacement 都会在写入被信任前停止 workflow。
 
-Sensitive values 不得打印或存入 ledgers、receipts、manifests、summaries、prompts 或 final responses。使用 `[REDACTED:<kind>]`，例如 `[REDACTED:api-token]`、`[REDACTED:private-key]`、`[REDACTED:cookie]` 或 `[REDACTED:credential]`。
+> [!CAUTION]
+> Sensitive values 绝不可打印或存入 ledgers、receipts、manifests、summaries、prompts 或 final responses。使用 `[REDACTED:<kind>]`，例如 `[REDACTED:api-token]`、`[REDACTED:private-key]`、`[REDACTED:cookie]` 或 `[REDACTED:credential]`。
 
 对 sensitive findings，保存 location anchors 和 secret kind，不保存 raw values、partial prefixes、suffixes、hashes、checksums、raw logs 或 transcript excerpts。
 
@@ -479,7 +486,3 @@ Route 已安全修复可修复项，并正在报告仍然存在的 accepted issu
 `resume` refuses to continue.
 
 Target state 不再匹配当前 file fingerprints、target path、references、rules 或 lock state。解决报告的 blocker 后，开始 fresh run。
-
-## License
-
-基于 [MIT License](./LICENSE) 发布。
