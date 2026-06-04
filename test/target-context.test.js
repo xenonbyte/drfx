@@ -126,6 +126,30 @@ test('pr resolver discovers modified, deleted, added, and renamed files', async 
   assert.match(byPath.get('src/keep.js').contentId, /^[0-9a-f]{40}$/);
 });
 
+test('pr resolver parses non-ASCII diff paths as real paths with blob identities', async (t) => {
+  const fixture = makeLocalGitFixture(t);
+  const commandLog = [];
+  fs.writeFileSync(path.join(fixture.root, 'src', '中文.js'), 'export const value = 1;\n');
+  git(fixture.root, ['add', 'src/中文.js']);
+  git(fixture.root, ['commit', '-m', 'add unicode path']);
+
+  const context = await resolveTargetContext({
+    routeName: 'review-fix-pr',
+    base: 'main',
+    cwd: fixture.root,
+    commandLog
+  });
+
+  const unicode = context.files.find((entry) => entry.path === 'src/中文.js');
+  assert.ok(unicode, `expected real unicode path, got ${context.files.map((entry) => entry.path).join(', ')}`);
+  assert.equal(unicode.status, 'added');
+  assert.match(unicode.contentId, /^[0-9a-f]{40}$/);
+  assert.ok(
+    commandLog.some((command) => command.includes('diff --name-status -z --find-renames')),
+    'PR diff must use NUL-delimited name-status output'
+  );
+});
+
 test('pr resolver rejects a missing base argument', async (t) => {
   const fixture = makeLocalGitFixture(t);
   await assert.rejects(

@@ -158,6 +158,28 @@ test('CODE file-set context describes the scoped file set, never a single docume
   assert.equal(context.contextPackSkeleton.documentType, 'none');
 });
 
+test('CODE file-set record-review blocks when scoped content changes after context', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-code', 'scope=src']);
+  const start = await runWorkflowCommand('start', args, { cwd: root });
+  assert.equal(start.ok, true);
+
+  await runWorkflowCommand('context', args, { cwd: root });
+  fs.appendFileSync(path.join(root, 'src', 'a.js'), '\n// reviewer-side mutation\n');
+
+  const review = await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_FAIL });
+
+  assert.equal(review.ok, false);
+  assert.equal(review.status, 'blocked');
+  assert.equal(review.blockingReason, 'reviewer-mutated-file');
+  assert.equal(fs.existsSync(path.join(start.targetStateDir, 'reports', 'reviewer-round-001.md')), false);
+});
+
 const FIX_REPORT_FILESET = [
   'Fixed:',
   '- ISSUE-001: Restored the error handling around the call.',
@@ -303,6 +325,31 @@ test('PR file-set review-and-fix reaches pass through the file-set fix loop', as
 
   const ledger = parseLedger(fs.readFileSync(start.ledgerPath, 'utf8'));
   assert.equal(ledger.issues.find((issue) => issue.id === 'ISSUE-001').status, 'fixed');
+});
+
+test('PR file-set end-fix records the uncommitted worktree content fingerprint', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-pr', 'base=main']);
+  const start = await reachFileSetFixStage(root, args);
+  const before = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).fileSetFingerprint;
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { return 42; };\n');
+
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+
+  const after = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).fileSetFingerprint;
+  assert.notEqual(after, before);
 });
 
 test('PR file-set cannot pass without a full re-review after the fix', async (t) => {
@@ -651,6 +698,110 @@ test('CODE file-set snapshot end-fix blocks writes outside the recorded file set
   assert.equal(endFix.ok, false);
   assert.equal(endFix.status, 'blocked');
   assert.equal(endFix.blockingReason, 'unexpected-worktree-change');
+});
+
+test('CODE file-set git end-fix blocks files created in scope after begin-fix', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-code', 'scope=src']);
+  const start = await reachFileSetFixStage(root, args);
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 42;\n');
+  fs.writeFileSync(path.join(root, 'src', 'created-after-begin.js'), 'module.exports = "late";\n');
+
+  const reportDeclaringLateFile = [
+    'Fixed:',
+    '- ISSUE-001: Restored the error handling.',
+    '',
+    'Files changed:',
+    '- src/a.js',
+    '- src/created-after-begin.js',
+    '',
+    'Not fixed:',
+    '- none',
+    '',
+    'Verification:',
+    '- node --check src/a.js: passed',
+    '',
+    'Residual risk:',
+    '- none identified'
+  ].join('\n');
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: reportDeclaringLateFile });
+
+  assert.equal(endFix.ok, false);
+  assert.equal(endFix.status, 'blocked');
+  assert.equal(endFix.blockingReason, 'fix-report-mismatch');
+  assert.notEqual(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'diff-review');
+});
+
+test('CODE file-set later begin-fix rejects user edits to the prior-round allowed set', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-code', 'scope=src']);
+  const start = await reachFileSetFixStage(root, args);
+  const firstBegin = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(firstBegin.ok, true, JSON.stringify(firstBegin));
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 42;\n');
+  const firstEnd = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+  assert.equal(firstEnd.ok, true, JSON.stringify(firstEnd));
+
+  const diffFail = [
+    'DIFF-FAIL',
+    'Findings:',
+    '- issue_id: ISSUE-001',
+    '  problem: Fix still misses the required behavior.',
+    '  required_action: Rework the fix.'
+  ].join('\n');
+  const diff = await runWorkflowCommand('record-diff-review', [
+    start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], { cwd: root, stdin: diffFail });
+  assert.equal(diff.ok, true, JSON.stringify(diff));
+  assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'fix');
+
+  fs.appendFileSync(path.join(root, 'src', 'a.js'), '\n// user edit before next begin-fix\n');
+  const secondBegin = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:05:00.000Z')
+  });
+  assert.equal(secondBegin.ok, false);
+  assert.equal(secondBegin.status, 'blocked');
+  assert.equal(secondBegin.blockingReason, 'unexpected-worktree-change');
+});
+
+test('CODE file-set begin-fix returns corrupt-lock workflow JSON for invalid leases', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-code', 'scope=src']);
+  const start = await reachFileSetFixStage(root, args);
+  const lockDir = path.join(start.targetStateDir, 'LOCK');
+  fs.mkdirSync(lockDir, { recursive: true });
+  fs.writeFileSync(path.join(lockDir, 'lease.json'), '{not json');
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+
+  assert.equal(beginFix.ok, false);
+  assert.equal(beginFix.status, 'blocked');
+  assert.equal(beginFix.blockingReason, 'corrupt-lock');
+  assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'blocked');
 });
 
 test('no-state read-only CODE advisory review runs without auto-fix state and never claims pass', async (t) => {

@@ -724,6 +724,25 @@ test('loadRouteRuleContext rejects symlinked PR.md rule file', (t) => {
   );
 });
 
+test('loadRouteRuleContext rejects symlinked route rules directory before reading PR.md', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-route-rules-'));
+  const homeDir = path.join(root, 'home');
+  const projectRoot = path.join(root, 'project');
+  const externalRules = path.join(root, 'external-rules');
+  fs.mkdirSync(path.join(projectRoot, '.docs-review-fix'), { recursive: true });
+  fs.mkdirSync(externalRules, { recursive: true });
+  fs.writeFileSync(path.join(externalRules, 'PR.md'), 'External PR rules must not load\n');
+  const rulesDir = path.join(projectRoot, '.docs-review-fix', 'rules');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  if (!symlinkOrSkip(t, externalRules, rulesDir, 'dir')) return;
+
+  assert.throws(
+    () => loadRouteRuleContext({ routeKind: 'pr', builtInRubric: 'PR rubric', homeDir, projectRoot }),
+    /symlink/i
+  );
+});
+
 test('loadRouteRuleContext absent PR.md files yield empty layers and no error', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-route-rules-'));
   const homeDir = path.join(root, 'home');
