@@ -315,12 +315,16 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
   assert.equal(final.ok, true);
   assert.equal(final.status, 'pass');
   assert.equal(final.assurance, 'practical');
+  assert.ok(final.archivedStatePath, 'state dir is archived on pass');
+  assert.match(final.archivedStatePath, /\.drfx\/archived\/.+/);
 
-  const finalManifest = assertManifestPhase(start.manifestPath, 'pass', 'final');
+  const archivedManifestPath = path.join(final.archivedStatePath, 'MANIFEST.md');
+  const finalManifest = assertManifestPhase(archivedManifestPath, 'pass', 'final');
   assert.equal(finalManifest.assurance, 'practical');
   assert.equal(readLease({ projectRoot: fixture.root, targetKey: start.targetKey }), null);
 
-  const ledger = parseLedger(fs.readFileSync(start.ledgerPath, 'utf8'));
+  const archivedLedgerPath = path.join(final.archivedStatePath, path.relative(start.targetStateDir, start.ledgerPath));
+  const ledger = parseLedger(fs.readFileSync(archivedLedgerPath, 'utf8'));
   assert.equal(ledger.issues.find((issue) => issue.id === 'ISSUE-001').status, 'fixed');
 
   const statusLines = git(fixture.root, ['status', '--porcelain'])
@@ -544,7 +548,9 @@ test('non-git snapshot guard workflow reaches pass with target-only diff', async
   ], workflowOptions(fixture, { stdin: FINAL_PASS }));
   assert.equal(final.ok, true);
   assert.equal(final.status, 'pass');
-  assert.equal(assertManifestPhase(start.manifestPath, 'pass', 'final').guardMode, 'snapshot');
+  assert.ok(final.archivedStatePath, 'state dir is archived on pass');
+  assert.match(final.archivedStatePath, /\.drfx\/archived\/.+/);
+  assert.equal(assertManifestPhase(path.join(final.archivedStatePath, 'MANIFEST.md'), 'pass', 'final').guardMode, 'snapshot');
 });
 
 test('non-git snapshot guard abort-fix restores the second fix attempt snapshot', async (t) => {
@@ -769,7 +775,9 @@ test('guard=git allows a second fix after DIFF-OK -> full re-review FAIL', async
     workflowOptions(fixture, { stdin: FINAL_PASS }));
   assert.equal(final.ok, true, JSON.stringify(final));
   assert.equal(final.status, 'pass');
-  assert.equal(assertManifestPhase(start.manifestPath, 'pass', 'final').guardMode, 'git');
+  assert.ok(final.archivedStatePath, 'state dir is archived on pass');
+  assert.match(final.archivedStatePath, /\.drfx\/archived\/.+/);
+  assert.equal(assertManifestPhase(path.join(final.archivedStatePath, 'MANIFEST.md'), 'pass', 'final').guardMode, 'git');
 });
 
 test('guard=git abort-fix restores the target from the per-fix snapshot', async (t) => {
@@ -1298,7 +1306,9 @@ test('rounds=1 still passes when the first full re-review is clean (early clean 
     workflowOptions(fixture, { stdin: FINAL_PASS }));
   assert.equal(final.ok, true, JSON.stringify(final));
   assert.equal(final.status, 'pass');
-  assert.equal(assertManifestPhase(start.manifestPath, 'pass', 'final').roundLimit, '1');
+  assert.ok(final.archivedStatePath, 'state dir is archived on pass');
+  assert.match(final.archivedStatePath, /\.drfx\/archived\/.+/);
+  assert.equal(assertManifestPhase(path.join(final.archivedStatePath, 'MANIFEST.md'), 'pass', 'final').roundLimit, '1');
 });
 
 test('begin-fix increments fixAttemptCount on a successful attempt', async (t) => {
