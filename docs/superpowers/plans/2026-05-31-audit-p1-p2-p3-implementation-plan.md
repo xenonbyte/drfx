@@ -158,11 +158,11 @@ test('uninstall skips a modified Claude command file and retains the manifest', 
   assert.equal(result.partial, true);
   assert.ok(result.skipped.some((s) => s.reason === 'modified' && s.path === routePath));
   assert.equal(fs.existsSync(routePath), true);
-  const manifestPath = path.join(homeDir, '.docs-review-fix', 'manifests', 'claude.manifest');
+  const manifestPath = path.join(homeDir, '.drfx', 'manifests', 'claude.manifest');
   assert.equal(fs.existsSync(manifestPath), true);
   const retained = readInstallManifest('claude', { homeDir }).manifest.generated.map((entry) => entry.path);
   assert.deepEqual(retained, [routePath]);
-  assert.equal(fs.existsSync(path.join(homeDir, '.docs-review-fix', 'capabilities', 'claude.json')), true);
+  assert.equal(fs.existsSync(path.join(homeDir, '.drfx', 'capabilities', 'claude.json')), true);
 });
 
 test('uninstall skips a modified Gemini command file and retains the manifest', async (t) => {
@@ -178,7 +178,7 @@ test('uninstall skips a modified Gemini command file and retains the manifest', 
   assert.equal(fs.existsSync(routePath), true);
   const retained = readInstallManifest('gemini', { homeDir }).manifest.generated.map((entry) => entry.path);
   assert.deepEqual(retained, [routePath]);
-  assert.equal(fs.existsSync(path.join(homeDir, '.docs-review-fix', 'capabilities', 'gemini.json')), true);
+  assert.equal(fs.existsSync(path.join(homeDir, '.drfx', 'capabilities', 'gemini.json')), true);
 });
 
 test('uninstall still removes an unchanged Claude command file and its manifest', async (t) => {
@@ -190,7 +190,7 @@ test('uninstall still removes an unchanged Claude command file and its manifest'
 
   assert.notEqual(result.partial, true);
   assert.equal(fs.existsSync(routePath), false);
-  const manifestPath = path.join(homeDir, '.docs-review-fix', 'manifests', 'claude.manifest');
+  const manifestPath = path.join(homeDir, '.drfx', 'manifests', 'claude.manifest');
   assert.equal(fs.existsSync(manifestPath), false);
 });
 ```
@@ -766,7 +766,7 @@ test('snapshot target-only guard does not exclude a target that lives under an i
   fs.mkdirSync(path.join(root, 'dist', 'docs'), { recursive: true });
   const target = path.join(root, 'dist', 'docs', 'target.md');
   fs.writeFileSync(target, '# Target\n');
-  const stateDir = path.join(root, '.docs-review-fix', 'targets', 'x');
+  const stateDir = path.join(root, '.drfx', 'targets', 'x');
 
   const guard = checkSnapshotTargetOnly({
     projectRoot: root,
@@ -789,7 +789,7 @@ test('snapshot target-only guard does not exclude a reference that lives under a
   const reference = path.join(root, 'dist', 'refs', 'reference.md');
   fs.writeFileSync(target, '# Target\n');
   fs.writeFileSync(reference, '# Reference\n');
-  const stateDir = path.join(root, '.docs-review-fix', 'targets', 'x');
+  const stateDir = path.join(root, '.drfx', 'targets', 'x');
 
   const guard = checkSnapshotTargetOnly({
     projectRoot: root,
@@ -922,8 +922,8 @@ function baseManifest(generated) {
     updatedAt: '2026-05-31T00:00:00.000Z',
     installRoot: '/abs/.codex',
     allowedRoots: ['/abs/.codex'],
-    sharedAssets: { path: '~/.docs-review-fix/shared', checksum: 'none' },
-    capabilityDescriptor: { path: '~/.docs-review-fix/capabilities/codex.json', mutable: true },
+    sharedAssets: { path: '~/.drfx/shared', checksum: 'none' },
+    capabilityDescriptor: { path: '~/.drfx/capabilities/codex.json', mutable: true },
     generated,
     backups: []
   };
@@ -1061,8 +1061,8 @@ test('codex install records childFiles and treeChecksum for skill directories', 
     codexSkills: path.join(homeDir, '.codex', 'skills'),
     codexPrompts: path.join(homeDir, '.codex', 'prompts')
   };
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'shared'), { recursive: true });
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'capabilities'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'shared'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'capabilities'), { recursive: true });
 
   await installPlatform('codex', { homeDir, platformRoots });
   const { manifest } = readInstallManifest('codex', { homeDir });
@@ -1191,8 +1191,8 @@ async function installCodex(t) {
     codexSkills: path.join(homeDir, '.codex', 'skills'),
     codexPrompts: path.join(homeDir, '.codex', 'prompts')
   };
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'shared'), { recursive: true });
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'capabilities'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'shared'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'capabilities'), { recursive: true });
   await installPlatform('codex', { homeDir, platformRoots });
   return { homeDir, platformRoots };
 }

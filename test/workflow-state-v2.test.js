@@ -25,7 +25,7 @@ function makeManifest(overrides = {}) {
     mode: 'review-and-fix',
     guardMode: 'git',
     targetKey: 'spec-md-aaaaaaaaaaaa',
-    ledgerPath: '.docs-review-fix/targets/spec-md-aaaaaaaaaaaa/ISSUES.md',
+    ledgerPath: '.drfx/targets/spec-md-aaaaaaaaaaaa/ISSUES.md',
     status: 'review',
     currentPhase: 'review',
     currentRound: 1,

@@ -59,7 +59,7 @@ Advisory-only behavior:
 Loop:
 1. Select the rubric and read shared core rules.
 2. Read only the merged rules supplied by the workflow context. Custom file-backed rule loading is handled by `drfx workflow ...`; do not read unrelated rule files.
-3. Derive .docs-review-fix/targets/<target-key>/ when persistent state is needed.
+3. Derive .drfx/targets/<target-key>/ when persistent state is needed.
 4. Merge built-in and project rules, including strictness handling.
 5. Run the reviewer guard: fingerprint target and references before review.
 6. Send a compact context pack to an isolated read-only reviewer subagent.

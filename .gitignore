@@ -3,6 +3,7 @@ docs/*
 !docs/REQUIREMENT-code-review-routes-2026-06-03.md
 design/
 CONTINUITY.md
+.drfx/
 .docs-review-fix/
 .req-to-plan/
 .DS_Store

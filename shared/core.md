@@ -95,7 +95,7 @@ Blocking reasons include `reviewer-mutated-file`, `lock-held`, `corrupt-lock`, `
 
 Blocker wording must distinguish guard failures: `rollback-unavailable` means the target lacks a clean rollback anchor, `target-only-guard-unavailable` means the target-only guard is unavailable or unparseable, and `unexpected-worktree-change` means non-target worktree changes make automatic fixing unsafe.
 
-Unknown Markdown rule files under `.docs-review-fix/rules/` or `~/.docs-review-fix/rules/` are a normal-mode warning and a strict-mode blocker before target state is written.
+Unknown Markdown rule files under `.drfx/rules/` or `~/.drfx/rules/` are a normal-mode warning and a strict-mode blocker before target state is written.
 
 ## Reviewer Guard
 
@@ -225,10 +225,10 @@ Default user output uses concise Route Output after workflow finalization. It mu
 
 In `read-only` mode, review and triage only. Do not modify the target document or reference documents. If blocking findings remain, stop as `read-only-findings`. Codex and Claude Code routes may tell users to rerun the same route with `review-and-fix`; Gemini routes must tell users to apply fixes manually or rerun with a Codex/Claude Code review-and-fix route.
 
-One-shot `read-only` without `ledger=` and without `resume` must not create `.docs-review-fix`, `MANIFEST.md`, `ISSUES.md`, `CONTINUITY.md`, `SUMMARY.md`, or `rounds/`. Keep fingerprints in memory unless a guard failure must be reported.
+One-shot `read-only` without `ledger=` and without `resume` must not create `.drfx`, `MANIFEST.md`, `ISSUES.md`, `CONTINUITY.md`, `SUMMARY.md`, or `rounds/`. Keep fingerprints in memory unless a guard failure must be reported.
 
 No-state read-only flow keeps `reviewGuard` and `stateToken` in coordinator memory only. Do not write tokens to disk, do not hand-edit tokens, and repeat the same runtime platform, assurance, subagent probe, stdin handoff, and downgrade fields on no-state `record-review`, `record-triage`, and `finalize`. A no-state finalizer that consumes `--final-response-stdin` must pass `--runtime-stdin-handoff ready`.
 
 ## Runtime Independence
 
-The workflow must not depend on runtime objective/session/platform memory. Durable state for long work is file-backed under `.docs-review-fix/targets/<target-key>/`, and each reviewer or fixer context pack must be self-contained enough to work without chat history.
+The workflow must not depend on runtime objective/session/platform memory. Durable state for long work is file-backed under `.drfx/targets/<target-key>/`, and each reviewer or fixer context pack must be self-contained enough to work without chat history.

@@ -67,7 +67,7 @@ function writePreflightArgs(target, assurance = 'practical', options = {}) {
 }
 
 function assertNoPreflightState(root) {
-  assert.equal(fs.existsSync(path.join(root, '.docs-review-fix', 'targets')), false);
+  assert.equal(fs.existsSync(path.join(root, '.drfx', 'targets')), false);
 }
 
 function makeUnmergedTarget(t) {
@@ -287,8 +287,8 @@ test('workflow start returns canonical target key from target-state', async () =
 
 test('workflow start exposes normal rule warnings in json', async (t) => {
   const fixture = makeGitFixture(t);
-  fs.mkdirSync(path.join(fixture.root, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.writeFileSync(path.join(fixture.root, '.docs-review-fix', 'rules', 'CHECKLIST.md'), '# Checklist\n');
+  fs.mkdirSync(path.join(fixture.root, '.drfx', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.root, '.drfx', 'rules', 'CHECKLIST.md'), '# Checklist\n');
 
   const result = await runWorkflowCommand('start', [
     'review-fix-spec',
@@ -316,8 +316,8 @@ test('workflow start exposes normal rule warnings in json', async (t) => {
 
 test('workflow no-state context exposes normal rule warnings in json', async (t) => {
   const fixture = makeGitFixture(t);
-  fs.mkdirSync(path.join(fixture.root, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.writeFileSync(path.join(fixture.root, '.docs-review-fix', 'rules', 'CHECKLIST.md'), '# Checklist\n');
+  fs.mkdirSync(path.join(fixture.root, '.drfx', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.root, '.drfx', 'rules', 'CHECKLIST.md'), '# Checklist\n');
 
   const result = await runWorkflowCommand('context', [
     '--no-state',
@@ -348,8 +348,8 @@ test('workflow no-state context exposes normal rule warnings in json', async (t)
 
 test('workflow persistent context exposes normal rule warnings in json', async (t) => {
   const fixture = makeGitFixture(t);
-  fs.mkdirSync(path.join(fixture.root, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.writeFileSync(path.join(fixture.root, '.docs-review-fix', 'rules', 'CHECKLIST.md'), '# Checklist\n');
+  fs.mkdirSync(path.join(fixture.root, '.drfx', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.root, '.drfx', 'rules', 'CHECKLIST.md'), '# Checklist\n');
 
   const start = await runWorkflowCommand('start', [
     'review-fix-spec',

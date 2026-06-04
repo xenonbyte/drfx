@@ -2,7 +2,7 @@
 
 Long tasks must be resumable from project files, not from chat history or runtime memory. Create target-local state only when persistent state is needed: long or multi-round work, `resume`, `ledger=`, an auditable trail, context pressure, interruption, or a blocker.
 
-One-shot `read-only` without `ledger=` and without `resume` is no-state: do not create `.docs-review-fix`, target directories, manifests, ledgers, continuity files, summaries, receipts, or locks.
+One-shot `read-only` without `ledger=` and without `resume` is no-state: do not create `.drfx`, target directories, manifests, ledgers, continuity files, summaries, receipts, or locks.
 
 No-state read-only uses command-generated `reviewGuard` and `stateToken` values kept only in coordinator memory. These tokens are redacted normalized state, not document content. Do not write them to disk, do not edit them, and never finalize no-state as `pass`; clean read-only status is `read-only-clean`.
 
@@ -19,7 +19,7 @@ A route resolves one of three target contexts. The protocol below is identical a
 All persistent state for one target context lives under:
 
 ```text
-.docs-review-fix/targets/<target-key>/
+.drfx/targets/<target-key>/
 ```
 
 For a document route the target key is derived from the normalized target path relative to the project root, not from content. For a file-set route (PR/CODE) the target key is derived from the route kind plus the base/scope identity, not from content. In both cases use a readable slug or route-kind prefix plus a 12-hex SHA-256 prefix of that identity.
@@ -27,7 +27,7 @@ For a document route the target key is derived from the normalized target path r
 Target-local layout:
 
 ```text
-.docs-review-fix/targets/<target-key>/
+.drfx/targets/<target-key>/
 ├── MANIFEST.md
 ├── ISSUES.md
 ├── CONTINUITY.md
@@ -38,7 +38,7 @@ Target-local layout:
 └── rounds/
 ```
 
-Project-root `.docs-review-fix/rules/` is shared project configuration, not target state. Do not write target review state to project-root `.docs-review-fix/ISSUES.md`, `.docs-review-fix/CONTINUITY.md`, `.docs-review-fix/SUMMARY.md`, or `.docs-review-fix/rules/`.
+Project-root `.drfx/rules/` is shared project configuration, not target state. Do not write target review state to project-root `.drfx/ISSUES.md`, `.drfx/CONTINUITY.md`, `.drfx/SUMMARY.md`, or `.drfx/rules/`.
 
 ## Manifest Fields
 
@@ -54,7 +54,7 @@ Shared fields (all kinds):
 - Runtime platform: `codex`, `claude-code`, `gemini`, or `manual`.
 - Runtime subagent probe, stdin handoff, fingerprint guard, downgrade reason, assurance proof, blocking reason, and status reason.
 - Target key.
-- Ledger path, defaulting to `.docs-review-fix/targets/<target-key>/ISSUES.md`.
+- Ledger path, defaulting to `.drfx/targets/<target-key>/ISSUES.md`.
 - Status: `review`, `triage`, `fix`, `diff-review`, `full-re-review`, `pass`, `stopped-with-deferrals`, `stopped-no-progress`, `read-only-findings`, `blocked`, `unsupported`, `externally-changed`, `possible-target-replacement`, or `checkpoint`.
 - Read-only clean status: `read-only-clean`.
 - Current round.
@@ -78,14 +78,14 @@ File-set (PR/CODE) target context identity:
 - PR records the base ref plus the resolved base, merge-base, and HEAD commits.
 - CODE records the normalized scopes and the mandatory exclusion list.
 
-If `ledger=` is supplied, record the resolved target-local ledger path. A custom ledger must stay inside `.docs-review-fix/targets/<target-key>/` and must not point to reserved state files, `LOCK/`, `stale-locks/`, or `rounds/`.
+If `ledger=` is supplied, record the resolved target-local ledger path. A custom ledger must stay inside `.drfx/targets/<target-key>/` and must not point to reserved state files, `LOCK/`, `stale-locks/`, or `rounds/`.
 
 ## Issue Ledger
 
 The issue ledger records durable issue state, not a transcript. Default path:
 
 ```text
-.docs-review-fix/targets/<target-key>/ISSUES.md
+.drfx/targets/<target-key>/ISSUES.md
 ```
 
 Recommended table:
@@ -104,7 +104,7 @@ Redact all sensitive values as `[REDACTED:<kind>]`. Store location anchors, not 
 
 ## Lock Lease
 
-Before any target modification, acquire `.docs-review-fix/targets/<target-key>/LOCK/` by atomically creating the directory. `LOCK/lease.json` contains:
+Before any target modification, acquire `.drfx/targets/<target-key>/LOCK/` by atomically creating the directory. `LOCK/lease.json` contains:
 
 - `schemaVersion`
 - `targetKey`
@@ -129,7 +129,7 @@ One-shot `read-only` without persistent state never acquires a lock.
 
 ## Receipts
 
-Round receipts live under `.docs-review-fix/targets/<target-key>/rounds/` when an auditable trail is requested, the loop reaches round 2, the coordinator stops due to interruption or context pressure, or a blocker state needs durable proof.
+Round receipts live under `.drfx/targets/<target-key>/rounds/` when an auditable trail is requested, the loop reaches round 2, the coordinator stops due to interruption or context pressure, or a blocker state needs durable proof.
 
 Receipts should record:
 

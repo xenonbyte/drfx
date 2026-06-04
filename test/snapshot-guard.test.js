@@ -35,7 +35,7 @@ function makeWorkspace(t) {
   fs.writeFileSync(nested, '# Nested\n');
   fs.writeFileSync(other, '# Other\n');
   fs.writeFileSync(reference, '# Reference\n');
-  const targetStateDir = path.join(root, '.docs-review-fix', 'targets', 'target-md-aaaaaaaaaaaa');
+  const targetStateDir = path.join(root, '.drfx', 'targets', 'target-md-aaaaaaaaaaaa');
   return { root, target, sibling, nested, other, reference, targetStateDir };
 }
 
@@ -458,7 +458,7 @@ test('snapshot target-only guard does not exclude a target that lives under an i
   fs.mkdirSync(path.join(root, 'dist', 'docs'), { recursive: true });
   const target = path.join(root, 'dist', 'docs', 'target.md');
   fs.writeFileSync(target, '# Target\n');
-  const stateDir = path.join(root, '.docs-review-fix', 'targets', 'x');
+  const stateDir = path.join(root, '.drfx', 'targets', 'x');
 
   const guard = checkSnapshotTargetOnly({
     projectRoot: root,
@@ -481,7 +481,7 @@ test('snapshot target-only guard does not exclude a reference that lives under a
   const reference = path.join(root, 'dist', 'refs', 'reference.md');
   fs.writeFileSync(target, '# Target\n');
   fs.writeFileSync(reference, '# Reference\n');
-  const stateDir = path.join(root, '.docs-review-fix', 'targets', 'x');
+  const stateDir = path.join(root, '.drfx', 'targets', 'x');
 
   const guard = checkSnapshotTargetOnly({
     projectRoot: root,

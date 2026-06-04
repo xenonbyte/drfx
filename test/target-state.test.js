@@ -40,7 +40,7 @@ function makeManifest(root, overrides = {}) {
     strictness: 'normal',
     mode: 'review-and-fix',
     targetKey: 'my-spec-md-123456789abc',
-    ledgerPath: '.docs-review-fix/targets/my-spec-md-123456789abc/ISSUES.md',
+    ledgerPath: '.drfx/targets/my-spec-md-123456789abc/ISSUES.md',
     status: 'review',
     currentRound: 1,
     initialContentSha256: fingerprint.sha256,
@@ -83,7 +83,7 @@ test('normalizes slug by basename, fallback, and truncation rules', () => {
   assert.equal(deriveTargetKey(root, path.join(root, 'docs', symbolic)).slug, 'md');
 });
 
-test('resolves explicit, git, docs-review-fix, and cwd project roots deterministically', () => {
+test('resolves explicit, git, drfx, and cwd project roots deterministically', () => {
   const root = makeWorkspace();
   const target = path.join(root, 'docs', 'My SPEC.md');
   assert.equal(resolveProjectRoot({ explicitRoot: root, targetPath: target, cwd: os.tmpdir() }), fs.realpathSync.native(root));
@@ -95,15 +95,15 @@ test('resolves explicit, git, docs-review-fix, and cwd project roots determinist
   assert.equal(resolveProjectRoot({ targetPath: gitTarget, cwd: os.tmpdir() }), fs.realpathSync.native(gitRoot));
 
   const targetAncestorRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-targets-root-'));
-  fs.mkdirSync(path.join(targetAncestorRoot, '.docs-review-fix', 'targets'), { recursive: true });
+  fs.mkdirSync(path.join(targetAncestorRoot, '.drfx', 'targets'), { recursive: true });
   fs.mkdirSync(path.join(targetAncestorRoot, 'nested'), { recursive: true });
   const targetAncestorTarget = path.join(targetAncestorRoot, 'nested', 'design.md');
   fs.writeFileSync(targetAncestorTarget, '# Design\n');
   assert.equal(resolveProjectRoot({ targetPath: targetAncestorTarget, cwd: os.tmpdir() }), fs.realpathSync.native(targetAncestorRoot));
 
   const ruleRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-rule-root-'));
-  fs.mkdirSync(path.join(ruleRoot, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.writeFileSync(path.join(ruleRoot, '.docs-review-fix', 'rules', 'COMMON.md'), 'Rule\n');
+  fs.mkdirSync(path.join(ruleRoot, '.drfx', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(ruleRoot, '.drfx', 'rules', 'COMMON.md'), 'Rule\n');
   fs.mkdirSync(path.join(ruleRoot, 'deep'), { recursive: true });
   const ruleTarget = path.join(ruleRoot, 'deep', 'plan.md');
   fs.writeFileSync(ruleTarget, '# Plan\n');
@@ -112,11 +112,11 @@ test('resolves explicit, git, docs-review-fix, and cwd project roots determinist
     resolveProjectRoot({ targetPath: ruleTarget, cwd: os.tmpdir(), persistentStateRequired: true }),
     fs.realpathSync.native(ruleRoot)
   );
-  assert.equal(fs.existsSync(path.join(ruleRoot, '.docs-review-fix', 'targets')), false);
+  assert.equal(fs.existsSync(path.join(ruleRoot, '.drfx', 'targets')), false);
 
   const staleRuleRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-stale-rule-root-'));
-  fs.mkdirSync(path.join(staleRuleRoot, '.docs-review-fix'), { recursive: true });
-  fs.writeFileSync(path.join(staleRuleRoot, '.docs-review-fix', 'RULE.md'), '## COMMON\nOld rule\n');
+  fs.mkdirSync(path.join(staleRuleRoot, '.drfx'), { recursive: true });
+  fs.writeFileSync(path.join(staleRuleRoot, '.drfx', 'RULE.md'), '## COMMON\nOld rule\n');
   fs.mkdirSync(path.join(staleRuleRoot, 'deep'), { recursive: true });
   const staleRuleTarget = path.join(staleRuleRoot, 'deep', 'plan.md');
   fs.writeFileSync(staleRuleTarget, '# Plan\n');
@@ -170,7 +170,7 @@ test('computes fingerprints and detects content changes', () => {
 test('validates custom ledger inside target state and rejects outside, reserved, and symlink paths', () => {
   const root = makeWorkspace();
   const targetKey = 'my-spec-md-123456789abc';
-  const targetDir = path.join(root, '.docs-review-fix', 'targets', targetKey);
+  const targetDir = path.join(root, '.drfx', 'targets', targetKey);
   const allowed = path.join(targetDir, 'ledgers', 'ISSUES.md');
   assert.equal(validateLedgerPath({ projectRoot: root, targetKey, ledgerPath: allowed }), allowed);
 
@@ -230,7 +230,7 @@ test('formats, parses, writes, and reads manifest with exact allowed statuses', 
   const parsed = parseManifest(formatManifest(manifest));
   assert.deepEqual(parsed, { ...manifest, fileSize: String(manifest.fileSize), currentRound: String(manifest.currentRound) });
 
-  const manifestPath = path.join(root, '.docs-review-fix', 'targets', manifest.targetKey, 'MANIFEST.md');
+  const manifestPath = path.join(root, '.drfx', 'targets', manifest.targetKey, 'MANIFEST.md');
   writeManifest(manifestPath, manifest);
   assert.equal(readManifest(manifestPath).lastKnownContentSha256, manifest.lastKnownContentSha256);
   assert.throws(() => formatManifest({ ...manifest, status: 'unknown' }), /unknown status/i);
@@ -240,13 +240,13 @@ test('formats, parses, writes, and reads manifest with exact allowed statuses', 
 test('readManifestAny dispatches v1 and schema-2 manifests without normalizing corrupt schema-2', () => {
   const root = makeWorkspace();
   const manifest = makeManifest(root, { status: 'review' });
-  const v1Path = path.join(root, '.docs-review-fix', 'targets', manifest.targetKey, 'MANIFEST.md');
+  const v1Path = path.join(root, '.drfx', 'targets', manifest.targetKey, 'MANIFEST.md');
   writeManifest(v1Path, manifest);
   assert.equal(readManifestAny(v1Path).manifestSchema, 1);
   assert.equal(readManifestAny(v1Path).assurance, 'advisory');
   assert.equal(readManifestAny(v1Path).runtimePlatform, 'manual');
 
-  const v2Path = path.join(root, '.docs-review-fix', 'targets', manifest.targetKey, 'MANIFEST-v2.md');
+  const v2Path = path.join(root, '.drfx', 'targets', manifest.targetKey, 'MANIFEST-v2.md');
   fs.writeFileSync(v2Path, [
     '# Review Target Manifest',
     '',
@@ -257,7 +257,7 @@ test('readManifestAny dispatches v1 and schema-2 manifests without normalizing c
     'Strictness: normal',
     'Mode: review-and-fix',
     'Target key: spec-md-aaaaaaaaaaaa',
-    'Ledger path: .docs-review-fix/targets/spec-md-aaaaaaaaaaaa/ISSUES.md',
+    'Ledger path: .drfx/targets/spec-md-aaaaaaaaaaaa/ISSUES.md',
     'Status: blocked',
     'Current phase: review',
     'Current round: 1',
@@ -309,7 +309,7 @@ test('readManifestAny parses a schema-2 pr-kind file-set manifest', () => {
     mode: 'review-and-fix',
     guardMode: 'git',
     targetKey: 'pr-feature-123456789abc',
-    ledgerPath: '.docs-review-fix/targets/pr-feature-123456789abc/ISSUES.md',
+    ledgerPath: '.drfx/targets/pr-feature-123456789abc/ISSUES.md',
     status: 'review',
     currentPhase: 'review',
     currentRound: 1,
@@ -359,7 +359,7 @@ test('resume preserves manifest strictness, mode, and custom ledger path when no
     target,
     strictness: 'strict',
     mode: 'read-only',
-    ledgerPath: '.docs-review-fix/targets/my-spec-md-123456789abc/custom/ISSUES.md',
+    ledgerPath: '.drfx/targets/my-spec-md-123456789abc/custom/ISSUES.md',
     status: 'read-only-findings'
   });
   const result = evaluateResumeState({

@@ -356,7 +356,7 @@ test('source skills templates generated routes and README avoid runtime memory c
   assert.doesNotMatch(sourceText, /\bcontinuity\s+(?:from|using|via)\s+(?:runtime objective state|session memory|platform memory|chat history)\b/i);
   assert.doesNotMatch(sourceText, /\b(?:runtime objective state|session memory|platform memory|chat history)\s+(?:is|required|needed)\s+for\s+(?:resume|continuity)\b/i);
   assert.doesNotMatch(sourceText, /\bresume from chat history\b/i);
-  assert.match(sourceText, /\.docs-review-fix\/targets\/<target-key>\//);
+  assert.match(sourceText, /\.drfx\/targets\/<target-key>\//);
 });
 
 test('package file list excludes project-local state and ignored planning directories', () => {
@@ -372,7 +372,7 @@ test('package file list excludes project-local state and ignored planning direct
     'README.zh-CN.md'
   ]);
   assert.equal(packageJson.files.includes('README-zh.md'), false);
-  assert.equal(packageJson.files.some((entry) => entry.includes('.docs-review-fix')), false);
+  assert.equal(packageJson.files.some((entry) => entry.includes('.drfx')), false);
   assert.equal(packageJson.files.some((entry) => entry === 'docs/' || entry.startsWith('docs/')), false);
   assert.equal(packageJson.files.some((entry) => entry === 'design/' || entry.startsWith('design/')), false);
   assert.equal(packageJson.files.includes('CONTINUITY.md'), false);
@@ -868,14 +868,14 @@ test('public docs no longer teach legacy RULE.md as supported configuration', ()
 
   assert.doesNotMatch(
     readme,
-    new RegExp(('Optional custom rule ' + 'files:') + '\\s*```text\\s*~\\/\\.docs-review-fix\\/RULE\\.md', 'is')
+    new RegExp(('Optional custom rule ' + 'files:') + '\\s*```text\\s*~\\/\\.drfx\\/RULE\\.md', 'is')
   );
   assert.doesNotMatch(readme, /Example `RULE\.md` shape/i);
-  assert.doesNotMatch(longTask, /`?\.docs-review-fix\/RULE\.md`? is shared project configuration/i);
+  assert.doesNotMatch(longTask, /`?\.drfx\/RULE\.md`? is shared project configuration/i);
   assert.doesNotMatch(sourceSkills, new RegExp('Without an explicit mode token' + ', explain usage only', 'i'));
 
-  assert.match(readme, /~\/\.docs-review-fix\/rules\/COMMON\.md/);
-  assert.match(readme, /\.docs-review-fix\/rules\/SPEC\.md/);
+  assert.match(readme, /~\/\.drfx\/rules\/COMMON\.md/);
+  assert.match(readme, /\.drfx\/rules\/SPEC\.md/);
   assert.match(readme, /Legacy `RULE\.md` is stale configuration/i);
   assert.match(sourceSkills, /missing mode selects `review-and-fix`/i);
 });
@@ -912,8 +912,8 @@ test('README documents unknown markdown rule file strictness behavior', () => {
 test('long-task keeps project-root rules outside target state', () => {
   const longTask = read('shared/long-task.md');
 
-  assert.match(longTask, /Project-root `\.docs-review-fix\/rules\/` is shared project configuration, not target state/);
-  assert.match(longTask, /Do not write target review state to project-root[\s\S]*`\.docs-review-fix\/rules\/`/);
+  assert.match(longTask, /Project-root `\.drfx\/rules\/` is shared project configuration, not target state/);
+  assert.match(longTask, /Do not write target review state to project-root[\s\S]*`\.drfx\/rules\/`/);
 });
 
 test('source skills individually document v3 defaults and concise debug output', () => {
@@ -951,7 +951,7 @@ test('public docs and source skills omit stale v2 rule and mode wording', () => 
   ].join('\n\n');
 
   assert.doesNotMatch(publicText, /Rule heading restrictions are strict/i);
-  assert.doesNotMatch(publicText, /`?\.docs-review-fix\/RULE\.md`? is shared project configuration/i);
+  assert.doesNotMatch(publicText, /`?\.drfx\/RULE\.md`? is shared project configuration/i);
   assert.doesNotMatch(publicText, /`?RULE\.md`? is shared project configuration/i);
   assert.doesNotMatch(publicText, /No mode token means explain only/i);
   assert.doesNotMatch(publicText, new RegExp('Without an explicit mode token' + ', explain usage only', 'i'));

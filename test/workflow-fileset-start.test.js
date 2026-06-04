@@ -94,10 +94,10 @@ test('PR start from a subdirectory writes state at the git root and resolves roo
   assert.equal(result.ok, true);
   assert.equal(result.routeKind, 'pr');
   assert.equal(
-    path.relative(root, result.manifestPath).split(path.sep).join('/').startsWith('.docs-review-fix/targets/'),
+    path.relative(root, result.manifestPath).split(path.sep).join('/').startsWith('.drfx/targets/'),
     true
   );
-  assert.equal(fs.existsSync(path.join(cwd, '.docs-review-fix')), false);
+  assert.equal(fs.existsSync(path.join(cwd, '.drfx')), false);
 
   const directContext = await resolveTargetContext({ routeName: 'review-fix-pr', base: 'main', cwd: root });
   assert.equal(result.fileSetFingerprint, computeFileSetFingerprint(directContext.files));
@@ -182,7 +182,7 @@ test('read-only CODE start creates no automatic-fix target state and claims no p
     '--json'
   ], { cwd: root });
   assert.notEqual(result.status, 'pass');
-  assert.equal(fs.existsSync(path.join(root, '.docs-review-fix', 'targets')), false);
+  assert.equal(fs.existsSync(path.join(root, '.drfx', 'targets')), false);
 });
 
 test('PR persistent context executes over the file set after start (Phase C)', async (t) => {
@@ -278,5 +278,5 @@ test('read-only no-state CODE review never creates auto-fix state and never clai
   ], { cwd: root });
   assert.notEqual(result.status, 'pass');
   assert.equal(result.mode, 'read-only');
-  assert.equal(fs.existsSync(path.join(root, '.docs-review-fix', 'targets')), false);
+  assert.equal(fs.existsSync(path.join(root, '.drfx', 'targets')), false);
 });

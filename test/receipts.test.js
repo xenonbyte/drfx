@@ -29,7 +29,7 @@ test('builds target-local receipt paths', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-receipts-'));
   const receiptPath = roundReceiptPath({ projectRoot: root, targetKey: 'spec-md-123456789abc', round: 2, kind: 'review' });
 
-  assert.equal(receiptPath, path.join(root, '.docs-review-fix', 'targets', 'spec-md-123456789abc', 'rounds', '002-review.md'));
+  assert.equal(receiptPath, path.join(root, '.drfx', 'targets', 'spec-md-123456789abc', 'rounds', '002-review.md'));
 });
 
 test('receipt round directory naming derives ONLY from the round counter, not any rounds=<n> limit', () => {
@@ -96,7 +96,7 @@ test('writes receipts under rounds directory with redacted content', () => {
     nextAction: 'Triage findings'
   });
 
-  assert.equal(written, path.join(root, '.docs-review-fix', 'targets', 'spec-md-123456789abc', 'rounds', '001-review.md'));
+  assert.equal(written, path.join(root, '.drfx', 'targets', 'spec-md-123456789abc', 'rounds', '001-review.md'));
   const text = fs.readFileSync(written, 'utf8');
   assert.match(text, /ISSUE-001/);
   assert.match(text, /\[REDACTED:credential\]/);
@@ -105,7 +105,7 @@ test('writes receipts under rounds directory with redacted content', () => {
 
 test('writeRoundReceipt rejects symlinked rounds directory without writing outside target state', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-receipts-symlink-'));
-  const targetDir = path.join(root, '.docs-review-fix', 'targets', 'spec-md-123456789abc');
+  const targetDir = path.join(root, '.drfx', 'targets', 'spec-md-123456789abc');
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-receipts-outside-'));
   fs.mkdirSync(targetDir, { recursive: true });
   fs.symlinkSync(outside, path.join(targetDir, 'rounds'), 'dir');

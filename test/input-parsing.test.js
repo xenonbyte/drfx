@@ -31,7 +31,7 @@ test('parses structured tokens with target, repeated refs, flags, ledger, and ro
     'strict',
     'read-only',
     'resume',
-    'ledger=.docs-review-fix/targets/key/ISSUES.md',
+    'ledger=.drfx/targets/key/ISSUES.md',
     'root=/tmp/project'
   ]);
 
@@ -42,7 +42,7 @@ test('parses structured tokens with target, repeated refs, flags, ledger, and ro
   assert.equal(parsed.strictness, 'strict');
   assert.equal(parsed.mode, 'read-only');
   assert.equal(parsed.resume, true);
-  assert.equal(parsed.ledger, '.docs-review-fix/targets/key/ISSUES.md');
+  assert.equal(parsed.ledger, '.drfx/targets/key/ISSUES.md');
   assert.equal(parsed.root, '/tmp/project');
 });
 

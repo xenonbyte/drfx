@@ -63,7 +63,7 @@ function makeManifest(overrides = {}) {
     strictness: 'normal',
     mode: 'review-and-fix',
     targetKey: 'spec-md-aaaaaaaaaaaa',
-    ledgerPath: '.docs-review-fix/targets/spec-md-aaaaaaaaaaaa/ISSUES.md',
+    ledgerPath: '.drfx/targets/spec-md-aaaaaaaaaaaa/ISSUES.md',
     status: 'fix',
     currentPhase: 'fix',
     currentRound: 1,
@@ -108,7 +108,7 @@ function makeWorkflowFixture(t, { manifestOverrides = {} } = {}) {
   git(root, 'commit -m init');
 
   const metadata = deriveTargetKey(root, target);
-  const targetDir = path.join(root, '.docs-review-fix', 'targets', metadata.targetKey);
+  const targetDir = path.join(root, '.drfx', 'targets', metadata.targetKey);
   const manifestPath = path.join(targetDir, 'MANIFEST.md');
   const ledgerPath = path.join(targetDir, 'ISSUES.md');
   const fingerprint = computeFingerprint(target);
@@ -228,7 +228,7 @@ test('target-only worktree blocks non-target dirty entry with redacted metadata'
   const result = checkTargetOnlyWorktree({
     projectRoot: root,
     targetPath: target,
-    allowedStateDir: path.join(root, '.docs-review-fix', 'targets', 'target-md-aaaaaaaaaaaa')
+    allowedStateDir: path.join(root, '.drfx', 'targets', 'target-md-aaaaaaaaaaaa')
   });
   assert.equal(result.status, 'blocked');
   assert.equal(result.blockingReason, 'unexpected-worktree-change');
@@ -239,7 +239,7 @@ test('target-only worktree blocks non-target dirty entry with redacted metadata'
 
 test('target-only worktree allows current target-state files', (t) => {
   const { root, target } = makeGitRepo(t);
-  const stateDir = path.join(root, '.docs-review-fix', 'targets', 'target-md-aaaaaaaaaaaa');
+  const stateDir = path.join(root, '.drfx', 'targets', 'target-md-aaaaaaaaaaaa');
   fs.mkdirSync(path.join(stateDir, 'reports'), { recursive: true });
   fs.writeFileSync(path.join(stateDir, 'reports', 'fix-guard-round-001.md'), '# Guard\n');
   const result = checkTargetOnlyWorktree({
@@ -253,7 +253,7 @@ test('target-only worktree allows current target-state files', (t) => {
 
 test('actual changed-file inspection allows only target and current state', (t) => {
   const { root, target } = makeGitRepo(t);
-  const stateDir = path.join(root, '.docs-review-fix', 'targets', 'target-md-aaaaaaaaaaaa');
+  const stateDir = path.join(root, '.drfx', 'targets', 'target-md-aaaaaaaaaaaa');
   fs.mkdirSync(path.join(stateDir, 'reports'), { recursive: true });
   fs.appendFileSync(target, '\nFixed\n');
   fs.writeFileSync(path.join(stateDir, 'reports', 'fix-round-001.md'), '# Fix\n');
@@ -349,7 +349,7 @@ test('workflow begin-fix rejects clean tracked symlink target as rollback-unavai
   git(root, 'commit -m init');
 
   const targetKey = 'spec-md-aaaaaaaaaaaa';
-  const targetDir = path.join(root, '.docs-review-fix', 'targets', targetKey);
+  const targetDir = path.join(root, '.drfx', 'targets', targetKey);
   const manifestPath = path.join(targetDir, 'MANIFEST.md');
   const ledgerPath = path.join(targetDir, 'ISSUES.md');
   const fingerprint = computeFingerprint(target);
@@ -776,9 +776,9 @@ test('classifyFileSetChanges blocks a change outside the allowed set', () => {
 
 test('classifyFileSetChanges allows files inside the allowed state directory', () => {
   const result = classifyFileSetChanges({
-    changedPaths: ['lib/a.js', '.docs-review-fix/targets/x/reports/r.md'],
+    changedPaths: ['lib/a.js', '.drfx/targets/x/reports/r.md'],
     allowedSet: ['lib/a.js'],
-    allowedStateRelative: '.docs-review-fix/targets/x'
+    allowedStateRelative: '.drfx/targets/x'
   });
   assert.equal(result.status, 'ok');
   assert.deepEqual(result.changedFiles, ['lib/a.js']);
@@ -873,7 +873,7 @@ test('file-set git guard blocks a file outside the allowed set even when target 
 
 test('file-set git guard allows files inside the allowed state directory', (t) => {
   const { root, target } = makeGitRepo(t);
-  const stateDir = path.join(root, '.docs-review-fix', 'targets', 'target-md-aaaaaaaaaaaa');
+  const stateDir = path.join(root, '.drfx', 'targets', 'target-md-aaaaaaaaaaaa');
   fs.mkdirSync(path.join(stateDir, 'reports'), { recursive: true });
   fs.writeFileSync(path.join(stateDir, 'reports', 'fix-guard-round-001.md'), '# Guard\n');
   fs.appendFileSync(target, '\nRoute-owned change.\n');
@@ -899,7 +899,7 @@ test('file-set git guard normalizes repo-root status paths for CODE sub-roots', 
   git(root, 'add lib/a.js');
   git(root, 'commit -m init');
 
-  const stateDir = path.join(codeRoot, '.docs-review-fix', 'targets', 'code-aaaaaaaaaaaa');
+  const stateDir = path.join(codeRoot, '.drfx', 'targets', 'code-aaaaaaaaaaaa');
   fs.mkdirSync(path.join(stateDir, 'reports'), { recursive: true });
   fs.writeFileSync(path.join(stateDir, 'reports', 'fix-guard-round-001.md'), '# Guard\n');
   fs.writeFileSync(path.join(codeRoot, 'a.js'), 'module.exports = 2;\n');

@@ -26,7 +26,7 @@ function makeManifest(overrides = {}) {
     strictness: 'normal',
     mode: 'review-and-fix',
     targetKey: 'spec-md-aaaaaaaaaaaa',
-    ledgerPath: '.docs-review-fix/targets/spec-md-aaaaaaaaaaaa/ISSUES.md',
+    ledgerPath: '.drfx/targets/spec-md-aaaaaaaaaaaa/ISSUES.md',
     status: 'review',
     currentPhase: 'review',
     currentRound: 1,
@@ -70,7 +70,7 @@ function makePersistentFixture(t, { manifestOverrides = {} } = {}) {
   fs.writeFileSync(reference, '# Reference\n\nReference body sentinel must stay out of manifests.\n');
 
   const metadata = deriveTargetKey(root, target);
-  const targetDir = path.join(root, '.docs-review-fix', 'targets', metadata.targetKey);
+  const targetDir = path.join(root, '.drfx', 'targets', metadata.targetKey);
   const manifestPath = path.join(targetDir, 'MANIFEST.md');
   const ledgerPath = path.join(targetDir, 'ISSUES.md');
   const fingerprint = computeFingerprint(target);

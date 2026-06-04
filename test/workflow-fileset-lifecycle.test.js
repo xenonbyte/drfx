@@ -1129,7 +1129,7 @@ test('no-state read-only CODE advisory review runs without auto-fix state and ne
   assert.equal(result.contextPackSkeleton.fileSet.routeKind, 'code');
   assert.ok(result.contextPackSkeleton.fileSet.fileCount >= 2);
   assert.equal(typeof result.reviewGuard, 'string');
-  assert.equal(fs.existsSync(path.join(root, '.docs-review-fix', 'targets')), false);
+  assert.equal(fs.existsSync(path.join(root, '.drfx', 'targets')), false);
 });
 
 test('no-state read-only CODE practical review preserves practical assurance', async (t) => {
@@ -1236,7 +1236,7 @@ test('no-state PR advisory read-only records review, triage, and finalize withou
   assert.equal(final.ok, true, JSON.stringify(final));
   assert.equal(final.status, 'read-only-findings');
   assert.notEqual(final.status, 'pass');
-  assert.equal(fs.existsSync(path.join(root, '.docs-review-fix', 'targets')), false);
+  assert.equal(fs.existsSync(path.join(root, '.drfx', 'targets')), false);
 });
 
 test('PR file-set round-limit gate stops with deferrals instead of a clean pass', async (t) => {

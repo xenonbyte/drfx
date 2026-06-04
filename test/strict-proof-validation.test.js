@@ -198,7 +198,7 @@ test('strict verified success emits schema-2 compatible proof fields', async (t)
     strictness: output.strictness,
     mode: output.mode,
     targetKey: output.targetKey,
-    ledgerPath: `.docs-review-fix/targets/${output.targetKey}/ISSUES.md`,
+    ledgerPath: `.drfx/targets/${output.targetKey}/ISSUES.md`,
     status: 'review',
     currentPhase: 'review',
     currentRound: 1,

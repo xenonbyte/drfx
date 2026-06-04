@@ -330,7 +330,7 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
   assert.equal(statusLines.length > 0, true);
   assert.equal(statusLines.every((line) => (
     line.includes('docs/practical-target.md') ||
-    line.includes('.docs-review-fix/')
+    line.includes('.drfx/')
   )), true, statusLines.join('\n'));
   assert.deepEqual(git(fixture.root, ['diff', '--name-only']).trim().split('\n').filter(Boolean), [
     'docs/practical-target.md'
@@ -339,7 +339,7 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
 
 test('persistent start rejects stale project RULE.md before writing target state', async (t) => {
   const fixture = makeWorkflowRepo(t);
-  const projectStateDir = path.join(fixture.root, '.docs-review-fix');
+  const projectStateDir = path.join(fixture.root, '.drfx');
   fs.mkdirSync(projectStateDir, { recursive: true });
   fs.writeFileSync(path.join(projectStateDir, 'RULE.md'), '## COMMON\nOld config\n');
 
@@ -363,7 +363,7 @@ test('persistent start uses stale project RULE.md as root marker before falling 
 
   const projectRoot = path.join(outer, 'project');
   const docsDir = path.join(projectRoot, 'docs');
-  const projectStateDir = path.join(projectRoot, '.docs-review-fix');
+  const projectStateDir = path.join(projectRoot, '.drfx');
   fs.mkdirSync(docsDir, { recursive: true });
   fs.mkdirSync(projectStateDir, { recursive: true });
   fs.copyFileSync(path.join(FIXTURE_ROOT, 'practical-target.md'), path.join(docsDir, 'practical-target.md'));
@@ -395,7 +395,7 @@ test('persistent start uses stale project RULE.md as root marker before falling 
   assert.equal(result.blockingReason, 'state-validation-failed');
   assert.match(result.message, /RULE\.md|stale/i);
   assert.equal(fs.existsSync(path.join(projectStateDir, 'targets')), false);
-  assert.equal(fs.existsSync(path.join(outer, '.docs-review-fix', 'targets')), false);
+  assert.equal(fs.existsSync(path.join(outer, '.drfx', 'targets')), false);
 });
 
 test('persistent start rejects symlinked target state directory before outside writes', async (t) => {
@@ -405,7 +405,7 @@ test('persistent start rejects symlinked target state directory before outside w
 
   const probe = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
   const targetStateDir = probe.targetStateDir;
-  fs.rmSync(path.join(fixture.root, '.docs-review-fix'), { recursive: true, force: true });
+  fs.rmSync(path.join(fixture.root, '.drfx'), { recursive: true, force: true });
   fs.mkdirSync(path.dirname(targetStateDir), { recursive: true });
   fs.symlinkSync(outside, targetStateDir, 'dir');
 
@@ -425,8 +425,8 @@ test('persistent start rejects stale global RULE.md before writing target state'
   const fixture = makeWorkflowRepo(t);
   const poisonedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-e2e-poison-home-'));
   t.after(() => fs.rmSync(poisonedHome, { recursive: true, force: true }));
-  fs.mkdirSync(path.join(poisonedHome, '.docs-review-fix'), { recursive: true });
-  fs.writeFileSync(path.join(poisonedHome, '.docs-review-fix', 'RULE.md'), '## COMMON\nOld global config\n');
+  fs.mkdirSync(path.join(poisonedHome, '.drfx'), { recursive: true });
+  fs.writeFileSync(path.join(poisonedHome, '.drfx', 'RULE.md'), '## COMMON\nOld global config\n');
 
   const result = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), {
     ...workflowOptions(fixture),
@@ -437,12 +437,12 @@ test('persistent start rejects stale global RULE.md before writing target state'
   assert.equal(result.status, 'blocked');
   assert.equal(result.blockingReason, 'state-validation-failed');
   assert.match(result.message, /RULE\.md|stale/i);
-  assert.equal(fs.existsSync(path.join(fixture.root, '.docs-review-fix', 'targets')), false);
+  assert.equal(fs.existsSync(path.join(fixture.root, '.drfx', 'targets')), false);
 });
 
 test('persistent start rejects unknown markdown file under project rules', async (t) => {
   const fixture = makeWorkflowRepo(t);
-  const rulesDir = path.join(fixture.root, '.docs-review-fix', 'rules');
+  const rulesDir = path.join(fixture.root, '.drfx', 'rules');
   fs.mkdirSync(rulesDir, { recursive: true });
   fs.writeFileSync(path.join(rulesDir, 'SPEC-RULE.md'), 'Wrong filename\n');
 
@@ -454,7 +454,7 @@ test('persistent start rejects unknown markdown file under project rules', async
   assert.equal(result.status, 'blocked');
   assert.equal(result.blockingReason, 'state-validation-failed');
   assert.match(result.message, /unknown custom rule file|SPEC-RULE\.md/i);
-  assert.equal(fs.existsSync(path.join(fixture.root, '.docs-review-fix', 'targets')), false);
+  assert.equal(fs.existsSync(path.join(fixture.root, '.drfx', 'targets')), false);
 });
 
 test('persistent start rejects default git guard outside a git worktree', async (t) => {
@@ -466,7 +466,7 @@ test('persistent start rejects default git guard outside a git worktree', async 
   assert.equal(result.status, 'unsupported');
   assert.equal(result.statusReason, 'git-guard-unavailable');
   assert.equal(result.blockingReason, 'none');
-  assert.equal(fs.existsSync(path.join(fixture.root, '.docs-review-fix')), false);
+  assert.equal(fs.existsSync(path.join(fixture.root, '.drfx')), false);
 });
 
 test('non-git snapshot guard workflow reaches pass with target-only diff', async (t) => {
@@ -624,7 +624,7 @@ test('no-state read-only fixture finalizes read-only-clean without state', async
   assert.equal(context.ok, true);
   assert.equal(context.targetStateDir, null);
   assert.equal(typeof context.reviewGuard, 'string');
-  assert.equal(fs.existsSync(path.join(fixture.root, '.docs-review-fix')), false);
+  assert.equal(fs.existsSync(path.join(fixture.root, '.drfx')), false);
 
   const review = await runWorkflowCommand('record-review', [
     '--no-state',
@@ -636,7 +636,7 @@ test('no-state read-only fixture finalizes read-only-clean without state', async
   assert.equal(review.ok, true);
   assert.equal(review.status, 'recorded-review');
   assert.equal(typeof review.stateToken, 'string');
-  assert.equal(fs.existsSync(path.join(fixture.root, '.docs-review-fix')), false);
+  assert.equal(fs.existsSync(path.join(fixture.root, '.drfx')), false);
 
   const finalized = await runWorkflowCommand('finalize', [
     '--no-state',
@@ -648,7 +648,7 @@ test('no-state read-only fixture finalizes read-only-clean without state', async
   assert.equal(finalized.ok, true);
   assert.equal(finalized.status, 'read-only-clean');
   assert.notEqual(finalized.status, 'pass');
-  assert.equal(fs.existsSync(path.join(fixture.root, '.docs-review-fix')), false);
+  assert.equal(fs.existsSync(path.join(fixture.root, '.drfx')), false);
 });
 
 test('begin-fix still blocks if target becomes dirty after route preflight passes', async (t) => {
@@ -673,7 +673,7 @@ test('begin-fix still blocks if target becomes dirty after route preflight passe
 
   assert.equal(preflight.ok, true);
   assert.equal(preflight.status, 'write-eligible');
-  assert.equal(fs.existsSync(path.join(fixture.root, '.docs-review-fix', 'targets')), false);
+  assert.equal(fs.existsSync(path.join(fixture.root, '.drfx', 'targets')), false);
 
   const start = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
   assert.equal(start.ok, true);

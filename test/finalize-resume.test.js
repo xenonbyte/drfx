@@ -41,7 +41,7 @@ function makeManifest(overrides = {}) {
     strictness: 'normal',
     mode: 'review-and-fix',
     targetKey: 'spec-md-aaaaaaaaaaaa',
-    ledgerPath: '.docs-review-fix/targets/spec-md-aaaaaaaaaaaa/ISSUES.md',
+    ledgerPath: '.drfx/targets/spec-md-aaaaaaaaaaaa/ISSUES.md',
     status: 'diff-review',
     currentPhase: 'diff-review',
     currentRound: 1,
@@ -82,7 +82,7 @@ function makeFixture(t, { manifestOverrides = {}, ledgerIssues = [] } = {}) {
   const target = path.join(root, 'docs', 'spec.md');
   fs.writeFileSync(target, '# Spec\n\nBody.\n');
   const metadata = deriveTargetKey(root, target);
-  const targetDir = path.join(root, '.docs-review-fix', 'targets', metadata.targetKey);
+  const targetDir = path.join(root, '.drfx', 'targets', metadata.targetKey);
   const manifestPath = path.join(targetDir, 'MANIFEST.md');
   const ledgerPath = path.join(targetDir, 'ISSUES.md');
   const fingerprint = computeFingerprint(target);

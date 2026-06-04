@@ -168,8 +168,8 @@ function makeRulesFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-v3-rules-'));
   const homeDir = path.join(root, 'home');
   const projectRoot = path.join(root, 'project');
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.mkdirSync(path.join(projectRoot, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(projectRoot, '.drfx', 'rules'), { recursive: true });
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return { root, homeDir, projectRoot };
 }
@@ -189,12 +189,12 @@ function symlinkOrSkip(t, target, linkPath, type) {
 
 test('loads only COMMON and current document type rule files', (t) => {
   const fixture = makeRulesFixture(t);
-  fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'rules', 'COMMON.md'), 'User common\n');
-  fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'rules', 'SPEC.md'), 'User spec\n');
-  fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'rules', 'PLAN.md'), 'User plan must not load\n');
-  fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'rules', 'DESIGN.md'), 'User design must not load\n');
-  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'COMMON.md'), 'Project common\n');
-  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'SPEC.md'), 'Project spec\n');
+  fs.writeFileSync(path.join(fixture.homeDir, '.drfx', 'rules', 'COMMON.md'), 'User common\n');
+  fs.writeFileSync(path.join(fixture.homeDir, '.drfx', 'rules', 'SPEC.md'), 'User spec\n');
+  fs.writeFileSync(path.join(fixture.homeDir, '.drfx', 'rules', 'PLAN.md'), 'User plan must not load\n');
+  fs.writeFileSync(path.join(fixture.homeDir, '.drfx', 'rules', 'DESIGN.md'), 'User design must not load\n');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.drfx', 'rules', 'COMMON.md'), 'Project common\n');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.drfx', 'rules', 'SPEC.md'), 'Project spec\n');
 
   const loaded = loadCustomRuleFiles({
     projectRoot: fixture.projectRoot,
@@ -239,10 +239,10 @@ test('loads only COMMON and current document type rule files', (t) => {
 
 test('COMMON documents load only COMMON custom rule files', (t) => {
   const fixture = makeRulesFixture(t);
-  fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'rules', 'COMMON.md'), 'User common\n');
-  fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'rules', 'SPEC.md'), 'User spec must not load\n');
-  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'COMMON.md'), 'Project common\n');
-  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'PLAN.md'), 'Project plan must not load\n');
+  fs.writeFileSync(path.join(fixture.homeDir, '.drfx', 'rules', 'COMMON.md'), 'User common\n');
+  fs.writeFileSync(path.join(fixture.homeDir, '.drfx', 'rules', 'SPEC.md'), 'User spec must not load\n');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.drfx', 'rules', 'COMMON.md'), 'Project common\n');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.drfx', 'rules', 'PLAN.md'), 'Project plan must not load\n');
 
   const loaded = loadCustomRuleFiles({
     projectRoot: fixture.projectRoot,
@@ -289,8 +289,8 @@ test('missing rules directories and files return empty custom rule sets', (t) =>
     }
   );
 
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.mkdirSync(path.join(projectRoot, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(projectRoot, '.drfx', 'rules'), { recursive: true });
 
   assert.deepEqual(
     loadCustomRuleFiles({
@@ -309,10 +309,10 @@ test('missing rules directories and files return empty custom rule sets', (t) =>
 
 test('empty custom rule files are absent and do not add content paths', (t) => {
   const fixture = makeRulesFixture(t);
-  fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'rules', 'COMMON.md'), '\n');
-  fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'rules', 'PLAN.md'), '');
-  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'COMMON.md'), '   \n\t\n');
-  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'PLAN.md'), '\n\n');
+  fs.writeFileSync(path.join(fixture.homeDir, '.drfx', 'rules', 'COMMON.md'), '\n');
+  fs.writeFileSync(path.join(fixture.homeDir, '.drfx', 'rules', 'PLAN.md'), '');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.drfx', 'rules', 'COMMON.md'), '   \n\t\n');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.drfx', 'rules', 'PLAN.md'), '\n\n');
 
   const loaded = loadCustomRuleFiles({
     projectRoot: fixture.projectRoot,
@@ -328,7 +328,7 @@ test('empty custom rule files are absent and do not add content paths', (t) => {
 test('rejects symlinked custom rules directories', (t) => {
   const fixture = makeRulesFixture(t);
   const externalRules = path.join(fixture.root, 'external-rules');
-  const rulesDir = path.join(fixture.projectRoot, '.docs-review-fix', 'rules');
+  const rulesDir = path.join(fixture.projectRoot, '.drfx', 'rules');
   fs.mkdirSync(externalRules);
   fs.writeFileSync(path.join(externalRules, 'COMMON.md'), 'External common must not load\n');
   fs.rmSync(rulesDir, { recursive: true, force: true });
@@ -347,7 +347,7 @@ test('rejects symlinked custom rules directories', (t) => {
 test('rejects symlinked custom rule files before reading target content', (t) => {
   for (const fileName of ['COMMON.md', 'SPEC.md']) {
     const fixture = makeRulesFixture(t);
-    const linkPath = path.join(fixture.projectRoot, '.docs-review-fix', 'rules', fileName);
+    const linkPath = path.join(fixture.projectRoot, '.drfx', 'rules', fileName);
     const targetPath = path.join(fixture.root, 'outside-rules', fileName);
     if (!symlinkOrSkip(t, targetPath, linkPath, 'file')) return;
 
@@ -364,7 +364,7 @@ test('rejects symlinked custom rule files before reading target content', (t) =>
 
 test('rejects symlinked allowed rule files that are not selected for reading', (t) => {
   const fixture = makeRulesFixture(t);
-  const linkPath = path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'PLAN.md');
+  const linkPath = path.join(fixture.projectRoot, '.drfx', 'rules', 'PLAN.md');
   const targetPath = path.join(fixture.root, 'outside-rules', 'PLAN.md');
   if (!symlinkOrSkip(t, targetPath, linkPath, 'file')) return;
 
@@ -380,7 +380,7 @@ test('rejects symlinked allowed rule files that are not selected for reading', (
 
 test('rejects stale legacy RULE.md files', (t) => {
   const fixture = makeRulesFixture(t);
-  fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'RULE.md'), '## COMMON\nLegacy\n');
+  fs.writeFileSync(path.join(fixture.homeDir, '.drfx', 'RULE.md'), '## COMMON\nLegacy\n');
 
   assert.throws(
     () => loadCustomRuleFiles({
@@ -394,7 +394,7 @@ test('rejects stale legacy RULE.md files', (t) => {
 
 test('rejects unknown markdown files in custom rules directory', (t) => {
   const fixture = makeRulesFixture(t);
-  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'CHECKLIST.md'), 'No aliases\n');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.drfx', 'rules', 'CHECKLIST.md'), 'No aliases\n');
 
   assert.throws(
     () => loadCustomRuleFiles({
@@ -408,7 +408,7 @@ test('rejects unknown markdown files in custom rules directory', (t) => {
 
 test('warns for unknown markdown rule files under normal strictness', (t) => {
   const fixture = makeRulesFixture(t);
-  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'CHECKLIST.md'), 'No aliases\n');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.drfx', 'rules', 'CHECKLIST.md'), 'No aliases\n');
 
   const loaded = loadCustomRuleFiles({
     projectRoot: fixture.projectRoot,
@@ -428,7 +428,7 @@ test('warns for unknown markdown rule files under normal strictness', (t) => {
 
 test('rejects unknown markdown rule files under strict strictness', (t) => {
   const fixture = makeRulesFixture(t);
-  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'CHECKLIST.md'), 'No aliases\n');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.drfx', 'rules', 'CHECKLIST.md'), 'No aliases\n');
 
   assert.throws(
     () => loadCustomRuleFiles({
@@ -612,8 +612,8 @@ test('loadRouteRuleContext rejects invalid routeKind', () => {
 
 test('PR.md and CODE.md are recognized (not warned/skipped) in rules directories under normal strictness', (t) => {
   const fixture = makeRulesFixture(t);
-  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'PR.md'), 'PR custom rules\n');
-  fs.writeFileSync(path.join(fixture.projectRoot, '.docs-review-fix', 'rules', 'CODE.md'), 'CODE custom rules\n');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.drfx', 'rules', 'PR.md'), 'PR custom rules\n');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.drfx', 'rules', 'CODE.md'), 'CODE custom rules\n');
 
   // Should NOT throw or warn under either strictness level — they are recognized
   const strictLoaded = loadCustomRuleFiles({
@@ -635,7 +635,7 @@ test('PR.md and CODE.md are recognized (not warned/skipped) in rules directories
 
 test('PR.md in user-global rules directory is recognized (not warned) under strict strictness', (t) => {
   const fixture = makeRulesFixture(t);
-  fs.writeFileSync(path.join(fixture.homeDir, '.docs-review-fix', 'rules', 'PR.md'), 'User PR rules\n');
+  fs.writeFileSync(path.join(fixture.homeDir, '.drfx', 'rules', 'PR.md'), 'User PR rules\n');
 
   const loaded = loadCustomRuleFiles({
     projectRoot: fixture.projectRoot,
@@ -650,10 +650,10 @@ test('loadRouteRuleContext reads PR.md from filesystem paths', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-route-rules-'));
   const homeDir = path.join(root, 'home');
   const projectRoot = path.join(root, 'project');
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.mkdirSync(path.join(projectRoot, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'rules', 'PR.md'), 'User PR custom rules\n');
-  fs.writeFileSync(path.join(projectRoot, '.docs-review-fix', 'rules', 'PR.md'), 'Project PR custom rules\n');
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(projectRoot, '.drfx', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.drfx', 'rules', 'PR.md'), 'User PR custom rules\n');
+  fs.writeFileSync(path.join(projectRoot, '.drfx', 'rules', 'PR.md'), 'Project PR custom rules\n');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const context = loadRouteRuleContext({
@@ -677,10 +677,10 @@ test('loadRouteRuleContext reads CODE.md from filesystem paths', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-route-rules-'));
   const homeDir = path.join(root, 'home');
   const projectRoot = path.join(root, 'project');
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.mkdirSync(path.join(projectRoot, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'rules', 'CODE.md'), 'User CODE rules\n');
-  fs.writeFileSync(path.join(projectRoot, '.docs-review-fix', 'rules', 'CODE.md'), 'Project CODE rules\n');
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(projectRoot, '.drfx', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.drfx', 'rules', 'CODE.md'), 'User CODE rules\n');
+  fs.writeFileSync(path.join(projectRoot, '.drfx', 'rules', 'CODE.md'), 'Project CODE rules\n');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const context = loadRouteRuleContext({
@@ -702,9 +702,9 @@ test('loadRouteRuleContext defaults user route rules to process.env.HOME when ho
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-route-rules-'));
   const homeDir = path.join(root, 'home');
   const projectRoot = path.join(root, 'project');
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'rules'), { recursive: true });
   fs.mkdirSync(projectRoot, { recursive: true });
-  fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'rules', 'CODE.md'), 'User CODE rules from env HOME\n');
+  fs.writeFileSync(path.join(homeDir, '.drfx', 'rules', 'CODE.md'), 'User CODE rules from env HOME\n');
   const oldHome = process.env.HOME;
   process.env.HOME = homeDir;
   t.after(() => {
@@ -731,9 +731,9 @@ test('loadRouteRuleContext rejects symlinked PR.md rule file', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-route-rules-'));
   const homeDir = path.join(root, 'home');
   const projectRoot = path.join(root, 'project');
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.mkdirSync(path.join(projectRoot, '.docs-review-fix', 'rules'), { recursive: true });
-  const linkPath = path.join(projectRoot, '.docs-review-fix', 'rules', 'PR.md');
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(projectRoot, '.drfx', 'rules'), { recursive: true });
+  const linkPath = path.join(projectRoot, '.drfx', 'rules', 'PR.md');
   const targetPath = path.join(root, 'outside', 'PR.md');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -758,10 +758,10 @@ test('loadRouteRuleContext rejects symlinked route rules directory before readin
   const homeDir = path.join(root, 'home');
   const projectRoot = path.join(root, 'project');
   const externalRules = path.join(root, 'external-rules');
-  fs.mkdirSync(path.join(projectRoot, '.docs-review-fix'), { recursive: true });
+  fs.mkdirSync(path.join(projectRoot, '.drfx'), { recursive: true });
   fs.mkdirSync(externalRules, { recursive: true });
   fs.writeFileSync(path.join(externalRules, 'PR.md'), 'External PR rules must not load\n');
-  const rulesDir = path.join(projectRoot, '.docs-review-fix', 'rules');
+  const rulesDir = path.join(projectRoot, '.drfx', 'rules');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   if (!symlinkOrSkip(t, externalRules, rulesDir, 'dir')) return;
@@ -795,10 +795,10 @@ test('loadRouteRuleContext with empty PR.md files skips those layers', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-route-rules-'));
   const homeDir = path.join(root, 'home');
   const projectRoot = path.join(root, 'project');
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.mkdirSync(path.join(projectRoot, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'rules', 'PR.md'), '\n\n');
-  fs.writeFileSync(path.join(projectRoot, '.docs-review-fix', 'rules', 'PR.md'), '   \n');
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'rules'), { recursive: true });
+  fs.mkdirSync(path.join(projectRoot, '.drfx', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.drfx', 'rules', 'PR.md'), '\n\n');
+  fs.writeFileSync(path.join(projectRoot, '.drfx', 'rules', 'PR.md'), '   \n');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const context = loadRouteRuleContext({

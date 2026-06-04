@@ -31,7 +31,7 @@ Practical Mode requires a live reviewer subagent probe that returns exactly `DRF
 
 Automatic writes require `review-and-fix` plus a selected guard mode: use `guard=git` with a clean HEAD-backed git worktree, or `guard=snapshot` with a valid snapshot rollback anchor. File-set guard checks and lock refresh must still pass.
 
-Persistent state lives under `.docs-review-fix/targets/<target-key>/`. One-shot read-only without `resume` is no-state and keeps tokens in memory only.
+Persistent state lives under `.drfx/targets/<target-key>/`. One-shot read-only without `resume` is no-state and keeps tokens in memory only.
 
 Use the shared sources:
 

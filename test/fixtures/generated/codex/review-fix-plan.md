@@ -32,7 +32,7 @@ Read copied shared files from this skill directory when useful; the embedded con
 - Missing trace tables, stable IDs, and coverage tables are not blocking by default unless the target claims complete reference coverage, custom rules require them, or the document becomes unverifiable for its stated purpose.
 - Public CLI commands are `drfx check`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.
 - The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, target editing, diff judgment, and final coordinator agreement are LLM work.
-- For resume, read `.docs-review-fix/targets/<target-key>/`.
+- For resume, read `.drfx/targets/<target-key>/`.
 - This skill includes copied shared references under this skill directory; it does not need a home-level shared asset directory at runtime.
 
 ## Invocation Gate

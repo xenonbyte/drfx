@@ -234,17 +234,17 @@ test('readSemanticPayload reads safe OS temp file', () => {
   assert.equal(readSemanticPayload({ filePath, projectRoot: process.cwd() }), 'PASS\nSummary: none\n');
 });
 
-test('rejects semantic payload through .docs-review-fix symlink to OS temp', () => {
+test('rejects semantic payload through .drfx symlink to OS temp', () => {
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-payload-root-'));
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-payload-target-'));
-  const handoffDir = path.join(projectRoot, '.docs-review-fix');
+  const handoffDir = path.join(projectRoot, '.drfx');
   const filePath = path.join(handoffDir, 'payload.md');
   fs.writeFileSync(path.join(tempDir, 'payload.md'), 'PASS\nSummary: none\n');
   fs.symlinkSync(tempDir, handoffDir, 'dir');
 
   assert.throws(
     () => readSemanticPayload({ filePath, projectRoot }),
-    /unsafe-handoff-file|project-local|\.docs-review-fix/i
+    /unsafe-handoff-file|project-local|\.drfx/i
   );
 });
 

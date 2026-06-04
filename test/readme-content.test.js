@@ -147,14 +147,14 @@ test('both READMEs document PR and CODE custom rule paths', () => {
   const en = read('README.md');
   const zh = read('README.zh-CN.md');
   // user-global and project-local rule paths for PR and CODE
-  assert.match(en, /~\/\.docs-review-fix\/rules\/PR\.md/);
-  assert.match(zh, /~\/\.docs-review-fix\/rules\/PR\.md/);
-  assert.match(en, /~\/\.docs-review-fix\/rules\/CODE\.md/);
-  assert.match(zh, /~\/\.docs-review-fix\/rules\/CODE\.md/);
-  assert.match(en, /\.docs-review-fix\/rules\/PR\.md/);
-  assert.match(zh, /\.docs-review-fix\/rules\/PR\.md/);
-  assert.match(en, /\.docs-review-fix\/rules\/CODE\.md/);
-  assert.match(zh, /\.docs-review-fix\/rules\/CODE\.md/);
+  assert.match(en, /~\/\.drfx\/rules\/PR\.md/);
+  assert.match(zh, /~\/\.drfx\/rules\/PR\.md/);
+  assert.match(en, /~\/\.drfx\/rules\/CODE\.md/);
+  assert.match(zh, /~\/\.drfx\/rules\/CODE\.md/);
+  assert.match(en, /\.drfx\/rules\/PR\.md/);
+  assert.match(zh, /\.drfx\/rules\/PR\.md/);
+  assert.match(en, /\.drfx\/rules\/CODE\.md/);
+  assert.match(zh, /\.drfx\/rules\/CODE\.md/);
 });
 
 test('both READMEs state code routes have no COMMON rule layer', () => {
@@ -284,10 +284,10 @@ test('critical technical literals are identical in both READMEs', () => {
     'resume',
     'read-only',
     'review-and-fix',
-    '~/.docs-review-fix/rules/PR.md',
-    '~/.docs-review-fix/rules/CODE.md',
-    '.docs-review-fix/rules/PR.md',
-    '.docs-review-fix/rules/CODE.md'
+    '~/.drfx/rules/PR.md',
+    '~/.drfx/rules/CODE.md',
+    '.drfx/rules/PR.md',
+    '.drfx/rules/CODE.md'
   ];
   for (const literal of literals) {
     assert.match(en, new RegExp(escapeRegExp(literal)), `README.md missing literal: ${literal}`);

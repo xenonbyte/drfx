@@ -9,4 +9,4 @@
 - For strict verified proof, run `drfx check` in the same route flow and consume only its JSON output.
 - The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, target editing, diff judgment, and final coordinator agreement are LLM work.
 - Do not trust old or stale descriptor files for automatic fixing or workflow PASS.
-- For resume, read `.docs-review-fix/targets/<target-key>/`.
+- For resume, read `.drfx/targets/<target-key>/`.

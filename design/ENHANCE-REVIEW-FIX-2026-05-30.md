@@ -198,7 +198,7 @@ clean-HEAD 在**首个 fix** 有真实安全价值：它保证回滚锚点 HEAD 
 
 **为什么 brute force 正确**：复用既有 `captureSnapshot`/`restoreSnapshot` 与既有 `initial`/`lastKnown` 指纹，不新建机制、不加状态、不加 manifest 字段。本质是"git 模式 = 首个 fix clean-HEAD 基线 + porcelain 非目标检测 + 逐 fix 快照锚点"，把 git 与 snapshot 两模式收敛到只差"非目标检测方法"。
 
-**最脆弱前提**：git 用户接受"逐 fix 回滚锚点是 `.docs-review-fix` 下的体快照"而非纯 `git checkout`。缓解：首个 fix 仍要求 clean HEAD，HEAD 始终是整段会话的有效手动回滚点；逐 fix 快照是**附加**的更细锚点，不替代 git 历史。
+**最脆弱前提**：git 用户接受"逐 fix 回滚锚点是 `.drfx` 下的体快照"而非纯 `git checkout`。缓解：首个 fix 仍要求 clean HEAD，HEAD 始终是整段会话的有效手动回滚点；逐 fix 快照是**附加**的更细锚点，不替代 git 历史。
 
 **临时绕过（修复发布前用户即可用）**：① 改用 `guard=snapshot` 重跑（已发布、免疫）；② 提交第一轮修复后 `resume` 续修，每轮一次。
 

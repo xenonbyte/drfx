@@ -69,8 +69,8 @@ function makeInstallFixture(t) {
     gemini: path.join(homeDir, '.gemini')
   };
   for (const root of Object.values(platformRoots)) fs.mkdirSync(root, { recursive: true });
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'shared'), { recursive: true });
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'capabilities'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'shared'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'capabilities'), { recursive: true });
   t.after(() => {
     fs.rmSync(rawHomeDir, { recursive: true, force: true });
   });
@@ -107,18 +107,18 @@ function makeManifest({ homeDir, platformRoots, platform = 'claude', generated =
     installRoot: platformRoots[platform],
     allowedRoots: allowedRoots || [path.join(platformRoots[platform], platform === 'codex' ? 'skills' : 'commands')],
     sharedAssets: {
-      path: '~/.docs-review-fix/shared',
+      path: '~/.drfx/shared',
       checksum: 'none'
     },
     capabilityDescriptor: {
-      path: `~/.docs-review-fix/capabilities/${platform}.json`,
+      path: `~/.drfx/capabilities/${platform}.json`,
       mutable: capabilityMutable
     },
     generated,
     backups: [
       {
         originalPath: generated[0] ? generated[0].path : path.join(platformRoots[platform], 'commands', 'review-fix-spec.md'),
-        backupPath: `~/.docs-review-fix/backups/${platform}/20260520/review-fix-spec`,
+        backupPath: `~/.drfx/backups/${platform}/20260520/review-fix-spec`,
         checksum: 'b'.repeat(64)
       }
     ]
@@ -203,7 +203,7 @@ test('rejects verified capabilities when proofRunId does not match current run',
 test('fingerprint guard probe uses only temp fixtures, detects mutation, and cleans up', (t) => {
   const runId = createRunId();
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-capability-workspace-'));
-  const projectState = path.join(workspace, '.docs-review-fix');
+  const projectState = path.join(workspace, '.drfx');
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-capability-probe-'));
   t.after(() => {
     fs.rmSync(workspace, { recursive: true, force: true });
@@ -223,9 +223,9 @@ test('fingerprint guard probe uses only temp fixtures, detects mutation, and cle
   assert.ok(result.files.every((filePath) => !fs.existsSync(filePath)));
 });
 
-test('fingerprint guard probe rejects docs-review-fix temp paths before writing fixtures', (t) => {
+test('fingerprint guard probe rejects drfx temp paths before writing fixtures', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-capability-project-'));
-  const stateProbeDir = path.join(root, 'project', '.docs-review-fix', 'probe');
+  const stateProbeDir = path.join(root, 'project', '.drfx', 'probe');
   fs.mkdirSync(stateProbeDir, { recursive: true });
   t.after(() => {
     fs.rmSync(root, { recursive: true, force: true });
@@ -233,7 +233,7 @@ test('fingerprint guard probe rejects docs-review-fix temp paths before writing 
 
   assert.throws(
     () => runFingerprintGuardProbe({ tmpDir: stateProbeDir, runId: createRunId() }),
-    /docs-review-fix|project state/i
+    /drfx|project state/i
   );
 
   assert.deepEqual(fs.readdirSync(stateProbeDir), []);
@@ -445,11 +445,11 @@ test('install manifest serializes and parses deterministic YAML subset', (t) => 
 test('writeInstallManifest and readInstallManifest use platform manifest path and missing reads are idempotent', (t) => {
   const { homeDir, platformRoots } = makeInstallFixture(t);
   const manifestFile = manifestPathForPlatform('codex', { homeDir });
-  assert.equal(manifestFile, path.join(homeDir, '.docs-review-fix', 'manifests', 'codex.manifest'));
+  assert.equal(manifestFile, path.join(homeDir, '.drfx', 'manifests', 'codex.manifest'));
 
   const routeDir = path.join(platformRoots.codex, 'skills', 'review-fix-plan');
   fs.mkdirSync(routeDir, { recursive: true });
-  fs.writeFileSync(path.join(routeDir, '.document-review-loop-owned'), 'owned by @xenonbyte/drfx\n');
+  fs.writeFileSync(path.join(routeDir, '.drfx-owned'), 'owned by @xenonbyte/drfx\n');
   fs.writeFileSync(path.join(routeDir, 'SKILL.md'), '---\nname: review-fix-plan\n---\n');
   const manifest = makeManifest({
     homeDir,
@@ -478,8 +478,8 @@ test('writeInstallManifest and readInstallManifest use platform manifest path an
 
 test('manifest allows only documented home expansion and never expands environment variables', (t) => {
   const { homeDir, platformRoots } = makeInstallFixture(t);
-  const sharedPath = path.join(homeDir, '.docs-review-fix', 'shared');
-  const descriptorPath = path.join(homeDir, '.docs-review-fix', 'capabilities', 'claude.json');
+  const sharedPath = path.join(homeDir, '.drfx', 'shared');
+  const descriptorPath = path.join(homeDir, '.drfx', 'capabilities', 'claude.json');
   const route = path.join(platformRoots.claude, 'commands', 'review-fix-design.md');
   fs.mkdirSync(path.dirname(route), { recursive: true });
   fs.writeFileSync(route, '# generated command\n');
@@ -496,16 +496,16 @@ test('manifest allows only documented home expansion and never expands environme
   assert.equal(result.capabilityDescriptor.mutable, true);
 
   for (const allowedPath of [
-    '~/.docs-review-fix/shared',
-    '~/.docs-review-fix/capabilities/claude.json',
-    '~/.docs-review-fix/backups/claude/20260520/review-fix-spec'
+    '~/.drfx/shared',
+    '~/.drfx/capabilities/claude.json',
+    '~/.drfx/backups/claude/20260520/review-fix-spec'
   ]) {
     assert.doesNotThrow(() =>
       validateGeneratedRemoval(
         {
           ...manifest,
           sharedAssets: { path: allowedPath, checksum: 'none' },
-          capabilityDescriptor: { path: '~/.docs-review-fix/capabilities/claude.json', mutable: true }
+          capabilityDescriptor: { path: '~/.drfx/capabilities/claude.json', mutable: true }
         },
         { homeDir, platformRoots }
       )
@@ -519,7 +519,7 @@ test('manifest allows only documented home expansion and never expands environme
 
   const envManifest = {
     ...manifest,
-    sharedAssets: { path: '$HOME/.docs-review-fix/shared', checksum: 'none' }
+    sharedAssets: { path: '$HOME/.drfx/shared', checksum: 'none' }
   };
   assert.throws(() => validateGeneratedRemoval(envManifest, { homeDir, platformRoots }), /environment variable|not expanded/i);
 
@@ -531,7 +531,7 @@ test('manifest allows only documented home expansion and never expands environme
 
   const prefixCollision = {
     ...manifest,
-    sharedAssets: { path: '~/.docs-review-fix/sharedness', checksum: 'none' }
+    sharedAssets: { path: '~/.drfx/sharedness', checksum: 'none' }
   };
   assert.throws(() => validateGeneratedRemoval(prefixCollision, { homeDir, platformRoots }), /documented.*home/i);
 });
@@ -672,7 +672,7 @@ test('Codex skill directory removal requires ownership marker', (t) => {
   const { homeDir, platformRoots } = makeInstallFixture(t);
   const ownedRoute = path.join(platformRoots.codex, 'skills', 'review-fix-spec');
   fs.mkdirSync(ownedRoute, { recursive: true });
-  fs.writeFileSync(path.join(ownedRoute, '.document-review-loop-owned'), 'owned by @xenonbyte/drfx\n');
+  fs.writeFileSync(path.join(ownedRoute, '.drfx-owned'), 'owned by @xenonbyte/drfx\n');
   fs.writeFileSync(path.join(ownedRoute, 'SKILL.md'), '---\nname: review-fix-spec\n---\n');
   const ownedManifest = makeManifest({
     homeDir,
@@ -771,7 +771,7 @@ test('install writes manifests and installer-default descriptors into isolated h
     assert.equal(manifestRead.manifest.platform, platform);
     assert.ok(manifestRead.manifest.generated.length > 0, platform);
 
-    const descriptorPath = path.join(homeDir, '.docs-review-fix', 'capabilities', `${platform}.json`);
+    const descriptorPath = path.join(homeDir, '.drfx', 'capabilities', `${platform}.json`);
     assert.equal(fs.existsSync(descriptorPath), true, platform);
     const descriptor = JSON.parse(fs.readFileSync(descriptorPath, 'utf8'));
     assert.equal(descriptor.provenance.source, 'installer-default', platform);
@@ -813,7 +813,7 @@ test('install copies all shared package assets for regeneration', async (t) => {
     path.join('rubrics', 'plan.md'),
     path.join('rubrics', 'design.md')
   ]) {
-    assert.equal(fs.existsSync(path.join(homeDir, '.docs-review-fix', 'shared', relativePath)), true, relativePath);
+    assert.equal(fs.existsSync(path.join(homeDir, '.drfx', 'shared', relativePath)), true, relativePath);
   }
 });
 
@@ -957,7 +957,7 @@ test('uninstall validates unsafe capability descriptor before deleting routes', 
   const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
   const route = path.join(platformRoots.claude, 'review-fix-spec.md');
   const descriptorTarget = path.join(homeDir, 'descriptor-target.json');
-  const descriptorSymlink = path.join(homeDir, '.docs-review-fix', 'capabilities', 'claude.json');
+  const descriptorSymlink = path.join(homeDir, '.drfx', 'capabilities', 'claude.json');
   fs.writeFileSync(route, '# generated command\n');
   fs.writeFileSync(descriptorTarget, '{}\n');
   fs.mkdirSync(path.dirname(descriptorSymlink), { recursive: true });
@@ -989,10 +989,10 @@ test('uninstall validates unsafe capability descriptor before deleting routes', 
   assert.equal(readInstallManifest('claude', { homeDir }).missing, false);
 });
 
-test('uninstall preserves RULE.md, preferences.md, and project .docs-review-fix', async (t) => {
+test('uninstall preserves RULE.md, preferences.md, and project .drfx', async (t) => {
   const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
-  const userState = path.join(homeDir, '.docs-review-fix');
-  const projectState = path.join(cwd, '.docs-review-fix');
+  const userState = path.join(homeDir, '.drfx');
+  const projectState = path.join(cwd, '.drfx');
   fs.mkdirSync(userState, { recursive: true });
   fs.mkdirSync(projectState, { recursive: true });
   fs.writeFileSync(path.join(userState, 'RULE.md'), '# User rules\n');
@@ -1025,7 +1025,7 @@ test('failed Codex skill directory overwrite preserves old owned directory and d
   const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
   const route = path.join(platformRoots.codexSkills, 'review-fix-spec');
   fs.mkdirSync(route, { recursive: true });
-  fs.writeFileSync(path.join(route, '.document-review-loop-owned'), 'owned by @xenonbyte/drfx\n');
+  fs.writeFileSync(path.join(route, '.drfx-owned'), 'owned by @xenonbyte/drfx\n');
   fs.writeFileSync(path.join(route, 'SKILL.md'), '# original owned skill\n');
   fs.writeFileSync(path.join(route, 'user-note.md'), 'preserve this backup source\n');
 
@@ -1050,13 +1050,13 @@ test('failed Codex skill directory overwrite preserves old owned directory and d
 
 test('check reruns current probes and reports advisory reason', async (t) => {
   const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'rules', 'COMMON.md'), '# User rules\n');
-  fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'rules', 'CHECKLIST.md'), '# User checklist\n');
-  fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'RULE.md'), '# Stale user rules\n');
-  fs.mkdirSync(path.join(cwd, '.docs-review-fix', 'rules'), { recursive: true });
-  fs.writeFileSync(path.join(cwd, '.docs-review-fix', 'rules', 'SPEC.md'), '# Project rules\n');
-  fs.writeFileSync(path.join(cwd, '.docs-review-fix', 'RULE.md'), '# Stale project rules\n');
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.drfx', 'rules', 'COMMON.md'), '# User rules\n');
+  fs.writeFileSync(path.join(homeDir, '.drfx', 'rules', 'CHECKLIST.md'), '# User checklist\n');
+  fs.writeFileSync(path.join(homeDir, '.drfx', 'RULE.md'), '# Stale user rules\n');
+  fs.mkdirSync(path.join(cwd, '.drfx', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, '.drfx', 'rules', 'SPEC.md'), '# Project rules\n');
+  fs.writeFileSync(path.join(cwd, '.drfx', 'RULE.md'), '# Stale project rules\n');
 
   const result = await runCheck({
     homeDir,
@@ -1069,10 +1069,10 @@ test('check reruns current probes and reports advisory reason', async (t) => {
 
   assert.equal(result.userRules.present, true);
   assert.equal(result.userRules.staleRulePresent, true);
-  assert.equal(result.userRules.staleRulePath, path.join(homeDir, '.docs-review-fix', 'RULE.md'));
+  assert.equal(result.userRules.staleRulePath, path.join(homeDir, '.drfx', 'RULE.md'));
   assert.equal(result.projectRules.present, true);
   assert.equal(result.projectRules.staleRulePresent, true);
-  assert.equal(result.projectRules.staleRulePath, path.join(cwd, '.docs-review-fix', 'RULE.md'));
+  assert.equal(result.projectRules.staleRulePath, path.join(cwd, '.drfx', 'RULE.md'));
   assert.equal(result.projectState.present, true);
   assert.equal(result.ruleWarnings.length, 1);
   assert.match(result.ruleWarnings[0].message, /Unknown custom rule file/i);
@@ -1083,7 +1083,7 @@ test('check reruns current probes and reports advisory reason', async (t) => {
   assert.match(report, /project state: present/i);
 
   for (const platform of ['claude', 'codex', 'gemini']) {
-    const descriptorPath = path.join(homeDir, '.docs-review-fix', 'capabilities', `${platform}.json`);
+    const descriptorPath = path.join(homeDir, '.drfx', 'capabilities', `${platform}.json`);
     const descriptor = JSON.parse(fs.readFileSync(descriptorPath, 'utf8'));
     assert.equal(descriptor.provenance.source, 'drfx-check-probe', platform);
     assert.equal(descriptor.provenance.runId, result.runId, platform);
@@ -1144,7 +1144,7 @@ test('generated Claude commands use fixed type, current checks, target-local res
   assert.match(text, /must not trust old|stale descriptor/i);
   assert.match(text, /users? must not pass `?type`?/i);
   assert.match(text, /must not infer.*type.*filename|must not infer.*type.*path/i);
-  assert.match(text, /\.docs-review-fix\/targets\/<target-key>\//);
+  assert.match(text, /\.drfx\/targets\/<target-key>\//);
 });
 
 test('generated Codex skills embed shared content and do not depend on home shared assets at runtime', () => {
@@ -1154,7 +1154,7 @@ test('generated Codex skills embed shared content and do not depend on home shar
   assert.equal(specSkill.kind, 'directory');
   assert.equal(specSkill.relativePath, path.join('skills', 'review-fix-spec'));
   assert.ok(specSkill.files.some((file) => file.relativePath === 'SKILL.md'));
-  assert.ok(specSkill.files.some((file) => file.relativePath === '.document-review-loop-owned'));
+  assert.ok(specSkill.files.some((file) => file.relativePath === '.drfx-owned'));
   assert.ok(specSkill.files.some((file) => file.relativePath === path.join('shared', 'core.md')));
   assert.ok(specSkill.files.some((file) => file.relativePath === path.join('shared', 'long-task.md')));
   assert.ok(specSkill.files.some((file) => file.relativePath === path.join('shared', 'rubrics', 'spec.md')));
@@ -1162,7 +1162,7 @@ test('generated Codex skills embed shared content and do not depend on home shar
   const skillText = specSkill.files.find((file) => file.relativePath === 'SKILL.md').content;
   assert.match(skillText, /Document Review Loop Core/);
   assert.match(skillText, /Reviewer Prompt Template/);
-  assert.doesNotMatch(skillText, /~\/\.docs-review-fix\/shared/);
+  assert.doesNotMatch(skillText, /~\/\.drfx\/shared/);
 });
 
 test('copySharedAssets copies minimal shared references into a Codex skill directory', (t) => {
@@ -1249,11 +1249,11 @@ test('uninstall skips a modified Claude command file and retains the manifest', 
   assert.equal(result.partial, true);
   assert.ok(result.skipped.some((s) => s.reason === 'modified' && s.path === routePath));
   assert.equal(fs.existsSync(routePath), true);
-  const manifestPath = path.join(homeDir, '.docs-review-fix', 'manifests', 'claude.manifest');
+  const manifestPath = path.join(homeDir, '.drfx', 'manifests', 'claude.manifest');
   assert.equal(fs.existsSync(manifestPath), true);
   const retained = readInstallManifest('claude', { homeDir }).manifest.generated.map((entry) => entry.path);
   assert.deepEqual(retained, [routePath]);
-  assert.equal(fs.existsSync(path.join(homeDir, '.docs-review-fix', 'capabilities', 'claude.json')), true);
+  assert.equal(fs.existsSync(path.join(homeDir, '.drfx', 'capabilities', 'claude.json')), true);
 });
 
 test('uninstall skips a modified Gemini command file and retains the manifest', async (t) => {
@@ -1269,7 +1269,7 @@ test('uninstall skips a modified Gemini command file and retains the manifest', 
   assert.equal(fs.existsSync(routePath), true);
   const retained = readInstallManifest('gemini', { homeDir }).manifest.generated.map((entry) => entry.path);
   assert.deepEqual(retained, [routePath]);
-  assert.equal(fs.existsSync(path.join(homeDir, '.docs-review-fix', 'capabilities', 'gemini.json')), true);
+  assert.equal(fs.existsSync(path.join(homeDir, '.drfx', 'capabilities', 'gemini.json')), true);
 });
 
 test('uninstall still removes an unchanged Claude command file and its manifest', async (t) => {
@@ -1281,7 +1281,7 @@ test('uninstall still removes an unchanged Claude command file and its manifest'
 
   assert.notEqual(result.partial, true);
   assert.equal(fs.existsSync(routePath), false);
-  const manifestPath = path.join(homeDir, '.docs-review-fix', 'manifests', 'claude.manifest');
+  const manifestPath = path.join(homeDir, '.drfx', 'manifests', 'claude.manifest');
   assert.equal(fs.existsSync(manifestPath), false);
 });
 
@@ -1297,5 +1297,5 @@ test('generated-output scan rejects runtime memory continuity claims', () => {
     allGeneratedText,
     /\b(?:resume|long-task continuity|continuity)\b.{0,120}\b(?:runtime objective state|session memory|platform memory|chat history)\b/i
   );
-  assert.match(allGeneratedText, /\.docs-review-fix\/targets\/<target-key>\//);
+  assert.match(allGeneratedText, /\.drfx\/targets\/<target-key>\//);
 });

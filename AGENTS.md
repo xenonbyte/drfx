@@ -38,4 +38,4 @@ The git history uses concise conventional-style prefixes, for example `feat:` an
 
 ## Security & Configuration Tips
 
-Never store raw secrets, credentials, cookies, private keys, or raw logs in workflow state, tests, receipts, or generated prompts. Preserve manifest-backed install safety: uninstall must remove only package-owned files and must not delete user rule files or project `.docs-review-fix` state.
+Never store raw secrets, credentials, cookies, private keys, or raw logs in workflow state, tests, receipts, or generated prompts. Preserve manifest-backed install safety: uninstall must remove only package-owned files and must not delete user rule files or project `.drfx` state.

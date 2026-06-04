@@ -237,7 +237,7 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 ```
 
 - `scope=<path>` names a source root to review. Repeat `scope=` for multiple roots. Empty scope means the whole project root.
-- Mandatory exclusions: `.git`, `.docs-review-fix`, `node_modules`, build outputs, and similar infrastructure directories are always excluded from the reviewed file set.
+- Mandatory exclusions: `.git`, `.drfx`, `node_modules`, build outputs, and similar infrastructure directories are always excluded from the reviewed file set.
 - `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code and Codex; advisory read-only on Gemini).
 - `guard=git` is the default; use `guard=snapshot` when a Git rollback anchor is unavailable. The route never silently switches guard modes.
 - `resume` explicitly continues from saved state. Stale state is refused; there is no silent reuse.
@@ -391,18 +391,18 @@ Reviewer findings include enough detail for triage: severity, location, problem,
 Supported V3 custom rule files:
 
 ```text
-~/.docs-review-fix/rules/COMMON.md
-~/.docs-review-fix/rules/SPEC.md
-~/.docs-review-fix/rules/PLAN.md
-~/.docs-review-fix/rules/DESIGN.md
-~/.docs-review-fix/rules/PR.md
-~/.docs-review-fix/rules/CODE.md
-.docs-review-fix/rules/COMMON.md
-.docs-review-fix/rules/SPEC.md
-.docs-review-fix/rules/PLAN.md
-.docs-review-fix/rules/DESIGN.md
-.docs-review-fix/rules/PR.md
-.docs-review-fix/rules/CODE.md
+~/.drfx/rules/COMMON.md
+~/.drfx/rules/SPEC.md
+~/.drfx/rules/PLAN.md
+~/.drfx/rules/DESIGN.md
+~/.drfx/rules/PR.md
+~/.drfx/rules/CODE.md
+.drfx/rules/COMMON.md
+.drfx/rules/SPEC.md
+.drfx/rules/PLAN.md
+.drfx/rules/DESIGN.md
+.drfx/rules/PR.md
+.drfx/rules/CODE.md
 ```
 
 Each custom rule file is a plain Markdown fragment. It does not need a wrapping heading.
@@ -411,7 +411,7 @@ For a typed review, the loader reads only `COMMON.md` plus the current document 
 
 Code routes (`review-fix-pr`, `review-fix-code`) have no COMMON layer. A `PR` review reads only `PR.md`; a `CODE` review reads only `CODE.md`. The user-global and project-local rule files for code routes follow the same two-tier layout as document routes.
 
-Legacy `RULE.md` is stale configuration. If `~/.docs-review-fix/RULE.md` or `.docs-review-fix/RULE.md` exists, workflow start blocks with `state-validation-failed` before writing target state.
+Legacy `RULE.md` is stale configuration. If `~/.drfx/RULE.md` or `.drfx/RULE.md` exists, workflow start blocks with `state-validation-failed` before writing target state.
 
 Unknown Markdown files under `rules/`, such as `Spec.md`, `SPEC-RULE.md`, or `REQUIREMENTS.md`, produce a normal-mode warning and continue. In strict mode, they block before target state is written.
 
@@ -439,7 +439,7 @@ Project-local rules are more specific than user-global rules. Custom rules canno
 Persistent state is target-local:
 
 ```text
-.docs-review-fix/targets/<target-key>/
+.drfx/targets/<target-key>/
 ```
 
 The target key is derived from the normalized target path relative to the project root: a readable slug plus a 12-character SHA-256 prefix. It is path-based, not content-based.
@@ -447,7 +447,7 @@ The target key is derived from the normalized target path relative to the projec
 Project-local layout:
 
 ```text
-.docs-review-fix/
+.drfx/
   rules/
     COMMON.md
     SPEC.md
@@ -462,7 +462,7 @@ Project-local layout:
 Default target state layout:
 
 ```text
-.docs-review-fix/targets/<target-key>/
+.drfx/targets/<target-key>/
   MANIFEST.md
   ISSUES.md
   CONTINUITY.md
@@ -475,7 +475,7 @@ Default target state layout:
 
 `MANIFEST.md` records target path, document type, strictness, mode, target key, ledger path, status, current round, file fingerprints, references, and timestamps.
 
-The default ledger is `.docs-review-fix/targets/<target-key>/ISSUES.md`. A custom `ledger=` path must stay inside the target directory and must not point into reserved paths such as `LOCK/`, `stale-locks/`, `rounds/`, `MANIFEST.md`, `CONTINUITY.md`, or `SUMMARY.md`.
+The default ledger is `.drfx/targets/<target-key>/ISSUES.md`. A custom `ledger=` path must stay inside the target directory and must not point into reserved paths such as `LOCK/`, `stale-locks/`, `rounds/`, `MANIFEST.md`, `CONTINUITY.md`, or `SUMMARY.md`.
 
 `resume` uses target-local files, not chat history. There is no runtime objective/session/platform memory dependency for resume. Resume derives the target key, reads `MANIFEST.md`, reads the ledger, loads `CONTINUITY.md` when present, rebuilds current merged rules, checks fingerprints, and continues only when state is still valid.
 
@@ -510,7 +510,7 @@ Guard blocker wording:
 
 `Blocked: state-validation-failed.`
 
-Remove stale `RULE.md` files. Unknown Markdown files under `.docs-review-fix/rules/` and `~/.docs-review-fix/rules/` warn in normal mode but block strict runs.
+Remove stale `RULE.md` files. Unknown Markdown files under `.drfx/rules/` and `~/.drfx/rules/` warn in normal mode but block strict runs.
 
 `Unsupported: review-and-fix or strict-verified is unavailable on Gemini.`
 

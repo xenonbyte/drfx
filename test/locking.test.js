@@ -30,7 +30,7 @@ function makeWorkspace() {
 }
 
 function statePaths(root, targetKey) {
-  const targetDir = path.join(root, '.docs-review-fix', 'targets', targetKey);
+  const targetDir = path.join(root, '.drfx', 'targets', targetKey);
   return {
     targetDir,
     lockDir: path.join(targetDir, 'LOCK'),

@@ -15,8 +15,8 @@ function baseManifest(generated) {
     updatedAt: '2026-05-31T00:00:00.000Z',
     installRoot: '/abs/.codex',
     allowedRoots: ['/abs/.codex'],
-    sharedAssets: { path: '~/.docs-review-fix/shared', checksum: 'none' },
-    capabilityDescriptor: { path: '~/.docs-review-fix/capabilities/codex.json', mutable: true },
+    sharedAssets: { path: '~/.drfx/shared', checksum: 'none' },
+    capabilityDescriptor: { path: '~/.drfx/capabilities/codex.json', mutable: true },
     generated,
     backups: []
   };
@@ -54,8 +54,8 @@ test('codex install records childFiles and treeChecksum for skill directories', 
     codexSkills: path.join(homeDir, '.codex', 'skills'),
     codexPrompts: path.join(homeDir, '.codex', 'prompts')
   };
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'shared'), { recursive: true });
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'capabilities'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'shared'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'capabilities'), { recursive: true });
 
   await installPlatform('codex', { homeDir, platformRoots });
   const { manifest } = readInstallManifest('codex', { homeDir });
@@ -130,8 +130,8 @@ async function installCodex(t) {
     codexSkills: path.join(homeDir, '.codex', 'skills'),
     codexPrompts: path.join(homeDir, '.codex', 'prompts')
   };
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'shared'), { recursive: true });
-  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'capabilities'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'shared'), { recursive: true });
+  fs.mkdirSync(path.join(homeDir, '.drfx', 'capabilities'), { recursive: true });
   await installPlatform('codex', { homeDir, platformRoots });
   return { homeDir, platformRoots };
 }
@@ -175,7 +175,7 @@ test('uninstall skips a codex skill directory that gained a user empty directory
 test('uninstall skips a codex skill directory that gained a nested ownership-marker-named file', async (t) => {
   const { homeDir, platformRoots } = await installCodex(t);
   const skillDir = path.join(platformRoots.codexSkills, 'review-fix-spec');
-  const nestedMarker = path.join(skillDir, 'shared', '.document-review-loop-owned');
+  const nestedMarker = path.join(skillDir, 'shared', '.drfx-owned');
   fs.writeFileSync(nestedMarker, 'user note\n');
 
   const result = await uninstallPlatform('codex', { homeDir, platformRoots });
