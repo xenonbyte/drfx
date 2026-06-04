@@ -12,7 +12,7 @@ A route resolves one of three target contexts. The protocol below is identical a
 
 - Document routes (`review-fix-spec`/`plan`/`design`/`doc`): the target context is a single file. Its identity is the normalized target path relative to the project root.
 - PR route (`review-fix-pr`): the target context is the file set of a local PR diff (`base=<branch>` vs `HEAD`, via the local merge base). Its identity is the route kind plus the base ref, with a deterministic file-set fingerprint over the diff. PR resolution is local and read-only: never fetch, push, or mutate refs.
-- CODE route (`review-fix-code`): the target context is the file set discovered by traversing in-root source `scope=<path>` directories under mandatory exclusions. Its identity is the route kind plus the normalized scopes/exclusions, with a deterministic file-set fingerprint over the discovered files.
+- CODE route (`review-fix-code`): the target context is the file set discovered by traversing in-root source `scope=<path>` directories under mandatory exclusions. Its identity is the route kind plus the normalized scopes and a deterministic file-set fingerprint over the discovered files; stored exclusions describe the resolver policy used for audit, but default exclusion-list drift alone does not make resume stale when the file-set fingerprint is unchanged.
 
 ## Target State Directory
 

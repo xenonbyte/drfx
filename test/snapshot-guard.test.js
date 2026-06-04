@@ -778,6 +778,27 @@ test('file-set snapshot validate prunes .git and package-manager churn from the 
   assert.deepEqual(result.changedFiles, []);
 });
 
+test('file-set snapshot validate ignores legacy monitored entries under pruned directories', (t) => {
+  const fixture = makeWorkspace(t);
+  fs.mkdirSync(path.join(fixture.root, '.codegraph'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.root, '.codegraph', 'codegraph.db'), 'old-index\n');
+  const baseline = captureFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md', '.codegraph/codegraph.db']
+  });
+  assert.equal(baseline.status, 'passed');
+
+  fs.writeFileSync(path.join(fixture.root, '.codegraph', 'codegraph.db'), 'new-index\n');
+  const result = validateFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md'],
+    baseline
+  });
+
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.deepEqual(result.changedFiles, []);
+});
+
 test('file-set snapshot validate still blocks an out-of-set write under a build-output directory', (t) => {
   const fixture = makeWorkspace(t);
   fs.mkdirSync(path.join(fixture.root, 'dist'), { recursive: true });

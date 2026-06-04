@@ -244,6 +244,34 @@ test('PR explicit resume compares requested guard and rounds against stored iden
   assert.ok(roundsMismatch.staleIdentityFields.includes('roundLimit'));
 });
 
+test('CODE explicit resume tolerates additive default exclusion drift when file set is unchanged', async (t) => {
+  const root = makePrRepo(t);
+  const start = await runWorkflowCommand('start', practicalArgs(['review-fix-code', 'scope=src']), { cwd: root });
+  assert.equal(start.ok, true);
+
+  const manifestText = fs.readFileSync(start.manifestPath, 'utf8')
+    .split('\n')
+    .filter((line) => ![
+      '- .claude',
+      '- .codex',
+      '- .codegraph',
+      '- .gemini',
+      '- .req-to-plan'
+    ].includes(line))
+    .join('\n');
+  fs.writeFileSync(start.manifestPath, manifestText);
+
+  const resume = await runWorkflowCommand('start', practicalArgs([
+    'review-fix-code',
+    'scope=src',
+    'resume'
+  ]), { cwd: root });
+  assert.equal(resume.ok, true);
+  assert.equal(resume.status, 'review');
+  assert.equal(resume.routeKind, 'code');
+  assert.equal(resume.fileSetFingerprint, start.fileSetFingerprint);
+});
+
 test('PR explicit resume refuses a stale identity (changed file set)', async (t) => {
   const root = makePrRepo(t);
   const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });

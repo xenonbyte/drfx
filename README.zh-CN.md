@@ -190,7 +190,7 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 ```
 
 - `scope=<path>` 指定要 review 的 source root。可重复（repeatable）传入多个 `scope=`。省略 scope 表示整个 project root。
-- 强制排除：`.git`、`.drfx`、legacy `.docs-review-fix`、`node_modules`、build outputs 及类似 infrastructure 目录始终排除在 reviewed file set 之外。
+- 强制排除：`.git`、`.drfx`、legacy `.docs-review-fix`、`.claude`、`.codex`、`.codegraph`、`.gemini`、`.req-to-plan` 等 local agent/tool state、`node_modules`、build outputs 及类似 infrastructure 目录始终排除在 reviewed file set 之外。
 - `read-only` 或 `review-and-fix`（Claude Code 和 Codex 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
 - `guard=git` 为默认值；Git rollback anchor 不可用时使用 `guard=snapshot`。路由永远不会静默切换 guard mode。
 - `resume` 显式从已保存的 state 继续。拒绝 stale state，不存在静默复用。
@@ -201,7 +201,7 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 `guard=snapshot` monitoring details:
 
 - 它监控 target、显式 `ref=` documents、普通 project files，以及无关 file symlinks（作为 opaque entries）。
-- 常见 infrastructure directories（`.git`、`node_modules`、`.pnpm-store`、`.yarn`、`.cache`、`dist`、`build`、`coverage`）默认排除在监控范围之外，除非 target 或 reference 位于其中。
+- 常见 infrastructure directories（`.git`、`.claude`、`.codex`、`.codegraph`、`.gemini`、`.req-to-plan`、`node_modules`、`.pnpm-store`、`.yarn`、`.cache`、`dist`、`build`、`coverage`）默认排除在监控范围之外，除非 target 或 reference 位于其中。
 - 若有目录被排除，guard 报告 `monitorScope: project-tree-files-and-references-excluding-infrastructure`。
 - Directory symlinks 不被支持，会阻断 guard。
 - Opaque file-symlink entries 通过 symlink metadata 和 `readlink` target text 检测变化，但无法检测通过 symlink 写入其 resolved target 的修改。

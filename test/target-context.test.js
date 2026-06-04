@@ -419,14 +419,30 @@ test('compareCodeIdentity flags a scope drift as a STRICT stale mismatch', () =>
   assert.ok(result.mismatches.includes('normalizedScopes'));
 });
 
-test('compareCodeIdentity flags an exclusion drift as a STRICT stale mismatch', () => {
+test('compareCodeIdentity tolerates exclusion drift when the file set fingerprint is unchanged', () => {
   const stored = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'git', roundLimit: 2 });
   const requested = buildCodeIdentity({
     context: sampleCodeContext({ exclusions: ['.git'] }),
     guardMode: 'git',
     roundLimit: 2
   });
-  assert.ok(compareCodeIdentity({ stored, requested }).mismatches.includes('exclusions'));
+  assert.deepEqual(compareCodeIdentity({ stored, requested }), { match: true, mismatches: [] });
+});
+
+test('compareCodeIdentity reports exclusion drift when the file set fingerprint also changes', () => {
+  const stored = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'git', roundLimit: 2 });
+  const requested = buildCodeIdentity({
+    context: sampleCodeContext({
+      exclusions: ['.git'],
+      files: [{ path: 'src/a.js', status: 'present', contentId: 'f'.repeat(64) }]
+    }),
+    guardMode: 'git',
+    roundLimit: 2
+  });
+  const result = compareCodeIdentity({ stored, requested });
+  assert.equal(result.match, false);
+  assert.ok(result.mismatches.includes('fileSetFingerprint'));
+  assert.ok(result.mismatches.includes('exclusions'));
 });
 
 test('compareCodeIdentity flags a file-set drift as a STRICT stale mismatch', () => {

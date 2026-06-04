@@ -35,6 +35,11 @@ function makeCodeFixture(t) {
   write('.git/HEAD', 'ref: refs/heads/main\n');
   write('.drfx/targets/x/MANIFEST.md', 'state\n');
   write('.docs-review-fix/targets/x/MANIFEST.md', 'legacy state\n');
+  write('.claude/settings.local.json', '{}\n');
+  write('.codex/state.json', '{}\n');
+  write('.codegraph/codegraph.db', 'sqlite bytes\n');
+  write('.gemini/settings.json', '{}\n');
+  write('.req-to-plan/.workflow-active', 'WF-1\n');
   write('node_modules/dep/index.js', 'module.exports = {};\n');
   write('dist/bundle.js', 'bundled\n');
   write('build/out.js', 'built\n');
@@ -60,6 +65,11 @@ test('code resolver with no scope traverses the whole project root excluding non
     assert.doesNotMatch(entry.path, /^\.git\//);
     assert.doesNotMatch(entry.path, /^\.drfx\//);
     assert.doesNotMatch(entry.path, /^\.docs-review-fix\//);
+    assert.doesNotMatch(entry.path, /^\.claude\//);
+    assert.doesNotMatch(entry.path, /^\.codex\//);
+    assert.doesNotMatch(entry.path, /^\.codegraph\//);
+    assert.doesNotMatch(entry.path, /^\.gemini\//);
+    assert.doesNotMatch(entry.path, /^\.req-to-plan\//);
     assert.doesNotMatch(entry.path, /^node_modules\//);
     assert.doesNotMatch(entry.path, /^dist\//);
     assert.doesNotMatch(entry.path, /^build\//);
@@ -157,7 +167,20 @@ test('code resolver rejects a scope that is a symlink escaping the root', async 
 
 test('code resolver rejects excluded scopes before review starts', async (t) => {
   const fixture = makeCodeFixture(t);
-  for (const scope of ['.git', '.drfx', '.docs-review-fix', 'node_modules', 'dist', 'build', 'coverage']) {
+  for (const scope of [
+    '.git',
+    '.drfx',
+    '.docs-review-fix',
+    '.claude',
+    '.codex',
+    '.codegraph',
+    '.gemini',
+    '.req-to-plan',
+    'node_modules',
+    'dist',
+    'build',
+    'coverage'
+  ]) {
     const result = await resolveCodeTarget({ cwd: fixture.root, scopes: [scope] });
     assert.equal(result.status, 'blocked', `scope ${scope} must be blocked`);
     assert.equal(result.reason, 'excluded-scope');
@@ -218,7 +241,20 @@ test('code resolver does not read device or special files', async (t) => {
 
 test('CODE_EXCLUDED_DIRECTORIES is exported and includes the mandatory non-source dirs', () => {
   assert.ok(CODE_EXCLUDED_DIRECTORIES instanceof Set);
-  for (const required of ['.git', '.drfx', '.docs-review-fix', 'node_modules', 'dist', 'build', 'coverage']) {
+  for (const required of [
+    '.git',
+    '.drfx',
+    '.docs-review-fix',
+    '.claude',
+    '.codex',
+    '.codegraph',
+    '.gemini',
+    '.req-to-plan',
+    'node_modules',
+    'dist',
+    'build',
+    'coverage'
+  ]) {
     assert.ok(CODE_EXCLUDED_DIRECTORIES.has(required), `expected exclusion ${required}`);
   }
 });

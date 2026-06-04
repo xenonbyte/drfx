@@ -190,7 +190,7 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 ```
 
 - `scope=<path>` names a source root to review. Repeat `scope=` for multiple roots. Empty scope means the whole project root.
-- Mandatory exclusions: `.git`, `.drfx`, legacy `.docs-review-fix`, `node_modules`, build outputs, and similar infrastructure directories are always excluded from the reviewed file set.
+- Mandatory exclusions: `.git`, `.drfx`, legacy `.docs-review-fix`, local agent/tool state such as `.claude`, `.codex`, `.codegraph`, `.gemini`, `.req-to-plan`, `node_modules`, build outputs, and similar infrastructure directories are always excluded from the reviewed file set.
 - `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code and Codex; advisory read-only on Gemini).
 - `guard=git` is the default; use `guard=snapshot` when a Git rollback anchor is unavailable. The route never silently switches guard modes.
 - `resume` explicitly continues from saved state. Stale state is refused; there is no silent reuse.
@@ -201,7 +201,7 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 `guard=snapshot` monitoring details:
 
 - It monitors the target, explicit `ref=` documents, ordinary project files, and unrelated file symlinks as opaque entries.
-- Well-known infrastructure directories (`.git`, `node_modules`, `.pnpm-store`, `.yarn`, `.cache`, `dist`, `build`, `coverage`) are excluded from monitoring unless the target or a reference lives inside one.
+- Well-known infrastructure directories (`.git`, `.claude`, `.codex`, `.codegraph`, `.gemini`, `.req-to-plan`, `node_modules`, `.pnpm-store`, `.yarn`, `.cache`, `dist`, `build`, `coverage`) are excluded from monitoring unless the target or a reference lives inside one.
 - When any directory is excluded, the guard reports `monitorScope: project-tree-files-and-references-excluding-infrastructure`.
 - Directory symlinks are not supported and block the guard.
 - Opaque file-symlink entries are checked by symlink metadata and `readlink` target text, but they do not detect writes made through the symlink to its resolved target.

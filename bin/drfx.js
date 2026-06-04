@@ -7,6 +7,14 @@ const { installPlatforms, uninstallPlatforms, parsePlatformList } = require('../
 const { runWorkflowCommand, formatWorkflowJson, formatWorkflowError } = require('../lib/workflow');
 
 const USER_COMMANDS = new Set(['version', 'help', 'doctor', 'status', 'install', 'uninstall']);
+const WORKFLOW_STDIN_FLAGS = new Set([
+  '--result-stdin',
+  '--triage-stdin',
+  '--final-response-stdin',
+  '--fix-report-stdin',
+  '--diff-review-stdin',
+  '--payload-stdin'
+]);
 
 function packageVersion() {
   return require('../package.json').version;
@@ -72,6 +80,22 @@ function parseCommandOptions(argv) {
   return { platforms, json };
 }
 
+function workflowNeedsStdin(args) {
+  return args.some((arg) => WORKFLOW_STDIN_FLAGS.has(arg));
+}
+
+function readProcessStdin() {
+  return new Promise((resolve, reject) => {
+    let input = '';
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (chunk) => {
+      input += chunk;
+    });
+    process.stdin.on('end', () => resolve(input));
+    process.stdin.on('error', reject);
+  });
+}
+
 async function main(argv) {
   const command = argv[2];
 
@@ -90,7 +114,10 @@ async function main(argv) {
       printWorkflowHelp();
       return 0;
     }
-    const result = await runWorkflowCommand(workflowSubcommand, workflowArgs);
+    const options = workflowNeedsStdin(workflowArgs)
+      ? { stdin: await readProcessStdin() }
+      : {};
+    const result = await runWorkflowCommand(workflowSubcommand, workflowArgs, options);
     process.stdout.write(formatWorkflowJson(result));
     return 0;
   }
