@@ -751,6 +751,19 @@ test('classifyFileSetChanges blocks dirty allowed files when prior-round allowan
   assert.deepEqual(result.offending, ['lib/a.js']);
 });
 
+test('classifyFileSetChanges blocks staged allowed files even during later rounds', () => {
+  const result = classifyFileSetChanges({
+    changedPaths: [{ relativePath: 'lib/a.js', statusCode: 'M ', kind: 'staged' }],
+    allowedSet: ['lib/a.js', 'lib/b.js']
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+  assert.deepEqual(result.offending, ['lib/a.js']);
+  assert.deepEqual(result.offendingEntries, [
+    { relativePath: 'lib/a.js', statusCode: 'M ', kind: 'staged' }
+  ]);
+});
+
 test('classifyFileSetChanges blocks a change outside the allowed set', () => {
   const result = classifyFileSetChanges({
     changedPaths: ['lib/a.js', 'README.md'],
@@ -788,6 +801,42 @@ test('file-set git guard allows route-owned prior-round changes only', (t) => {
   });
   assert.equal(result.status, 'passed');
   assert.deepEqual(result.changedFiles, ['docs/dep.md', 'docs/target.md']);
+});
+
+test('file-set git guard rejects staged allowed files in later fix rounds', (t) => {
+  const { root, target } = makeGitRepo(t);
+  fs.appendFileSync(target, '\nRoute-owned target change staged by mistake.\n');
+  git(root, 'add docs/target.md');
+
+  const result = checkFileSetWorktree({
+    projectRoot: root,
+    allowedFiles: ['docs/target.md'],
+    allowAllowedFileChanges: true
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+  assert.equal(result.entries.length, 1);
+  assert.match(result.entries[0].pathSha256, /^[a-f0-9]{64}$/);
+  assert.equal(result.entries[0].statusCode, 'M ');
+  assert.equal(result.entries[0].kind, 'staged');
+  assert.equal(Object.hasOwn(result.entries[0], 'path'), false);
+});
+
+test('file-set git guard rejects partially staged allowed files in later fix rounds', (t) => {
+  const { root, target } = makeGitRepo(t);
+  fs.appendFileSync(target, '\nFirst target change.\n');
+  git(root, 'add docs/target.md');
+  fs.appendFileSync(target, '\nSecond unstaged target change.\n');
+
+  const result = checkFileSetWorktree({
+    projectRoot: root,
+    allowedFiles: ['docs/target.md'],
+    allowAllowedFileChanges: true
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+  assert.equal(result.entries[0].statusCode, 'MM');
+  assert.equal(result.entries[0].kind, 'staged');
 });
 
 test('file-set git guard blocks unrelated local changes', (t) => {

@@ -1191,6 +1191,20 @@ test('Claude and Codex code routes materialize practical assurance without expos
   }
 });
 
+test('generated Claude/Codex start commands omit the placeholder rounds token by default', () => {
+  for (const platform of ['claude', 'codex']) {
+    for (const route of listRoutes()) {
+      const body = renderPlatformRoute(platform, route.routeName, { packageVersion: '0.0.0-test' });
+      const startCommands = body
+        .split('\n')
+        .filter((line) => line.startsWith('drfx workflow start '))
+        .join('\n');
+
+      assert.doesNotMatch(startCommands, /rounds=<roundLimit>/, `${platform}:${route.routeName}`);
+    }
+  }
+});
+
 test('Gemini code routes are advisory only', () => {
   for (const routeName of ['review-fix-pr', 'review-fix-code']) {
     const command = renderPlatformRoute('gemini', routeName, { packageVersion: '0.0.0-test' });

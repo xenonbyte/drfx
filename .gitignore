@@ -4,6 +4,7 @@ docs/*
 design/
 CONTINUITY.md
 .docs-review-fix/
+.req-to-plan/
 .DS_Store
 *.tgz
 npm-debug.log*
