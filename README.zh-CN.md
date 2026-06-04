@@ -170,13 +170,14 @@ Supported tokens:
 Syntax:
 
 ```text
-review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<path>] [debug]
+review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
 ```
 
 - `base=<branch>` 为必填。diff 为 `base..HEAD`，使用本地 git 解析，no fetch、push 或 ref mutation。
 - `read-only` 或 `review-and-fix`（Claude Code 和 Codex 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
 - `guard=git` 为默认值；Git rollback anchor 不可用时使用 `guard=snapshot`。路由永远不会静默切换 guard mode。
 - `resume` 显式从已保存的 state 继续。拒绝 stale state，不存在静默复用。
+- `reset` 归档现有 target state（移到 `.drfx/archived/`，绝不删除）并全新开始 review。当 stale state 已无法 resume 时（例如排除策略变化改变了 file set），这是显式的逃生口。`resume` 与 `reset` 互斥。
 - `rounds=<n>` 设置最大修复循环次数（正整数）。与 `read-only` 不兼容。
 - `root=<path>` 设置 project root。
 - 不接受 `target=`、`ref=`、`strict`、`normal`、`assurance=` 或 `ledger=`。
@@ -186,7 +187,7 @@ review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [res
 Syntax:
 
 ```text
-review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<path>] [debug]
+review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
 ```
 
 - `scope=<path>` 指定要 review 的 source root。可重复（repeatable）传入多个 `scope=`。省略 scope 表示整个 project root。
@@ -194,6 +195,7 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 - `read-only` 或 `review-and-fix`（Claude Code 和 Codex 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
 - `guard=git` 为默认值；Git rollback anchor 不可用时使用 `guard=snapshot`。路由永远不会静默切换 guard mode。
 - `resume` 显式从已保存的 state 继续。拒绝 stale state，不存在静默复用。
+- `reset` 归档现有 target state（移到 `.drfx/archived/`，绝不删除）并全新开始 review。当 stale state 已无法 resume 时（例如排除策略变化改变了 file set），这是显式的逃生口。`resume` 与 `reset` 互斥。
 - `rounds=<n>` 设置最大修复循环次数（正整数）。与 `read-only` 不兼容。
 - `root=<path>` 设置 project root。
 - 不接受 `target=`、`ref=`、`base=`、`strict`、`normal`、`assurance=` 或 `ledger=`。
@@ -408,9 +410,10 @@ Project-local layout:
     DESIGN.md
   index.md
   targets/
+  archived/
 ```
 
-`rules/` 是 shared project configuration。`index.md` 存在时是 project-level index material。`targets/<target-key>/` 是 single-target workflow state。
+`rules/` 是 shared project configuration。`index.md` 存在时是 project-level index material。`targets/<target-key>/` 是 single-target workflow state。`archived/` 仅由 `reset` 创建——它把旧的 target state 移到这里（绝不删除）。
 
 Default target state layout:
 

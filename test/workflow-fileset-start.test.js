@@ -289,6 +289,57 @@ test('PR explicit resume refuses a stale identity (changed file set)', async (t)
   assert.ok(Array.isArray(resume.staleIdentityFields) && resume.staleIdentityFields.length > 0);
 });
 
+test('reset archives stale state and starts fresh, breaking the resume/start deadlock', async (t) => {
+  const root = makePrRepo(t);
+  const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
+  assert.equal(start.ok, true);
+
+  // Drift the file set so the stored identity goes stale.
+  fs.writeFileSync(path.join(root, 'src', 'c.js'), 'module.exports = 4;\n');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'more feature work']);
+
+  // Deadlock: resume refuses the stale identity ...
+  const staleResume = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main', 'resume']), { cwd: root });
+  assert.equal(staleResume.ok, false);
+  assert.ok(Array.isArray(staleResume.staleIdentityFields) && staleResume.staleIdentityFields.length > 0);
+
+  // ... and a plain fresh start refuses because state exists.
+  await assert.rejects(
+    runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root }),
+    (error) => error.code === 'ERR_STATE_EXISTS'
+  );
+
+  // reset breaks the deadlock: it ARCHIVES the prior state (never deletes) and starts fresh.
+  const reset = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main', 'reset']), { cwd: root });
+  assert.equal(reset.ok, true);
+  assert.equal(reset.status, 'review');
+  assert.match(reset.archivedStatePath, /[\\/]\.drfx[\\/]archived[\\/]pr-/);
+  assert.equal(fs.existsSync(reset.archivedStatePath), true);
+  assert.equal(fs.existsSync(path.join(reset.archivedStatePath, 'MANIFEST.md')), true, 'old state is preserved in the archive');
+  // The fresh manifest is recomputed over the current file set, not the stale one.
+  assert.notEqual(reset.fileSetFingerprint, start.fileSetFingerprint);
+  assert.equal(fs.existsSync(start.manifestPath), true);
+  assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).fileSetFingerprint, reset.fileSetFingerprint);
+});
+
+test('reset with no existing state starts fresh without archiving', async (t) => {
+  const root = makePrRepo(t);
+  const reset = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main', 'reset']), { cwd: root });
+  assert.equal(reset.ok, true);
+  assert.equal(reset.status, 'review');
+  assert.equal(reset.archivedStatePath, undefined, 'nothing to archive when no prior state exists');
+  assert.equal(fs.existsSync(path.join(root, '.drfx', 'archived')), false);
+});
+
+test('resume and reset tokens are mutually exclusive', async (t) => {
+  const root = makePrRepo(t);
+  await assert.rejects(
+    runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main', 'resume', 'reset']), { cwd: root }),
+    (error) => error.code === 'ERR_CONFLICTING_RESUME_RESET'
+  );
+});
+
 test('read-only no-state CODE review never creates auto-fix state and never claims pass', async (t) => {
   const root = makePrRepo(t);
   const result = await runWorkflowCommand('context', [

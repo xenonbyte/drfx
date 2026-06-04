@@ -170,13 +170,14 @@ Supported tokens:
 Syntax:
 
 ```text
-review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<path>] [debug]
+review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
 ```
 
 - `base=<branch>` is required. The diff is `base..HEAD`, resolved locally with no fetch, push, or ref mutation.
 - `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code and Codex; advisory read-only on Gemini).
 - `guard=git` is the default; use `guard=snapshot` when a Git rollback anchor is unavailable. The route never silently switches guard modes.
 - `resume` explicitly continues from saved state. Stale state is refused; there is no silent reuse.
+- `reset` archives the existing target state (moved to `.drfx/archived/`, never deleted) and starts a fresh review. It is the explicit escape when stale state can no longer be resumed (for example after an exclusion-policy change shifted the file set). `resume` and `reset` are mutually exclusive.
 - `rounds=<n>` sets the maximum repair-loop count (positive integer). Unsupported with `read-only`.
 - `root=<path>` sets the project root.
 - Does not accept `target=`, `ref=`, `strict`, `normal`, `assurance=`, or `ledger=`.
@@ -186,7 +187,7 @@ review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [res
 Syntax:
 
 ```text
-review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<path>] [debug]
+review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
 ```
 
 - `scope=<path>` names a source root to review. Repeat `scope=` for multiple roots. Empty scope means the whole project root.
@@ -194,6 +195,7 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 - `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code and Codex; advisory read-only on Gemini).
 - `guard=git` is the default; use `guard=snapshot` when a Git rollback anchor is unavailable. The route never silently switches guard modes.
 - `resume` explicitly continues from saved state. Stale state is refused; there is no silent reuse.
+- `reset` archives the existing target state (moved to `.drfx/archived/`, never deleted) and starts a fresh review. It is the explicit escape when stale state can no longer be resumed (for example after an exclusion-policy change shifted the file set). `resume` and `reset` are mutually exclusive.
 - `rounds=<n>` sets the maximum repair-loop count (positive integer). Unsupported with `read-only`.
 - `root=<path>` sets the project root.
 - Does not accept `target=`, `ref=`, `base=`, `strict`, `normal`, `assurance=`, or `ledger=`.
@@ -408,9 +410,10 @@ Project-local layout:
     DESIGN.md
   index.md
   targets/
+  archived/
 ```
 
-`rules/` is shared project configuration. `index.md` is project-level index material when present. `targets/<target-key>/` is single-target workflow state.
+`rules/` is shared project configuration. `index.md` is project-level index material when present. `targets/<target-key>/` is single-target workflow state. `archived/` is created only by `reset`, which moves prior target state there (never deletes it).
 
 Default target state layout:
 

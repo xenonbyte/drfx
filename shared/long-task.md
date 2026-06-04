@@ -149,6 +149,8 @@ Semantic payloads enter workflow commands through real stdin handoff. Do not use
 
 Resume is never silent. A matching target context without an explicit `resume` token is not reused; a fresh start over existing state stops as state-already-exists. An explicit `resume` whose recorded identity is stale (any mismatch, including the round limit) is refused, not silently continued.
 
+When stale state can no longer be resumed (for example after an exclusion-policy change shifted the CODE file set, drifting its fingerprint), use the explicit `reset` token. `reset` archives the existing target state under `.drfx/archived/<target-key>-<timestamp>` — never deleting or overwriting it — and then starts fresh, recomputing identity under the current resolver policy. `resume` and `reset` are mutually exclusive, and `reset` over no existing state is just a fresh start.
+
 On `resume`:
 
 1. Derive the target key from the requested target context identity (document: the normalized target path; PR/CODE: the route kind plus base/scope identity).
