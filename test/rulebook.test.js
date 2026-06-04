@@ -698,6 +698,35 @@ test('loadRouteRuleContext reads CODE.md from filesystem paths', (t) => {
   assert.equal(projectLayer.text, 'Project CODE rules');
 });
 
+test('loadRouteRuleContext defaults user route rules to process.env.HOME when homeDir is omitted', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-route-rules-'));
+  const homeDir = path.join(root, 'home');
+  const projectRoot = path.join(root, 'project');
+  fs.mkdirSync(path.join(homeDir, '.docs-review-fix', 'rules'), { recursive: true });
+  fs.mkdirSync(projectRoot, { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.docs-review-fix', 'rules', 'CODE.md'), 'User CODE rules from env HOME\n');
+  const oldHome = process.env.HOME;
+  process.env.HOME = homeDir;
+  t.after(() => {
+    if (oldHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = oldHome;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const context = loadRouteRuleContext({
+    routeKind: 'code',
+    builtInRubric: 'CODE rubric',
+    projectRoot
+  });
+
+  const userLayer = context.layers.find((l) => l.name === 'user-global-code-rules');
+  assert.ok(userLayer, 'user-global-code-rules layer must be present from process.env.HOME');
+  assert.equal(userLayer.text, 'User CODE rules from env HOME');
+});
+
 test('loadRouteRuleContext rejects symlinked PR.md rule file', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-route-rules-'));
   const homeDir = path.join(root, 'home');

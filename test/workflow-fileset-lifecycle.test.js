@@ -64,6 +64,21 @@ function makePrRepoWithDeletedFile(t) {
   return root;
 }
 
+function makePrRepoWithDistFile(t) {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-fs-dist-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  git(root, ['init', '-b', 'main']);
+  fs.mkdirSync(path.join(root, 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'dist', 'app.js'), 'module.exports = 1;\n');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'init']);
+  git(root, ['checkout', '-b', 'feature']);
+  fs.writeFileSync(path.join(root, 'dist', 'app.js'), 'module.exports = 2;\n');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'feature updates dist']);
+  return root;
+}
+
 function practicalArgs(extra, mode = 'review-and-fix') {
   return [
     ...extra,
@@ -210,6 +225,25 @@ function finalPass(filesChanged) {
     `Files changed: ${filesChanged}`,
     'Fixed issue IDs: ISSUE-001',
     'Verification performed: node --check src/a.js',
+    'Deferrals or blockers: none',
+    'Blocking reason: none',
+    'Status reason: none',
+    'Residual risk: none identified',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: approved after full re-review'
+  ].join('\n');
+}
+
+function finalPassWithoutFixes() {
+  return [
+    'Final status: pass',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Mode: review-and-fix',
+    'Target: none',
+    'Files changed: none',
+    'Fixed issue IDs: none',
+    'Verification performed: full file-set re-review',
     'Deferrals or blockers: none',
     'Blocking reason: none',
     'Status reason: none',
@@ -393,6 +427,82 @@ test('PR file-set cannot pass without a full re-review after the fix', async (t)
   assert.notEqual(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'pass');
 });
 
+test('PR file-set cannot pass from an initial PASS before the required full re-review', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-pr', 'base=main']);
+  const start = await runWorkflowCommand('start', args, { cwd: root });
+  assert.equal(start.ok, true, JSON.stringify(start));
+
+  await runWorkflowCommand('context', args, { cwd: root });
+  const initialPass = await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_PASS });
+  assert.equal(initialPass.ok, true, JSON.stringify(initialPass));
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'full-re-review');
+  assert.equal(manifest.currentPhase, 'full-re-review');
+
+  const final = await runWorkflowCommand('finalize', [
+    start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], { cwd: root, stdin: finalPassWithoutFixes() });
+  assert.equal(final.ok, false);
+  assert.equal(final.status, 'blocked');
+  assert.notEqual(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'pass');
+});
+
+test('PR file-set finalize pass revalidates the live file-set fingerprint', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-pr', 'base=main']);
+  const start = await reachFileSetFixStage(root, args);
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+
+  await runWorkflowCommand('record-diff-review', [
+    start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], { cwd: root, stdin: DIFF_OK });
+  await runWorkflowCommand('context', [
+    ...args,
+    '--phase',
+    'full-re-review'
+  ], { cwd: root });
+  const fullReview = await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'full-re-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_PASS });
+  assert.equal(fullReview.ok, true, JSON.stringify(fullReview));
+
+  fs.appendFileSync(path.join(root, 'src', 'b.js'), '\n// changed after full re-review\n');
+  const final = await runWorkflowCommand('finalize', [
+    start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], { cwd: root, stdin: finalPass('src/a.js') });
+  assert.equal(final.ok, false);
+  assert.equal(final.status, 'blocked');
+  assert.equal(final.blockingReason, 'final-validation-failed');
+  assert.notEqual(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'pass');
+});
+
 test('PR file-set end-fix blocks a fix report missing per-round verification', async (t) => {
   const root = makePrRepo(t);
   const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
@@ -524,6 +634,21 @@ test('PR file-set git begin-fix rejects dirty PR members before the first route-
   assert.equal(beginFix.ok, false);
   assert.equal(beginFix.status, 'blocked');
   assert.equal(beginFix.blockingReason, 'unexpected-worktree-change');
+});
+
+test('PR file-set begin-fix allows diff members inside CODE-excluded directories', async (t) => {
+  const root = makePrRepoWithDistFile(t);
+  const args = practicalArgs(['review-fix-pr', 'base=main']);
+  const start = await reachFileSetFixStage(root, args);
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+  assert.equal(beginFix.status, 'begin-fix');
+  assert.equal(typeof beginFix.fixGuardReportPath, 'string');
+  assert.match(fs.readFileSync(beginFix.fixGuardReportPath, 'utf8'), /"dist\/app\.js"/);
 });
 
 test('CODE file-set snapshot-guard fix loop reaches pass and abort restores the baseline', async (t) => {
@@ -739,6 +864,55 @@ test('CODE file-set git end-fix blocks files created in scope after begin-fix', 
   assert.equal(endFix.ok, false);
   assert.equal(endFix.status, 'blocked');
   assert.equal(endFix.blockingReason, 'fix-report-mismatch');
+  assert.notEqual(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'diff-review');
+});
+
+test('CODE file-set git end-fix compares changes against the current begin-fix baseline', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-code', 'scope=src']);
+  const start = await reachFileSetFixStage(root, args);
+  const firstBegin = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(firstBegin.ok, true, JSON.stringify(firstBegin));
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 42;\n');
+  const firstEnd = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+  assert.equal(firstEnd.ok, true, JSON.stringify(firstEnd));
+
+  const diffFail = [
+    'DIFF-FAIL',
+    'Findings:',
+    '- issue_id: ISSUE-001',
+    '  problem: Fix still misses the required behavior.',
+    '  required_action: Rework the fix.'
+  ].join('\n');
+  const diff = await runWorkflowCommand('record-diff-review', [
+    start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], { cwd: root, stdin: diffFail });
+  assert.equal(diff.ok, true, JSON.stringify(diff));
+
+  const secondBegin = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:05:00.000Z')
+  });
+  assert.equal(secondBegin.ok, true, JSON.stringify(secondBegin));
+
+  const secondEnd = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+  assert.equal(secondEnd.ok, false);
+  assert.equal(secondEnd.status, 'blocked');
+  assert.equal(secondEnd.blockingReason, 'fix-report-mismatch');
   assert.notEqual(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'diff-review');
 });
 

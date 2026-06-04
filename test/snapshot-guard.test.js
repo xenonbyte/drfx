@@ -752,6 +752,52 @@ test('file-set snapshot validate reports which monitored files changed', (t) => 
   assert.deepEqual(result.changedFiles, ['docs/target.md']);
 });
 
+test('file-set snapshot validate prunes .git and package-manager churn from the tree walk', (t) => {
+  const fixture = makeWorkspace(t);
+  fs.mkdirSync(path.join(fixture.root, '.git'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.root, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+  fs.mkdirSync(path.join(fixture.root, 'node_modules', 'pkg'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.root, 'node_modules', 'pkg', 'index.js'), 'module.exports = 1;\n');
+  const baseline = captureFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md']
+  });
+  assert.equal(baseline.status, 'passed');
+  // VCS/package internals churn between begin-fix and end-fix whenever any tool runs (a git
+  // command updating .git/index, a package manager touching node_modules). The file-set guard
+  // prunes these, so such churn must NOT trip an unexpected-worktree-change block.
+  fs.writeFileSync(path.join(fixture.root, '.git', 'HEAD'), 'ref: refs/heads/feature\n');
+  fs.writeFileSync(path.join(fixture.root, '.git', 'index'), 'binary-index\n');
+  fs.writeFileSync(path.join(fixture.root, 'node_modules', 'pkg', 'extra.js'), 'module.exports = 2;\n');
+  const result = validateFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md'],
+    baseline
+  });
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.deepEqual(result.changedFiles, []);
+});
+
+test('file-set snapshot validate still blocks an out-of-set write under a build-output directory', (t) => {
+  const fixture = makeWorkspace(t);
+  fs.mkdirSync(path.join(fixture.root, 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.root, 'dist', 'out.js'), 'console.log(1);\n');
+  const baseline = captureFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md']
+  });
+  assert.equal(baseline.status, 'passed');
+  // dist/build/coverage stay monitored: a sneaky write there is review-relevant and must block.
+  fs.writeFileSync(path.join(fixture.root, 'dist', 'out.js'), 'console.log(2);\n');
+  const result = validateFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md'],
+    baseline
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+});
+
 test('file-set snapshot validate reports when a monitored file goes missing', (t) => {
   const fixture = makeWorkspace(t);
   const baseline = captureFileSetBaseline({
@@ -776,6 +822,26 @@ test('file-set snapshot validate blocks a write outside the monitored file set',
   });
   fs.appendFileSync(fixture.target, '\nAllowed change.\n');
   fs.appendFileSync(fixture.other, '\nOutside file-set change.\n');
+  const result = validateFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md'],
+    baseline
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+});
+
+test('file-set snapshot validate blocks writes under existing infrastructure directories', (t) => {
+  const fixture = makeWorkspace(t);
+  fs.mkdirSync(path.join(fixture.root, 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.root, 'dist', 'app.js'), 'module.exports = 1;\n');
+  const baseline = captureFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md']
+  });
+  fs.appendFileSync(fixture.target, '\nAllowed change.\n');
+  fs.writeFileSync(path.join(fixture.root, 'dist', 'extra.js'), 'module.exports = 2;\n');
+
   const result = validateFileSetBaseline({
     projectRoot: fixture.root,
     monitoredFiles: ['docs/target.md'],

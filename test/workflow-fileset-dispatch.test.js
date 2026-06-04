@@ -88,11 +88,14 @@ test('resolveRouteTargetMetadata derives CODE key from normalized scopes, includ
   const root = freshRepo(t);
   const bare = resolveRouteTargetMetadata(parsedFor('review-fix-code', ['read-only']), { cwd: root });
   const dot = resolveRouteTargetMetadata(parsedFor('review-fix-code', ['scope=.', 'read-only']), { cwd: root });
+  const srcDot = resolveRouteTargetMetadata(parsedFor('review-fix-code', ['scope=src', 'scope=.', 'read-only']), { cwd: root });
   const src = resolveRouteTargetMetadata(parsedFor('review-fix-code', ['scope=src', 'read-only']), { cwd: root });
   const dotSrc = resolveRouteTargetMetadata(parsedFor('review-fix-code', ['scope=./src', 'read-only']), { cwd: root });
 
   assert.equal(bare.targetKey, dot.targetKey, 'bare CODE review and scope=. must share state identity');
+  assert.equal(bare.targetKey, srcDot.targetKey, 'explicit root scope must cover narrower scopes in state identity');
   assert.deepEqual(bare.scopes, []);
+  assert.deepEqual(srcDot.scopes, []);
   assert.equal(src.targetKey, dotSrc.targetKey, 'equivalent scope syntax must share state identity');
   assert.deepEqual(src.scopes, ['src']);
 });

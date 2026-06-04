@@ -67,6 +67,17 @@ test('code resolver with no scope traverses the whole project root excluding non
   }
 });
 
+test('code resolver lets explicit root scope cover narrower scopes', async (t) => {
+  const fixture = makeCodeFixture(t);
+  const dot = await resolveCodeTarget({ cwd: fixture.root, scopes: ['src', '.'] });
+  const absolute = await resolveCodeTarget({ cwd: fixture.root, scopes: ['src', fixture.root] });
+
+  for (const result of [dot, absolute]) {
+    assert.deepEqual(result.normalizedScopes, []);
+    assert.deepEqual(result.files.map((entry) => entry.path), ['README.md', 'lib/c.js', 'src/a.js', 'src/nested/b.js']);
+  }
+});
+
 test('code resolver produces deterministic sorted file entries with content hashes', async (t) => {
   const fixture = makeCodeFixture(t);
   const first = await resolveCodeTarget({ cwd: fixture.root });
