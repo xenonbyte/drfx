@@ -1365,12 +1365,9 @@ test('resume blocks corrupt referenced report as state-validation-failed', async
   assert.match(result.message, /report/i);
 });
 
-test('resume clears stale pass and restarts review', async (t) => {
+test('resume archives a live passed state and starts a fresh review', async (t) => {
   const fixture = makeFixture(t, {
-    manifestOverrides: {
-      status: 'pass',
-      currentPhase: 'final'
-    }
+    manifestOverrides: { status: 'pass', currentPhase: 'final' }
   });
   const before = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
   fs.writeFileSync(fixture.manifestPath, formatManifestV2({
@@ -1381,28 +1378,75 @@ test('resume clears stale pass and restarts review', async (t) => {
   fs.appendFileSync(fixture.target, '\nChanged after pass.\n');
 
   const result = await runWorkflowCommand('start', [
-    'review-fix-spec',
-    `root=${fixture.root}`,
-    `target=${fixture.target}`,
-    'review-and-fix',
-    'resume',
-    '--assurance',
-    'practical',
-    '--runtime-platform',
-    'codex',
-    '--runtime-subagent-probe',
-    'ready',
-    '--runtime-stdin-handoff',
-    'ready'
+    'review-fix-spec', `root=${fixture.root}`, `target=${fixture.target}`,
+    'review-and-fix', 'resume', 'guard=snapshot',
+    '--assurance', 'practical', '--runtime-platform', 'codex',
+    '--runtime-subagent-probe', 'ready', '--runtime-stdin-handoff', 'ready'
+  ], { cwd: fixture.root });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'review');                 // fresh start
+  assert.equal(result.stalePass, undefined);             // field removed
+  assert.match(result.archivedStatePath, /\.drfx\/archived\/.+/);
+  // fresh manifest recreated at the same target key path by start:
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'review');
+  assert.equal(manifest.currentPhase, 'review');
+  assert.equal(Number(manifest.currentRound), 1);
+});
+
+test('resume archives a live read-only-clean state and starts a fresh read-only review', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: { mode: 'read-only', status: 'read-only-clean', currentPhase: 'final' }
+  });
+
+  const result = await runWorkflowCommand('start', [
+    'review-fix-spec', `root=${fixture.root}`, `target=${fixture.target}`,
+    'read-only', 'resume', 'guard=snapshot',
+    '--assurance', 'practical', '--runtime-platform', 'codex',
+    '--runtime-subagent-probe', 'ready', '--runtime-stdin-handoff', 'ready'
   ], { cwd: fixture.root });
 
   assert.equal(result.ok, true);
   assert.equal(result.status, 'review');
-  assert.equal(result.stalePass, true);
+  assert.match(result.archivedStatePath, /\.drfx\/archived\/.+/);
   const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
   assert.equal(manifest.status, 'review');
   assert.equal(manifest.currentPhase, 'review');
-  assert.equal(manifest.lastPassedContentSha256, 'none');
+  assert.equal(manifest.mode, 'read-only');
+});
+
+test('document resume archive failure blocks with state-validation-failed', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: { status: 'pass', currentPhase: 'final' }
+  });
+  const before = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  fs.writeFileSync(fixture.manifestPath, formatManifestV2({
+    ...before,
+    lastPassedContentSha256: before.lastKnownContentSha256
+  }));
+  writeResumeReports(fixture);
+  fs.appendFileSync(fixture.target, '\nChanged after pass.\n');
+  // force archive failure: make .drfx/archived a regular file so mkdirSync throws
+  fs.writeFileSync(path.join(fixture.root, '.drfx', 'archived'), 'not a dir');
+
+  const result = await runWorkflowCommand('start', [
+    'review-fix-spec', `root=${fixture.root}`, `target=${fixture.target}`,
+    'review-and-fix', 'resume', 'guard=snapshot',
+    '--assurance', 'practical', '--runtime-platform', 'codex',
+    '--runtime-subagent-probe', 'ready', '--runtime-stdin-handoff', 'ready'
+  ], { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.ok(result.archiveWarning);
+  assert.equal(result.archivedStatePath, undefined);
+  assert.equal(result.stalePass, undefined);
+  assert.equal(fs.existsSync(fixture.targetDir), true, 'old passed state remains for operator repair');
+  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'pass');
+  assert.equal(manifest.currentPhase, 'final');
 });
 
 test('resume maps stale non-pass state to externally-changed', async (t) => {
