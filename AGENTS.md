@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is a Node.js 20 CommonJS package for installing document review-fix routes.
+This repository is a Node.js 20 CommonJS package for installing document and code review-fix routes.
 
 - `bin/drfx.js` is the CLI entry point.
 - `lib/` contains implementation modules: input parsing, install/uninstall, manifests, capabilities, locks, ledgers, receipts, redaction, rulebooks, and route generation.
@@ -15,9 +15,10 @@ This repository is a Node.js 20 CommonJS package for installing document review-
 ## Build, Test, and Development Commands
 
 - `npm test` runs the full `node --test` suite.
-- `node bin/drfx.js check` runs local capability checks and validates advisory/pass capability reporting.
-- `node bin/drfx.js install --platform claude,codex,gemini` installs generated routes for local manual testing.
-- `node bin/drfx.js uninstall --platform claude,codex,gemini` removes manifest-owned generated routes.
+- `node bin/drfx.js doctor` runs local capability checks and validates advisory/pass capability reporting.
+- `node bin/drfx.js status` reports which generated routes are installed per platform.
+- `node bin/drfx.js install [--platform claude,codex,gemini]` installs generated routes for local manual testing (`--platform` is optional; omit it for all platforms).
+- `node bin/drfx.js uninstall [--platform claude,codex,gemini]` removes manifest-owned generated routes.
 - `npm pack --dry-run` verifies package contents before publishing or release checks.
 
 ## Coding Style & Naming Conventions
@@ -26,7 +27,7 @@ Use CommonJS (`require`, `module.exports`) and keep files plain JavaScript. Foll
 
 ## Testing Guidelines
 
-Tests use Node's built-in `node:test` and `assert`. Name test files as `*.test.js` under `test/`. Add focused tests beside the behavior being changed: parser changes in `input-parsing.test.js`, manifest/state changes in `target-state.test.js`, route text checks in `shared-assets.test.js`, and install behavior in `capability-check.test.js`.
+Tests use Node's built-in `node:test` and `assert`. Name test files as `*.test.js` under `test/`. Add focused tests beside the behavior being changed: parser changes in `input-parsing.test.js`, manifest/state changes in `target-state.test.js`, route text checks in `shared-assets.test.js`, install behavior in `capability-check.test.js`, file-set PR/CODE lifecycle in `workflow-fileset-lifecycle.test.js`, and CLI command behavior in `cli.test.js`.
 
 ## Documentation Synchronization
 
