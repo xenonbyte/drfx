@@ -361,6 +361,54 @@ test('PR file-set review-and-fix reaches pass through the file-set fix loop', as
   assert.equal(ledger.issues.find((issue) => issue.id === 'ISSUE-001').status, 'fixed');
 });
 
+test('PR file-set finalize rejects a concrete Target in the final machine block', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-pr', 'base=main']);
+  const start = await reachFileSetFixStage(root, args);
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+
+  const diff = await runWorkflowCommand('record-diff-review', [
+    start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], { cwd: root, stdin: DIFF_OK });
+  assert.equal(diff.ok, true, JSON.stringify(diff));
+  await runWorkflowCommand('context', [
+    ...args,
+    '--phase',
+    'full-re-review'
+  ], { cwd: root });
+  const fullReview = await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'full-re-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_PASS });
+  assert.equal(fullReview.ok, true, JSON.stringify(fullReview));
+
+  const final = await runWorkflowCommand('finalize', [
+    start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], { cwd: root, stdin: finalPass('src/a.js').replace('Target: none', 'Target: src/a.js') });
+  assert.equal(final.ok, false);
+  assert.equal(final.status, 'blocked');
+  assert.equal(final.errorCode, 'ERR_FINAL_TARGET_MISMATCH');
+  assert.notEqual(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'pass');
+});
+
 test('PR file-set end-fix records the uncommitted worktree content fingerprint', async (t) => {
   const root = makePrRepo(t);
   const args = practicalArgs(['review-fix-pr', 'base=main']);

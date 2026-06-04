@@ -9,6 +9,7 @@ const test = require('node:test');
 
 const {
   resolveTargetContext,
+  resolveCodeTarget,
   computeFileSetFingerprint,
   buildPrIdentity,
   formatPrIdentityFields,
@@ -174,6 +175,18 @@ test('pr resolver refuses when base equals the current branch', async (t) => {
   );
 });
 
+test('pr resolver refuses refs that resolve to HEAD', async (t) => {
+  const fixture = makeLocalGitFixture(t);
+  const headSha = git(fixture.root, ['rev-parse', 'HEAD']).trim();
+
+  for (const base of ['HEAD', 'refs/heads/feature', headSha]) {
+    await assert.rejects(
+      resolveTargetContext({ routeName: 'review-fix-pr', base, cwd: fixture.root }),
+      (error) => error.code === 'ERR_PR_BASE_IS_HEAD'
+    );
+  }
+});
+
 test('pr resolver fails when there is no merge base between base and HEAD', async (t) => {
   const fixture = makeLocalGitFixture(t);
   // Create an orphan branch with unrelated history (no common ancestor with feature).
@@ -198,6 +211,31 @@ test('pr resolver resolves a tag base and a commit-sha base', async (t) => {
 
   const shaContext = await resolveTargetContext({ routeName: 'review-fix-pr', base: baseSha, cwd: fixture.root });
   assert.equal(shaContext.baseRevision, baseSha);
+});
+
+test('code resolver fails instead of silently skipping unreadable in-scope directories', async (t) => {
+  const fixture = makeLocalGitFixture(t);
+  const blockedDir = path.join(fixture.root, 'src', 'blocked');
+  fs.mkdirSync(blockedDir, { recursive: true });
+  fs.writeFileSync(path.join(blockedDir, 'hidden.js'), 'export const hidden = true;\n');
+
+  const originalReaddirSync = fs.readdirSync;
+  t.after(() => {
+    fs.readdirSync = originalReaddirSync;
+  });
+  fs.readdirSync = function patchedReaddirSync(directoryPath, options) {
+    if (path.resolve(directoryPath) === blockedDir) {
+      const error = new Error('permission denied');
+      error.code = 'EACCES';
+      throw error;
+    }
+    return originalReaddirSync.call(fs, directoryPath, options);
+  };
+
+  await assert.rejects(
+    resolveCodeTarget({ cwd: fixture.root, scopes: ['src'] }),
+    (error) => error.code === 'ERR_CODE_SCOPE_UNREADABLE'
+  );
 });
 
 test('computeFileSetFingerprint is order-independent and deterministic', () => {

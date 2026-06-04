@@ -1112,6 +1112,30 @@ function generatedCodeRoutes() {
   return outputs;
 }
 
+test('generated code routes use self-contained PR/CODE rubrics without embedding COMMON', () => {
+  for (const output of generatedCodeRoutes()) {
+    assert.doesNotMatch(
+      output.body,
+      /<!-- shared\/rubrics\/common\.md -->/,
+      `${output.platform}:${output.routeName} must not embed the COMMON rubric`
+    );
+    assert.match(
+      output.body,
+      new RegExp(`<!-- shared/rubrics/${output.routeKind}\\.md -->`),
+      `${output.platform}:${output.routeName} must embed its route-kind rubric`
+    );
+  }
+
+  const codexSkills = generatePlatformFiles('codex', { packageVersion: '0.0.0-test' });
+  for (const routeName of ['review-fix-pr', 'review-fix-code']) {
+    const skill = codexSkills.find((entry) => entry.routeName === routeName);
+    const copiedPaths = skill.files.map((file) => file.relativePath);
+    const rubricName = routeName === 'review-fix-pr' ? 'pr.md' : 'code.md';
+    assert.equal(copiedPaths.includes(path.join('shared', 'rubrics', 'common.md')), false, routeName);
+    assert.equal(copiedPaths.includes(path.join('shared', 'rubrics', rubricName)), true, routeName);
+  }
+});
+
 test('generated code routes do not delegate to platform review commands', () => {
   for (const output of generatedCodeRoutes()) {
     assert.doesNotMatch(output.body, /\/review\b/, `${output.platform}:${output.routeName} must not mention /review`);
@@ -1222,11 +1246,13 @@ test('PR and CODE source skills exist with code-route contract guidance', () => 
   assert.doesNotMatch(code, /\/review\b/);
   assert.doesNotMatch(code, /fixed document type/i);
 
-  // Both reference the shared sources every route relies on.
+  // Both reference the shared sources every code route relies on. PR/CODE rubrics
+  // are self-contained and must not list the document COMMON rubric.
   for (const skill of [pr, code]) {
-    for (const ref of ['shared/core.md', 'shared/long-task.md', 'shared/rubrics/common.md', 'shared/prompts/reviewer.md', 'shared/prompts/fixer.md', 'shared/prompts/coordinator.md']) {
+    for (const ref of ['shared/core.md', 'shared/long-task.md', 'shared/prompts/reviewer.md', 'shared/prompts/fixer.md', 'shared/prompts/coordinator.md']) {
       assert.match(skill, new RegExp(ref.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')));
     }
+    assert.doesNotMatch(skill, /shared\/rubrics\/common\.md/);
   }
 });
 

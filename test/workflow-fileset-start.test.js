@@ -15,6 +15,10 @@ const test = require('node:test');
 
 const { runWorkflowCommand } = require('../lib/workflow');
 const { parseManifestV2 } = require('../lib/workflow-state');
+const {
+  resolveTargetContext,
+  computeFileSetFingerprint
+} = require('../lib/target-context');
 
 function git(cwd, args) {
   return execFileSync('git', args, {
@@ -81,6 +85,23 @@ test('PR review-and-fix start writes a parseable pr file-set MANIFEST.md and nev
   assert.match(manifest.head, /^[0-9a-f]{40}$/);
   assert.match(manifest.mergeBase, /^[0-9a-f]{40}$/);
   assert.equal(manifest.fileSetFingerprint, result.fileSetFingerprint);
+});
+
+test('PR start from a subdirectory writes state at the git root and resolves root-relative diff paths', async (t) => {
+  const root = makePrRepo(t);
+  const cwd = path.join(root, 'src');
+  const result = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd });
+  assert.equal(result.ok, true);
+  assert.equal(result.routeKind, 'pr');
+  assert.equal(
+    path.relative(root, result.manifestPath).split(path.sep).join('/').startsWith('.docs-review-fix/targets/'),
+    true
+  );
+  assert.equal(fs.existsSync(path.join(cwd, '.docs-review-fix')), false);
+
+  const directContext = await resolveTargetContext({ routeName: 'review-fix-pr', base: 'main', cwd: root });
+  assert.equal(result.fileSetFingerprint, computeFileSetFingerprint(directContext.files));
+  assert.equal(directContext.files.every((entry) => entry.contentId !== 'none'), true);
 });
 
 test('CODE review-and-fix start writes a parseable code file-set MANIFEST.md with normalized scopes', async (t) => {

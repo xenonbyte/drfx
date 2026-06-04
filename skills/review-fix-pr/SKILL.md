@@ -37,7 +37,6 @@ Use the shared sources:
 
 - `shared/core.md`
 - `shared/long-task.md`
-- `shared/rubrics/common.md`
 - `shared/rubrics/pr.md`
 - `shared/prompts/reviewer.md`
 - `shared/prompts/fixer.md`

@@ -839,6 +839,33 @@ test('file-set git guard allows files inside the allowed state directory', (t) =
   assert.equal(result.allowedStateEntryCount, 1);
 });
 
+test('file-set git guard normalizes repo-root status paths for CODE sub-roots', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-fix-guard-subroot-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  git(root, 'init');
+  isolateGitFixture(root);
+  const codeRoot = path.join(root, 'lib');
+  fs.mkdirSync(codeRoot, { recursive: true });
+  fs.writeFileSync(path.join(codeRoot, 'a.js'), 'module.exports = 1;\n');
+  git(root, 'add lib/a.js');
+  git(root, 'commit -m init');
+
+  const stateDir = path.join(codeRoot, '.docs-review-fix', 'targets', 'code-aaaaaaaaaaaa');
+  fs.mkdirSync(path.join(stateDir, 'reports'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'reports', 'fix-guard-round-001.md'), '# Guard\n');
+  fs.writeFileSync(path.join(codeRoot, 'a.js'), 'module.exports = 2;\n');
+
+  const result = checkFileSetWorktree({
+    projectRoot: codeRoot,
+    allowedFiles: ['a.js'],
+    allowedStateDir: stateDir
+  });
+
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(result.changedFiles, ['a.js']);
+  assert.equal(result.allowedStateEntryCount, 1);
+});
+
 test('file-set git guard reads REAL worktree state and ignores a misleading allowed set', (t) => {
   const { root, target } = makeGitRepo(t);
   // The worktree actually changes an UNRELATED file. Even if the caller (wrongly) lists

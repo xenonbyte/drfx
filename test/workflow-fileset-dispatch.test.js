@@ -70,6 +70,23 @@ test('resolveRouteTargetMetadata derives a pr-<hash> file-set key, never deriveT
   assert.equal(metadata.projectRoot, root);
 });
 
+test('resolveRouteTargetMetadata resolves PR cwd subdirectories to the git top level', (t) => {
+  const root = freshRepo(t);
+  const parsed = parsedFor('review-fix-pr', ['base=main', 'read-only']);
+  const metadata = resolveRouteTargetMetadata(parsed, { cwd: path.join(root, 'src') });
+  assert.equal(metadata.routeKind, 'pr');
+  assert.equal(metadata.projectRoot, root);
+});
+
+test('resolveRouteTargetMetadata rejects PR root= values below the git top level', (t) => {
+  const root = freshRepo(t);
+  const parsed = parsedFor('review-fix-pr', [`root=${path.join(root, 'src')}`, 'base=main', 'read-only']);
+  assert.throws(
+    () => resolveRouteTargetMetadata(parsed, { cwd: root }),
+    (error) => error.code === 'ERR_PR_ROOT_NOT_GIT_TOP_LEVEL'
+  );
+});
+
 test('resolveRouteTargetMetadata derives a code-<hash> file-set key from sorted scopes', (t) => {
   const root = freshRepo(t);
   const parsedA = parsedFor('review-fix-code', ['scope=src', 'scope=lib', 'read-only']);
@@ -122,6 +139,9 @@ test('a different PR base produces a different file-set target key', (t) => {
 test('file-set write eligibility preflight supports PR review-and-fix routes', async (t) => {
   const root = freshRepo(t);
   git(root, ['checkout', '-b', 'feature']);
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 11;\n');
+  git(root, ['add', 'src/a.js']);
+  git(root, ['commit', '-m', 'feature changes src a']);
   const result = await runWorkflowCommand('preflight', [
     'review-fix-pr',
     'base=main',
