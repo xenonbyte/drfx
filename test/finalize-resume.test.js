@@ -553,7 +553,8 @@ test('persistent finalize validates response before persisting pass', async (t) 
 
   assert.equal(result.ok, true);
   assert.equal(result.status, 'pass');
-  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  assert.ok(result.archivedStatePath, 'state dir is archived');
+  const manifest = parseManifestV2(fs.readFileSync(path.join(result.archivedStatePath, 'MANIFEST.md'), 'utf8'));
   assert.equal(manifest.status, 'pass');
   assert.equal(manifest.currentPhase, 'final');
   assert.notEqual(manifest.lastPassedContentSha256, 'none');
@@ -872,7 +873,8 @@ test('persistent read-only finalize accepts clean when triage rejected reviewer 
 
   assert.equal(result.ok, true);
   assert.equal(result.status, 'read-only-clean');
-  const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  assert.ok(result.archivedStatePath, 'state dir is archived');
+  const manifest = parseManifestV2(fs.readFileSync(path.join(result.archivedStatePath, 'MANIFEST.md'), 'utf8'));
   assert.equal(manifest.status, 'read-only-clean');
 });
 
@@ -1651,6 +1653,198 @@ test('final response validation rejects stopped-no-progress for read-only findin
     () => validateFinalResponse({ finalResponse, state }),
     /review-and-fix|read-only-findings/i
   );
+});
+
+test('persistent finalize archives a passed state dir', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      status: 'full-re-review',
+      currentPhase: 'full-re-review',
+      lastDiffReviewReportPath: 'reports/diff-review-round-001.md'
+    },
+    ledgerIssues: [{
+      id: 'ISSUE-001', severity: 'high', status: 'fixed',
+      location: 'docs/spec.md:3', summary: 'Original issue',
+      resolution: 'Fixed: Updated required section.'
+    }]
+  });
+  writeFixReport(fixture);
+  writeFullReviewPass(fixture);
+  writeJsonReport(path.join(fixture.targetDir, 'reports', 'diff-review-round-001.md'), 'Diff Review Report', {
+    round: 1,
+    normalized: { result: 'DIFF-OK', summary: 'ok', findings: [], warnings: [] }
+  });
+
+  const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock()
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'pass');
+  assert.equal(fs.existsSync(fixture.targetDir), false, 'state dir is archived away');
+  assert.match(result.archivedStatePath, /\.drfx\/archived\/.+/);
+  assert.equal(fs.existsSync(result.archivedStatePath), true);
+  assert.equal(fs.existsSync(path.join(result.archivedStatePath, 'MANIFEST.md')), true);
+
+  const fresh = await runWorkflowCommand('start', [
+    'review-fix-spec', `root=${fixture.root}`, `target=${fixture.target}`,
+    'review-and-fix', 'guard=snapshot',
+    '--assurance', 'practical', '--runtime-platform', 'codex',
+    '--runtime-subagent-probe', 'ready', '--runtime-stdin-handoff', 'ready'
+  ], { cwd: fixture.root });
+
+  assert.equal(fresh.ok, true);
+  assert.equal(fresh.status, 'review');
+  assert.equal(fresh.errorCode, undefined);
+});
+
+test('persistent finalize archives a read-only-clean state dir', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      mode: 'read-only',
+      status: 'read-only-clean',
+      currentPhase: 'final',
+      currentReportPath: 'reports/triage-round-001.md',
+      lastReviewerReportPath: 'reports/reviewer-round-001.md',
+      lastTriageReportPath: 'reports/triage-round-001.md',
+      lastFixReportPath: 'none',
+      lastDiffReviewReportPath: 'none'
+    },
+    ledgerIssues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'rejected',
+        location: 'docs/spec.md:3',
+        summary: 'Rejected reviewer finding',
+        resolution: 'Rejected: not applicable'
+      }
+    ]
+  });
+  writeInitialReviewFailHigh(fixture);
+  writeTriageReport(fixture, [
+    {
+      reviewer_id: 'R001',
+      issue_id: 'ISSUE-001',
+      decision: 'rejected',
+      severity: 'high',
+      original_severity: 'high',
+      rationale: 'not applicable',
+      merged_into: 'none',
+      deferred_owner: 'none',
+      deferred_next_action: 'none',
+      non_blocking: false
+    }
+  ]);
+
+  const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'read-only-clean',
+      mode: 'read-only',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'read-only-clean');
+  assert.equal(fs.existsSync(fixture.targetDir), false, 'clean read-only state dir is archived away');
+  assert.match(result.archivedStatePath, /\.drfx\/archived\/.+/);
+  assert.equal(fs.existsSync(path.join(result.archivedStatePath, 'MANIFEST.md')), true);
+});
+
+test('persistent finalize does not archive a stopped-with-deferrals state dir', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      mode: 'read-only',
+      status: 'stopped-with-deferrals',
+      currentPhase: 'final',
+      currentReportPath: 'reports/triage-round-001.md',
+      lastReviewerReportPath: 'reports/reviewer-round-001.md',
+      lastTriageReportPath: 'reports/triage-round-001.md',
+      lastFixReportPath: 'none',
+      lastDiffReviewReportPath: 'none'
+    },
+    ledgerIssues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'deferred',
+        location: 'docs/spec.md:3',
+        summary: 'Deferred reviewer finding',
+        resolution: 'Deferred: needs owner follow-up'
+      }
+    ]
+  });
+  writeInitialReviewFailHigh(fixture);
+  writeTriageReport(fixture, [
+    {
+      reviewer_id: 'R001',
+      issue_id: 'ISSUE-001',
+      decision: 'deferred',
+      severity: 'high',
+      original_severity: 'high',
+      rationale: 'needs owner follow-up',
+      merged_into: 'none',
+      deferred_owner: 'docs-owner',
+      deferred_next_action: 'resolve before clean finalization',
+      non_blocking: false
+    }
+  ]);
+
+  const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock({
+      finalStatus: 'stopped-with-deferrals',
+      mode: 'read-only',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      deferralsOrBlockers: 'deferred high issue ISSUE-001',
+      blockingReason: 'none',
+      statusReason: 'deferred-findings',
+      coordinatorAgreement: 'none'
+    })
+  });
+
+  // after finalize returns status 'stopped-with-deferrals':
+  assert.equal(fs.existsSync(fixture.targetDir), true, 'unfinished state dir is preserved');
+  assert.equal(result.archivedStatePath, undefined);
+});
+
+test('persistent finalize keeps a passed dir and warns when archive fails', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: {
+      status: 'full-re-review',
+      currentPhase: 'full-re-review',
+      lastDiffReviewReportPath: 'reports/diff-review-round-001.md'
+    },
+    ledgerIssues: [{
+      id: 'ISSUE-001', severity: 'high', status: 'fixed',
+      location: 'docs/spec.md:3', summary: 'Original issue',
+      resolution: 'Fixed: Updated required section.'
+    }]
+  });
+  writeFixReport(fixture);
+  writeFullReviewPass(fixture);
+  writeJsonReport(path.join(fixture.targetDir, 'reports', 'diff-review-round-001.md'), 'Diff Review Report', {
+    round: 1,
+    normalized: { result: 'DIFF-OK', summary: 'ok', findings: [], warnings: [] }
+  });
+  fs.writeFileSync(path.join(fixture.root, '.drfx', 'archived'), 'not a dir'); // force archive failure
+
+  const result = await runWorkflowCommand('finalize', [fixture.targetDir, '--final-response-stdin', '--json'], {
+    cwd: fixture.root,
+    stdin: finalResponseBlock()
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'pass');
+  assert.equal(fs.existsSync(fixture.targetDir), true, 'dir stays in place on archive failure');
+  assert.ok(result.archiveWarning, 'archive failure is surfaced as a warning');
+  assert.equal(result.archivedStatePath, undefined);
 });
 
 test('final response validation rejects stopped-no-progress for deferred-only findings', () => {
