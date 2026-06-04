@@ -1026,6 +1026,34 @@ test('CODE file-set begin-fix returns corrupt-lock workflow JSON for invalid lea
   assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'blocked');
 });
 
+test('CODE file-set refresh-lock returns corrupt-lock workflow JSON for invalid leases', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-code', 'scope=src']);
+  const start = await reachFileSetFixStage(root, args);
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  const lockDir = path.join(start.targetStateDir, 'LOCK');
+  fs.writeFileSync(path.join(lockDir, 'lease.json'), '{not json');
+
+  const refresh = await runWorkflowCommand('refresh-lock', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:01:00.000Z')
+  });
+
+  assert.equal(refresh.ok, false);
+  assert.equal(refresh.status, 'blocked');
+  assert.equal(refresh.blockingReason, 'corrupt-lock');
+  assert.equal(refresh.errorCode, 'ERR_CORRUPT_LOCK');
+  assert.equal(refresh.targetStateDir, start.targetStateDir);
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'blocked');
+  assert.equal(manifest.blockingReason, 'corrupt-lock');
+});
+
 test('no-state read-only CODE advisory review runs without auto-fix state and never claims pass', async (t) => {
   const root = makePrRepo(t);
   const result = await runWorkflowCommand('context', [

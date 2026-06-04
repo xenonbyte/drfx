@@ -75,6 +75,26 @@ test('code-route generated shells equal golden snapshots byte-for-byte', () => {
   }
 });
 
+test('Claude and Codex generated starts preserve materialized rounds token', () => {
+  const SNAPSHOT_VERSION = '0.0.0-snapshot';
+
+  for (const platform of ['claude', 'codex']) {
+    for (const route of listRoutes()) {
+      const rendered = renderPlatformRoute(platform, route.routeName, { packageVersion: SNAPSHOT_VERSION });
+      const startLines = rendered.split('\n').filter((line) => line.startsWith('drfx workflow start '));
+
+      assert.ok(
+        startLines.some((line) => line.includes('<selectedMode> rounds=<roundLimit> guard=<selectedGuard>')),
+        `${platform}:${route.routeName} strict start must carry the materialized rounds token`
+      );
+      assert.ok(
+        startLines.some((line) => line.includes('review-and-fix rounds=<roundLimit> guard=<selectedGuard>')),
+        `${platform}:${route.routeName} practical start must carry the materialized rounds token`
+      );
+    }
+  }
+});
+
 test('shared core contains canonical loop and no runtime memory dependency', () => {
   const core = read('shared/core.md');
 
@@ -1191,7 +1211,7 @@ test('Claude and Codex code routes materialize practical assurance without expos
   }
 });
 
-test('generated Claude/Codex start commands omit the placeholder rounds token by default', () => {
+test('generated Claude/Codex start commands materialize rounds token conditionally', () => {
   for (const platform of ['claude', 'codex']) {
     for (const route of listRoutes()) {
       const body = renderPlatformRoute(platform, route.routeName, { packageVersion: '0.0.0-test' });
@@ -1200,7 +1220,12 @@ test('generated Claude/Codex start commands omit the placeholder rounds token by
         .filter((line) => line.startsWith('drfx workflow start '))
         .join('\n');
 
-      assert.doesNotMatch(startCommands, /rounds=<roundLimit>/, `${platform}:${route.routeName}`);
+      assert.match(startCommands, /rounds=<roundLimit>/, `${platform}:${route.routeName}`);
+      assert.match(
+        body,
+        /When `rounds=<n>` is present,[^\n]+otherwise omit the token\./,
+        `${platform}:${route.routeName}`
+      );
     }
   }
 });

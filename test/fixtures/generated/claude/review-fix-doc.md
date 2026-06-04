@@ -35,7 +35,7 @@ Help-style or invalid invocations explain usage without reading files, running p
 Invocation syntax:
 
 ```text
-review-fix-doc <path> [ref=<path>...] [read-only|review-and-fix] [strict|normal] [assurance=practical|strict-verified|advisory] [guard=git|snapshot] [resume] [ledger=<target-local path>] [root=<project-root>] [debug]
+review-fix-doc <path> [ref=<path>...] [read-only|review-and-fix] [strict|normal] [assurance=practical|strict-verified|advisory] [guard=git|snapshot] [resume] [rounds=<n>] [ledger=<target-local path>] [root=<project-root>] [debug]
 ```
 
 Full form: `review-fix-doc target=<path> ...`. A bare path is shorthand for `target=<path>`. When `target=` is used, unlabeled paths are rejected.
@@ -47,6 +47,8 @@ Explicit `assurance=advisory` without mode selects `read-only`; advisory assuran
 Help-style or invalid invocations still explain usage only. Do not read target/reference bodies, run workflow commands, run probes, create state, or declare a review result for missing target, unknown usage, or explicit help.
 
 Before any `drfx workflow` command, materialize effective `<selectedMode>`, `<selectedAssurance>`, and `<selectedGuard>`. Compute `<selectedMode>` from explicit mode, defaults, and advisory override. Compute `<selectedAssurance>` from explicit assurance or platform default. Compute `<selectedGuard>` from explicit guard or default `git`. Always pass those explicit materialized values to workflow commands; never pass omitted mode, assurance, or guard through to `drfx workflow`.
+
+`rounds=<n>` sets the maximum repair-loop count and is unsupported with `read-only`. When `rounds=<n>` is present, materialize `<roundLimit>` from it and include `rounds=<roundLimit>` on workflow start; otherwise omit the token.
 
 `strict` and `normal` control review strictness only. `assurance=` controls runtime assurance. If `assurance=` is absent, Claude Code requests `practical`.
 
@@ -178,7 +180,7 @@ drfx check --platform claude --json
 Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.claude.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Pass those current-run values to workflow start:
 
 ```text
-drfx workflow start review-fix-doc target=<path> <selectedMode> guard=<selectedGuard> --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
+drfx workflow start review-fix-doc target=<path> <selectedMode> rounds=<roundLimit> guard=<selectedGuard> --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
 ```
 
 For `review-and-fix assurance=strict-verified`, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
@@ -190,7 +192,7 @@ Do not scrape human-readable `drfx check` output. Do not reuse a cached descript
 For `assurance=practical`, after successful probes, start persistent state:
 
 ```text
-drfx workflow start review-fix-doc target=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
+drfx workflow start review-fix-doc target=<path> review-and-fix rounds=<roundLimit> guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
 ```
 
 This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, and `<selectedGuard>` is explicit guard or default `git`. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
