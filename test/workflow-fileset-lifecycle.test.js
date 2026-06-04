@@ -1533,3 +1533,60 @@ test('PR file-set finalize archives the state dir on pass', async (t) => {
   assert.equal(fs.existsSync(final.archivedStatePath), true);
   assert.equal(fs.existsSync(path.join(final.archivedStatePath, 'MANIFEST.md')), true);
 });
+
+test('PR file-set resume archives a live passed state and starts a fresh review', async (t) => {
+  const root = makePrRepo(t);
+  // Start to get a real manifest with correct PR identity (base, head, merge-base, fingerprint).
+  const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
+  assert.equal(start.ok, true, JSON.stringify(start));
+
+  const targetStateDir = start.targetStateDir;
+  const manifestPath = start.manifestPath;
+
+  // Mutate the manifest status to 'pass' to simulate a leftover terminal state.
+  const before = parseManifestV2(fs.readFileSync(manifestPath, 'utf8'));
+  fs.writeFileSync(manifestPath, formatManifestV2({ ...before, status: 'pass', currentPhase: 'final' }));
+
+  const result = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main', 'resume']), { cwd: root });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.status, 'review');                  // fresh file-set start
+  assert.match(result.archivedStatePath, /\.drfx\/archived\/.+/);
+  assert.notEqual(result.errorCode, 'ERR_FILE_SET_STALE_IDENTITY');
+  // archived state dir is accessible at the archive path
+  assert.equal(fs.existsSync(result.archivedStatePath), true);
+  // fresh manifest recreated at the same target key path by start
+  const freshManifest = parseManifestV2(fs.readFileSync(manifestPath, 'utf8'));
+  assert.equal(freshManifest.status, 'review');
+  assert.equal(freshManifest.currentPhase, 'review');
+});
+
+test('PR file-set resume archive failure blocks without fresh-starting', async (t) => {
+  const root = makePrRepo(t);
+  // Start to get a real manifest with correct PR identity.
+  const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
+  assert.equal(start.ok, true, JSON.stringify(start));
+
+  const targetStateDir = start.targetStateDir;
+  const manifestPath = start.manifestPath;
+
+  // Mutate the manifest status to 'pass' to simulate a leftover terminal state.
+  const before = parseManifestV2(fs.readFileSync(manifestPath, 'utf8'));
+  fs.writeFileSync(manifestPath, formatManifestV2({ ...before, status: 'pass', currentPhase: 'final' }));
+
+  // Force archive failure: write a regular file where the archive dir would be created.
+  fs.writeFileSync(path.join(root, '.drfx', 'archived'), 'not a dir');
+
+  const result = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main', 'resume']), { cwd: root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.ok(result.archiveWarning, 'archive failure is surfaced as a warning');
+  assert.equal(result.archivedStatePath, undefined);
+  assert.notEqual(result.errorCode, 'ERR_FILE_SET_STALE_IDENTITY');
+  // old passed state remains for operator repair
+  assert.equal(fs.existsSync(targetStateDir), true);
+  const manifest = parseManifestV2(fs.readFileSync(manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'pass');
+});
