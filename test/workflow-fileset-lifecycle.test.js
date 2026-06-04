@@ -13,7 +13,7 @@ const { execFileSync } = require('node:child_process');
 const test = require('node:test');
 
 const { runWorkflowCommand } = require('../lib/workflow');
-const { parseManifestV2 } = require('../lib/workflow-state');
+const { formatManifestV2, parseManifestV2 } = require('../lib/workflow-state');
 const { parseLedger } = require('../lib/ledger');
 
 function git(cwd, args) {
@@ -549,6 +549,121 @@ test('PR file-set finalize pass revalidates the live file-set fingerprint', asyn
   assert.equal(final.status, 'blocked');
   assert.equal(final.blockingReason, 'final-validation-failed');
   assert.notEqual(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'pass');
+});
+
+test('CODE file-set full re-review refreshes stale policy identity before final pass', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-code', 'scope=src']);
+  const start = await reachFileSetFixStage(root, args);
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+
+  await runWorkflowCommand('record-diff-review', [
+    start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], { cwd: root, stdin: DIFF_OK });
+
+  const staleManifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  staleManifest.fileSetFingerprint = '0'.repeat(64);
+  staleManifest.exclusions = staleManifest.exclusions.filter((entry) => ![
+    '.claude',
+    '.codex',
+    '.codegraph',
+    '.gemini',
+    '.req-to-plan'
+  ].includes(entry));
+  fs.writeFileSync(start.manifestPath, formatManifestV2(staleManifest));
+
+  await runWorkflowCommand('context', [
+    ...args,
+    '--phase',
+    'full-re-review'
+  ], { cwd: root });
+  const fullReview = await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'full-re-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_PASS });
+  assert.equal(fullReview.ok, true, JSON.stringify(fullReview));
+
+  const refreshedManifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.notEqual(refreshedManifest.fileSetFingerprint, '0'.repeat(64));
+  assert.ok(refreshedManifest.exclusions.includes('.codegraph'));
+
+  const final = await runWorkflowCommand('finalize', [
+    start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], { cwd: root, stdin: finalPass('src/a.js') });
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'pass');
+});
+
+test('PR file-set full re-review refreshes stale identity (incl head) before final pass', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-pr', 'base=main']);
+  const start = await reachFileSetFixStage(root, args);
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+
+  await runWorkflowCommand('record-diff-review', [
+    start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], { cwd: root, stdin: DIFF_OK });
+
+  // Corrupt the stored PR identity: zero the fingerprint AND the head revision, so a pass can
+  // only be reached if record-review re-anchors the full PR identity, not just the fingerprint.
+  const staleManifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  staleManifest.fileSetFingerprint = '0'.repeat(64);
+  staleManifest.head = '0'.repeat(40);
+  fs.writeFileSync(start.manifestPath, formatManifestV2(staleManifest));
+
+  await runWorkflowCommand('context', [...args, '--phase', 'full-re-review'], { cwd: root });
+  const fullReview = await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'full-re-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_PASS });
+  assert.equal(fullReview.ok, true, JSON.stringify(fullReview));
+
+  const refreshedManifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.notEqual(refreshedManifest.fileSetFingerprint, '0'.repeat(64));
+  assert.notEqual(refreshedManifest.head, '0'.repeat(40));
+  assert.match(refreshedManifest.head, /^[0-9a-f]{40}$/);
+
+  const final = await runWorkflowCommand('finalize', [
+    start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], { cwd: root, stdin: finalPass('src/a.js') });
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'pass');
 });
 
 test('PR file-set end-fix blocks a fix report missing per-round verification', async (t) => {
