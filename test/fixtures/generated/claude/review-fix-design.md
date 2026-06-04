@@ -119,7 +119,7 @@ Next: <one concrete action>
 State: <target-state-dir when persistent state exists>
 ```
 
-When workflow finalization returns `archiveWarning`, default output must include an archive warning line and a concrete next action to repair, reset, or rerun after the state directory can be archived. Example:
+When workflow finalization returns `archiveWarning`, default output must include an archive warning line and a concrete next action to clear the leftover state directory (delete or reset) so the next run can start fresh. Example:
 
 ```text
 Archive warning: state directory could not be archived; it remains at <state-dir>.
