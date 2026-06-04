@@ -237,7 +237,7 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 ```
 
 - `scope=<path>` 指定要 review 的 source root（repeatable，可重复传入多个 `scope=`）。省略 scope 表示整个 project root。
-- 强制排除：`.git`、`.drfx`、`node_modules`、build outputs 及类似 infrastructure 目录始终排除在 reviewed file set 之外。
+- 强制排除：`.git`、`.drfx`、legacy `.docs-review-fix`、`node_modules`、build outputs 及类似 infrastructure 目录始终排除在 reviewed file set 之外。
 - `read-only` 或 `review-and-fix`（Claude Code 和 Codex 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
 - `guard=git` 为默认值；Git rollback anchor 不可用时使用 `guard=snapshot`。路由永远不会静默切换 guard mode。
 - `resume` 显式从已保存的 state 继续。拒绝 stale state，不存在静默复用。

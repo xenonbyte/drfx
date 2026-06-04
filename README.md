@@ -237,7 +237,7 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 ```
 
 - `scope=<path>` names a source root to review. Repeat `scope=` for multiple roots. Empty scope means the whole project root.
-- Mandatory exclusions: `.git`, `.drfx`, `node_modules`, build outputs, and similar infrastructure directories are always excluded from the reviewed file set.
+- Mandatory exclusions: `.git`, `.drfx`, legacy `.docs-review-fix`, `node_modules`, build outputs, and similar infrastructure directories are always excluded from the reviewed file set.
 - `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code and Codex; advisory read-only on Gemini).
 - `guard=git` is the default; use `guard=snapshot` when a Git rollback anchor is unavailable. The route never silently switches guard modes.
 - `resume` explicitly continues from saved state. Stale state is refused; there is no silent reuse.
