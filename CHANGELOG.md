@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.4.0 - 2026-06-04
+
+Renamed to `@xenonbyte/drfx` and added code review routes. This is a breaking release; see Migration below.
+
+### Added
+
+- `review-fix-pr` route: review a `base..HEAD` pull request diff (local git only — never fetches).
+- `review-fix-code` route: review a source scope or the whole project root.
+- File-set review-and-fix workflow for PR/CODE routes: git or snapshot guards, a `rounds=<n>` repair limit, worktree-content identity, explicit/stale resume, and a no-COMMON 4-layer rule stack.
+- CLI commands `drfx version`, `drfx status` (installed routes per platform), and `drfx help`.
+- MIT `LICENSE`.
+
+### Changed
+
+- Renamed the package `@xenonbyte/document-review-fix` to `@xenonbyte/drfx`.
+- Renamed the runtime state directory `~/.docs-review-fix` to `~/.drfx` and the ownership marker `.document-review-loop-owned` to `.drfx-owned`.
+- Renamed `drfx check` to `drfx doctor`; the strict-verified proof is now `drfx doctor --platform <platform> --json`.
+- Made `--platform` optional for `install` and `uninstall` (omit it to target all platforms).
+- Restructured the English and Chinese READMEs into a usage-doc layout.
+
+### Fixed
+
+- `drfx status` no longer reports a corrupt or incomplete manifest as installed; it validates the manifest shape and reports an invalid manifest instead.
+
+### Migration
+
+Uninstall with the old `@xenonbyte/document-review-fix` package first, then `npm install -g @xenonbyte/drfx` and re-run `drfx install`. Old capability descriptors and `~/.docs-review-fix` / `.document-review-loop-owned` state are not recognized by the renamed runtime.
+
 ## 0.3.0 - 2026-05-31
 
 ### Added
