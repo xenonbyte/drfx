@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.2 - 2026-06-05
+
+Close a finalize gap in the generated PR/CODE coordinator loop: a clean initial review still requires a full re-review before PASS.
+
+### Fixed
+
+- Generated Claude/Codex route instructions now document that an initial `record-review` PASS is not terminal: the coordinator must run a full re-review before finalization. Previously only the post-`DIFF-OK` re-review path was documented, so a clean initial review with no fix round could attempt `finalize` and hit `ERR_FINAL_FULL_REVIEW_REQUIRED`. This matches the enforced state machine (`triageOutcome` → `full-re-review`; `validatePass` requires `requiredFullReReviewComplete` even with no fix round).
+
 ## 0.4.1 - 2026-06-04
 
 File-set (PR/CODE) review-fix lifecycle hardening, agent/tool state exclusions, and a new `reset` token.
