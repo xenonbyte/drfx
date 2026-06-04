@@ -1540,7 +1540,6 @@ test('PR file-set resume archives a live passed state and starts a fresh review'
   const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
   assert.equal(start.ok, true, JSON.stringify(start));
 
-  const targetStateDir = start.targetStateDir;
   const manifestPath = start.manifestPath;
 
   // Mutate the manifest status to 'pass' to simulate a leftover terminal state.
