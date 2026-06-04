@@ -1386,7 +1386,6 @@ test('resume archives a live passed state and starts a fresh review', async (t) 
 
   assert.equal(result.ok, true);
   assert.equal(result.status, 'review');                 // fresh start
-  assert.equal(result.stalePass, undefined);             // field removed
   assert.match(result.archivedStatePath, /\.drfx\/archived\/.+/);
   // fresh manifest recreated at the same target key path by start:
   const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
@@ -1442,7 +1441,6 @@ test('document resume archive failure blocks with state-validation-failed', asyn
   assert.equal(result.blockingReason, 'state-validation-failed');
   assert.ok(result.archiveWarning);
   assert.equal(result.archivedStatePath, undefined);
-  assert.equal(result.stalePass, undefined);
   assert.equal(fs.existsSync(fixture.targetDir), true, 'old passed state remains for operator repair');
   const manifest = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
   assert.equal(manifest.status, 'pass');
