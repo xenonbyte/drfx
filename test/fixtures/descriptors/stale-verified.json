@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "packageName": "@xenonbyte/document-review-fix",
+  "packageName": "@xenonbyte/drfx",
   "packageVersion": "0.1.1",
   "platform": "claude",
   "adapterVersion": "v1",

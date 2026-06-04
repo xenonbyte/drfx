@@ -915,7 +915,7 @@ const { serializeManifest, parseManifestText } = require('../lib/manifest');
 function baseManifest(generated) {
   return {
     schemaVersion: 2,
-    packageName: '@xenonbyte/document-review-fix',
+    packageName: '@xenonbyte/drfx',
     packageVersion: '0.2.1',
     platform: 'codex',
     installedAt: '2026-05-31T00:00:00.000Z',

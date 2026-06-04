@@ -1,5 +1,5 @@
 {
-  "name": "@xenonbyte/document-review-fix",
+  "name": "@xenonbyte/drfx",
   "version": "0.3.0",
   "description": "Review and fix document workflows for SPEC, PLAN, DESIGN, and COMMON documents.",
   "type": "commonjs",

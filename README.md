@@ -1,8 +1,8 @@
 English | [简体中文](README.zh-CN.md)
 
-# document-review-fix
+# drfx
 
-`@xenonbyte/document-review-fix` installs six review routes: four document routes (SPEC, PLAN, DESIGN, COMMON) and two code routes (`review-fix-pr` for pull request diffs and `review-fix-code` for source scope review). All routes can run a read-only review or a review-and-fix loop.
+`@xenonbyte/drfx` installs six review routes: four document routes (SPEC, PLAN, DESIGN, COMMON) and two code routes (`review-fix-pr` for pull request diffs and `review-fix-code` for source scope review). All routes can run a read-only review or a review-and-fix loop.
 
 ## Requirements
 
@@ -15,7 +15,7 @@ English | [简体中文](README.zh-CN.md)
 Install the package globally:
 
 ```bash
-npm install -g @xenonbyte/document-review-fix
+npm install -g @xenonbyte/drfx
 ```
 
 Check the CLI:

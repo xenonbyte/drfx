@@ -2,13 +2,13 @@
 
 - 日期：2026-06-03
 - 范围：`review-fix-pr`、`review-fix-code` 跨平台 route / skill / command
-- 目标读者：`@xenonbyte/document-review-fix` 维护者与实现 agent
+- 目标读者：`@xenonbyte/drfx` 维护者与实现 agent
 - 状态：需求草案
 - 形态：需求文档，本文档不包含实现方案或代码改动
 
 ## 背景
 
-`@xenonbyte/document-review-fix` 现在安装的是文档 review-fix routes：`review-fix-spec`、`review-fix-plan`、`review-fix-design` 和 `review-fix-doc`。这些 routes 已经具备三平台分发能力：Claude Code 安装 command，Codex 安装 skill，Gemini 安装 TOML command。这个安装模型适合继续承载代码审查类 workflow。
+`@xenonbyte/drfx` 现在安装的是文档 review-fix routes：`review-fix-spec`、`review-fix-plan`、`review-fix-design` 和 `review-fix-doc`。这些 routes 已经具备三平台分发能力：Claude Code 安装 command，Codex 安装 skill，Gemini 安装 TOML command。这个安装模型适合继续承载代码审查类 workflow。
 
 用户需要两个代码审查入口：
 

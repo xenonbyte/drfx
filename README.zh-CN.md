@@ -1,8 +1,8 @@
 [English](README.md) | 简体中文
 
-# document-review-fix
+# drfx
 
-`@xenonbyte/document-review-fix` 安装六条 review routes：四条 document routes（SPEC、PLAN、DESIGN、COMMON）和两条 code routes（`review-fix-pr` 用于 pull request diff，`review-fix-code` 用于 source scope review）。所有路由均支持 read-only review 或 review-and-fix loop。
+`@xenonbyte/drfx` 安装六条 review routes：四条 document routes（SPEC、PLAN、DESIGN、COMMON）和两条 code routes（`review-fix-pr` 用于 pull request diff，`review-fix-code` 用于 source scope review）。所有路由均支持 read-only review 或 review-and-fix loop。
 
 ## Requirements
 
@@ -15,7 +15,7 @@
 全局安装 package：
 
 ```bash
-npm install -g @xenonbyte/document-review-fix
+npm install -g @xenonbyte/drfx
 ```
 
 检查 CLI：

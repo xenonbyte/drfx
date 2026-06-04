@@ -6,7 +6,7 @@
 
 ## Summary
 
-This is a read-only audit of the current `@xenonbyte/document-review-fix` repository. The core workflow is in good shape: the CLI, install/uninstall path, route generation, persistent workflow state, fix lifecycle, guards, final response validation, receipts, redaction, and no-state path all have meaningful coverage.
+This is a read-only audit of the current `@xenonbyte/drfx` repository. The core workflow is in good shape: the CLI, install/uninstall path, route generation, persistent workflow state, fix lifecycle, guards, final response validation, receipts, redaction, and no-state path all have meaningful coverage.
 
 Three issues are worth fixing because they reduce real user risk or operational friction:
 
