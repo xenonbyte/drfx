@@ -31,7 +31,7 @@ Pass `debug` to print redacted workflow audit details. Default output is concise
 
 Practical Mode requires a live reviewer subagent probe that returns exactly `DRFX_REVIEWER_READY`, plus verified stdin handoff for semantic payloads. If subagent delegation is unavailable or invalid, downgrade only through the allowed advisory downgrade reasons. If fingerprint guard or stdin handoff is unavailable, fail closed; stdin handoff failure is `unsafe-handoff-file`.
 
-Strict Verified requires same-flow `drfx check --json` values: `descriptorPath`, `descriptorDirectory`, and `runId`. It does not use cached or installer-default descriptors. The internal workflow command decides whether strict proof is valid.
+Strict Verified requires same-flow `drfx doctor --json` values: `descriptorPath`, `descriptorDirectory`, and `runId`. It does not use cached or installer-default descriptors. The internal workflow command decides whether strict proof is valid.
 
 Automatic writes require `review-and-fix` plus a selected guard mode: use `guard=git` with a tracked clean HEAD-backed git target, or `guard=snapshot` with a valid snapshot rollback anchor. Target-only guard checks and target-local lock refresh must still pass. Fixers and coordinators may modify only the target document; references remain read-only.
 

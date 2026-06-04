@@ -532,7 +532,7 @@ test('strict verified route proof uses same-flow check json only', () => {
     ['claude', claudeText, 'claude']
   ]) {
     assert.match(text, /assurance=strict-verified/);
-    assert.match(text, new RegExp(`drfx check --platform ${publicPlatform} --json`));
+    assert.match(text, new RegExp(`drfx doctor --platform ${publicPlatform} --json`));
     assert.match(text, /same-flow|same route flow|same invocation/i);
     assert.match(text, /runId/);
     assert.match(text, /descriptorPath/);
@@ -546,7 +546,7 @@ test('strict verified route proof uses same-flow check json only', () => {
       label
     );
     assert.match(text, /do not scrape|must not scrape|never scrape/i, label);
-    assert.match(text, /human-readable.*drfx check|drfx check.*human-readable/i, label);
+    assert.match(text, /human-readable.*drfx doctor|drfx doctor.*human-readable/i, label);
     assert.match(text, /do not reuse|must not reuse|never reuse/i, label);
     assert.match(text, /cached descriptor|installer-default descriptor/i, label);
   }

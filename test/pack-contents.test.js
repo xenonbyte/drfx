@@ -23,6 +23,7 @@ function packTopLevelEntries(files) {
 test('npm pack ships exactly the runtime whitelist and no tests', () => {
   const tops = packTopLevelEntries(packFiles());
   const expected = [
+    'LICENSE',
     'README.md',
     'README.zh-CN.md',
     'bin/',

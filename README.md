@@ -2,15 +2,37 @@ English | [简体中文](README.zh-CN.md)
 
 # drfx
 
+[![npm version](https://img.shields.io/npm/v/@xenonbyte/drfx.svg)](https://www.npmjs.com/package/@xenonbyte/drfx)
+[![node](https://img.shields.io/node/v/@xenonbyte/drfx.svg)](https://nodejs.org)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
+> Install document and code review-fix routes into Claude Code, Codex, and Gemini.
+
+## Introduction
+
 `@xenonbyte/drfx` installs six review routes: four document routes (SPEC, PLAN, DESIGN, COMMON) and two code routes (`review-fix-pr` for pull request diffs and `review-fix-code` for source scope review). All routes can run a read-only review or a review-and-fix loop.
 
-## Requirements
+It is built for repeatable, auditable review: every fix is confined to a declared file set, guarded by git or file snapshots, and the route never claims a passing result it cannot prove.
 
-- Node.js 20 or newer.
-- One or more supported agent platforms: Claude Code, Codex, or Gemini.
-- For automatic fixes, use `guard=git` with a tracked clean `HEAD` target, or use `guard=snapshot` with a valid snapshot rollback anchor.
+### Features
 
-## Install
+- **Six routes** — four document routes (SPEC, PLAN, DESIGN, COMMON) and two code routes (`review-fix-pr`, `review-fix-code`).
+- **Two modes** — `read-only` review, or `review-and-fix` with a bounded repair loop.
+- **Guarded writes** — `guard=git` or `guard=snapshot` prove fixes stayed inside the target file set; otherwise the run blocks instead of writing.
+- **Layered rules** — built-in rubrics plus optional user-global and project-local custom rules.
+- **Safe install/uninstall** — manifest-backed and owned-only; uninstall never deletes files it does not own.
+
+### Supported platforms
+
+| Platform | Install form | Automatic fixing |
+|---|---|---|
+| Claude Code | command file | Yes |
+| Codex | skill directory | Yes |
+| Gemini | TOML command | No — advisory read-only only |
+
+## Installation
+
+Requires Node.js 20 or newer and at least one supported agent platform (Claude Code, Codex, or Gemini). For automatic fixes, use `guard=git` with a tracked clean `HEAD` target, or `guard=snapshot` with a valid snapshot rollback anchor.
 
 Install the package globally:
 
@@ -18,37 +40,44 @@ Install the package globally:
 npm install -g @xenonbyte/drfx
 ```
 
-Check the CLI:
+Check the version, list the commands, and probe local platform capabilities:
 
 ```bash
-drfx --help
-drfx check
+drfx version
+drfx help
+drfx doctor
 ```
 
-Install generated routes into the agent platforms you use:
+Install generated routes. `--platform` is optional — omit it to target all platforms (Claude, Codex, Gemini):
 
 ```bash
-drfx install --platform claude,codex,gemini
-drfx install --platform claude
-drfx install --platform codex
-drfx install --platform gemini
+drfx install                                  # all platforms
+drfx install --platform claude,codex,gemini   # explicit list
+drfx install --platform claude                # a single platform
 ```
 
-Uninstall manifest-owned generated routes:
+`--platform` installs:
+
+- `claude`: command files under `~/.claude/commands`.
+- `codex`: generated skill directories under `~/.codex/skills/review-fix-*`.
+- `gemini`: command TOML files under `~/.gemini/commands`. Gemini routes are advisory-only.
+
+Report what is installed per platform:
 
 ```bash
-drfx uninstall --platform claude,codex,gemini
+drfx status
+```
+
+Uninstall package-owned generated routes (`--platform` is likewise optional):
+
+```bash
+drfx uninstall                                # all platforms
+drfx uninstall --platform claude              # a single platform
 ```
 
 If uninstall finds user-modified generated files or Codex skill directory contents, it keeps those files, reports `partially uninstalled: <platform> (... manifest retained)`, and retains a narrowed manifest so a later uninstall can remove the remaining package-owned files after they are restored or deleted.
 
-`drfx install --platform` supports:
-
-- `claude`: installs command files under `~/.claude/commands`.
-- `codex`: installs generated skill directories under `~/.codex/skills/review-fix-*`.
-- `gemini`: installs command TOML files under `~/.gemini/commands`. Gemini routes are advisory-only.
-
-`drfx check` reports local platform capability status. Use `drfx check --platform <platform> --json` when a strict verified route needs same-flow capability proof.
+`drfx doctor` reports local platform capability status. Use `drfx doctor --platform <platform> --json` when a strict verified route needs same-flow capability proof.
 
 ## Routes
 
@@ -73,119 +102,43 @@ Review and automatically fix a SPEC document on Codex or Claude Code:
 review-fix-spec docs/spec.md
 ```
 
-Bare path is shorthand for `target=<path>`. The full form remains supported:
+A bare path is shorthand for `target=<path>`. The full form remains supported:
 
 ```text
 review-fix-spec target=docs/spec.md
 ```
 
-Review without editing:
+Review without editing, optionally with reference documents:
 
 ```text
 review-fix-design docs/design.md read-only
-```
-
-Review with reference documents:
-
-```text
 review-fix-plan docs/plan.md ref=docs/spec.md ref=docs/design.md
 ```
 
-Run strict review-and-fix:
+Run strict review-and-fix, or a bounded repair loop:
 
 ```text
 review-fix-plan docs/plan.md review-and-fix strict guard=git
-```
-
-Resume from target-local workflow state:
-
-```text
-review-fix-doc docs/notes.md read-only resume
-```
-
-Print redacted workflow details for debugging:
-
-```text
-review-fix-design docs/design.md debug
-```
-
-Use explicit practical assurance:
-
-```text
-review-fix-spec docs/spec.md review-and-fix assurance=practical guard=snapshot
-```
-
-Use advisory read-only review:
-
-```text
-review-fix-design docs/design.md ref=docs/requirements.md read-only assurance=advisory
-```
-
-Run a document route repair loop (maximum 3 rounds):
-
-```text
 review-fix-plan docs/plan.md rounds=3
 ```
-
-## Code Review Routes
 
 Review a pull request diff (local git only, no fetch):
 
 ```text
 review-fix-pr base=main
-```
-
-Review-and-fix a PR diff with explicit snapshot guard:
-
-```text
-review-fix-pr base=main guard=snapshot
-```
-
-Read-only PR review:
-
-```text
 review-fix-pr base=main read-only
-```
-
-PR review with explicit resume:
-
-```text
+review-fix-pr base=main guard=snapshot
+review-fix-pr base=main rounds=2
 review-fix-pr base=main resume
 ```
 
-PR review with repair loop (maximum 2 rounds):
-
-```text
-review-fix-pr base=main rounds=2
-```
-
-Review the whole project root (`scope=` omitted means whole project):
+Review the whole project root (`scope=` omitted means whole project), or scope it to one or more roots:
 
 ```text
 review-fix-code
-```
-
-Scoped code review (one or more roots):
-
-```text
 review-fix-code scope=lib scope=test
-```
-
-Read-only code review of a single directory:
-
-```text
 review-fix-code scope=lib read-only
-```
-
-Code review with explicit snapshot guard:
-
-```text
 review-fix-code scope=lib guard=snapshot
-```
-
-Code review with explicit resume:
-
-```text
 review-fix-code scope=lib resume
 ```
 
@@ -203,7 +156,7 @@ Supported tokens:
 - `normal` uses default strictness.
 - `strict` makes low-severity findings blocking unless they are explicitly accepted as non-blocking.
 - `assurance=practical` uses live platform checks suitable for normal automatic fixing on Codex and Claude Code.
-- `assurance=strict-verified` requires same-flow `drfx check --platform <platform> --json` proof.
+- `assurance=strict-verified` requires same-flow `drfx doctor --platform <platform> --json` proof.
 - `assurance=advisory` allows read-only advisory review only.
 - `resume` continues from target-local state.
 - `rounds=<n>` sets the maximum repair-loop count (positive integer). Unsupported with `read-only`.
@@ -523,3 +476,7 @@ The route fixed what it could safely fix and is reporting accepted issues that r
 `resume` refuses to continue.
 
 The target state no longer matches the current file fingerprints, target path, references, rules, or lock state. Start a fresh run after resolving the reported blocker.
+
+## License
+
+Released under the [MIT License](./LICENSE).

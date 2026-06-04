@@ -2,24 +2,42 @@
 'use strict';
 
 const { runCheck, formatCheckReport, formatCheckJson } = require('../lib/check');
+const { runStatus, formatStatusReport, formatStatusJson } = require('../lib/status');
 const { installPlatforms, uninstallPlatforms, parsePlatformList } = require('../lib/install');
 const { runWorkflowCommand, formatWorkflowJson, formatWorkflowError } = require('../lib/workflow');
 
+const USER_COMMANDS = new Set(['version', 'help', 'doctor', 'status', 'install', 'uninstall']);
+
+function packageVersion() {
+  return require('../package.json').version;
+}
+
 function printHelp() {
   process.stdout.write([
-    'drfx - document-review-loop installer and capability checker',
+    'drfx - install and run document and code review-fix routes for Claude Code, Codex, and Gemini',
     '',
     'Usage:',
-    '  drfx check [--platform claude,codex,gemini] [--json]',
-    '  drfx install --platform claude,codex,gemini',
-    '  drfx uninstall --platform claude,codex,gemini',
+    '  drfx version',
+    '  drfx help',
+    '  drfx doctor    [--platform claude,codex,gemini] [--json]',
+    '  drfx status    [--platform claude,codex,gemini] [--json]',
+    '  drfx install   [--platform claude,codex,gemini]',
+    '  drfx uninstall [--platform claude,codex,gemini]',
+    '',
+    'Commands:',
+    '  version      Print the installed drfx version.',
+    '  help         Show this help.',
+    '  doctor       Probe local platform capabilities (use --json for strict-verified proof).',
+    '  status       Report which generated routes are installed per platform.',
+    '  install      Install generated routes. --platform is optional; omit it to target all platforms.',
+    '  uninstall    Remove package-owned generated routes. --platform is optional; omit it to target all platforms.',
     ''
   ].join('\n'));
 }
 
 function printWorkflowHelp() {
   process.stdout.write([
-    'drfx workflow - internal document-review-loop dispatcher',
+    'drfx workflow - internal route workflow dispatcher (invoked by generated routes, not by hand)',
     '',
     'Usage:',
     '  drfx workflow start <entry-skill> [tokens...] [--json] [--assurance advisory|practical|strict-verified]',
@@ -28,46 +46,46 @@ function printWorkflowHelp() {
   ].join('\n'));
 }
 
-function parseArgs(argv) {
-  const parsed = { command: argv[2], platforms: undefined, json: false };
-  if (parsed.command === 'workflow') {
-    parsed.workflowSubcommand = argv[3];
-    parsed.workflowArgs = argv.slice(4);
-    return parsed;
-  }
+// Parse `--platform <list>` / `--platform=<list>` (optional; absent ⇒ all platforms) and `--json`
+// from the tokens that follow the command (argv[3..]).
+function parseCommandOptions(argv) {
+  let platforms;
+  let json = false;
   for (let index = 3; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--json') {
-      parsed.json = true;
+      json = true;
       continue;
     }
     if (arg === '--platform') {
       index += 1;
       if (index >= argv.length) throw new Error('--platform requires a value');
-      parsed.platforms = parsePlatformList(argv[index]);
+      platforms = parsePlatformList(argv[index]);
       continue;
     }
     if (arg.startsWith('--platform=')) {
-      parsed.platforms = parsePlatformList(arg.slice('--platform='.length));
+      platforms = parsePlatformList(arg.slice('--platform='.length));
       continue;
     }
     throw new Error(`Unknown option: ${arg}`);
   }
-  return parsed;
-}
-
-function workflowJsonRequested(argv) {
-  if (argv[2] !== 'workflow') return false;
-  return argv.slice(4).some((arg) => arg === '--json' || arg.startsWith('--json='));
+  return { platforms, json };
 }
 
 async function main(argv) {
-  const { command, platforms, json, workflowSubcommand, workflowArgs } = parseArgs(argv);
-  if (!command || command === '--help' || command === '-h') {
+  const command = argv[2];
+
+  if (command === 'version' || command === '--version' || command === '-v') {
+    process.stdout.write(`${packageVersion()}\n`);
+    return 0;
+  }
+  if (!command || command === 'help' || command === '--help' || command === '-h') {
     printHelp();
     return 0;
   }
   if (command === 'workflow') {
+    const workflowSubcommand = argv[3];
+    const workflowArgs = argv.slice(4);
     if (!workflowSubcommand || workflowSubcommand === '--help' || workflowSubcommand === '-h') {
       printWorkflowHelp();
       return 0;
@@ -76,19 +94,23 @@ async function main(argv) {
     process.stdout.write(formatWorkflowJson(result));
     return 0;
   }
-  if (!['check', 'install', 'uninstall'].includes(command)) {
+
+  if (!USER_COMMANDS.has(command)) {
     process.stderr.write(`Unknown command: ${command}\n`);
     printHelp();
     return 1;
   }
 
-  if ((command === 'install' || command === 'uninstall') && !platforms) {
-    throw new Error(`${command} requires --platform claude,codex,gemini`);
-  }
+  const { platforms, json } = parseCommandOptions(argv);
 
-  if (command === 'check') {
+  if (command === 'doctor') {
     const result = await runCheck({ platforms, json });
     process.stdout.write(json ? formatCheckJson(result) : formatCheckReport(result));
+    return 0;
+  }
+  if (command === 'status') {
+    const result = runStatus({ platforms });
+    process.stdout.write(json ? formatStatusJson(result) : formatStatusReport(result));
     return 0;
   }
   if (command === 'install') {
@@ -115,6 +137,11 @@ async function main(argv) {
   }
 
   return 1;
+}
+
+function workflowJsonRequested(argv) {
+  if (argv[2] !== 'workflow') return false;
+  return argv.slice(4).some((arg) => arg === '--json' || arg.startsWith('--json='));
 }
 
 main(process.argv)

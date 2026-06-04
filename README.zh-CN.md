@@ -2,15 +2,37 @@
 
 # drfx
 
+[![npm version](https://img.shields.io/npm/v/@xenonbyte/drfx.svg)](https://www.npmjs.com/package/@xenonbyte/drfx)
+[![node](https://img.shields.io/node/v/@xenonbyte/drfx.svg)](https://nodejs.org)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
+> 把 document 和 code review-fix routes 安装进 Claude Code、Codex 和 Gemini。
+
+## Introduction
+
 `@xenonbyte/drfx` 安装六条 review routes：四条 document routes（SPEC、PLAN、DESIGN、COMMON）和两条 code routes（`review-fix-pr` 用于 pull request diff，`review-fix-code` 用于 source scope review）。所有路由均支持 read-only review 或 review-and-fix loop。
 
-## Requirements
+它面向可重复、可审计的 review：每次 fix 都被限制在一个声明过的 file set 内，由 git 或 file snapshot 守卫，且 route 绝不声明它无法证明的 PASS 结果。
 
-- Node.js 20 或更新版本。
-- 至少一个支持的平台：Claude Code、Codex 或 Gemini。
-- 自动修复可使用 `guard=git` 搭配 tracked、clean、由 `HEAD` 支撑的目标文件，或使用 `guard=snapshot` 搭配 valid snapshot rollback anchor。
+### Features
 
-## Install
+- **六条 routes** —— 四条 document routes（SPEC、PLAN、DESIGN、COMMON）和两条 code routes（`review-fix-pr`、`review-fix-code`）。
+- **两种 modes** —— `read-only` review，或带有界修复循环的 `review-and-fix`。
+- **受守卫的写入** —— `guard=git` 或 `guard=snapshot` 证明 fix 始终留在 target file set 内；否则 route 阻断而不写入。
+- **分层规则** —— 内置 rubric，加上可选的 user-global 与 project-local 自定义规则。
+- **安全装卸** —— manifest 支撑、owned-only；uninstall 绝不删除不属于自己的文件。
+
+### Supported platforms
+
+| 平台 | 安装形态 | 自动修复 |
+|---|---|---|
+| Claude Code | command file | 支持 |
+| Codex | skill directory | 支持 |
+| Gemini | TOML command | 不支持 —— 仅 advisory read-only |
+
+## Installation
+
+需要 Node.js 20 或更新版本，以及至少一个支持的平台（Claude Code、Codex 或 Gemini）。自动修复可使用 `guard=git` 搭配 tracked、clean、由 `HEAD` 支撑的目标文件，或使用 `guard=snapshot` 搭配 valid snapshot rollback anchor。
 
 全局安装 package：
 
@@ -18,37 +40,44 @@
 npm install -g @xenonbyte/drfx
 ```
 
-检查 CLI：
+查看版本、列出命令，并探测本地 platform capability：
 
 ```bash
-drfx --help
-drfx check
+drfx version
+drfx help
+drfx doctor
 ```
 
-把 generated routes 安装到你使用的 agent platforms：
+安装 generated routes。`--platform` 可选 —— 省略即面向全部平台（Claude、Codex、Gemini）：
 
 ```bash
-drfx install --platform claude,codex,gemini
-drfx install --platform claude
-drfx install --platform codex
-drfx install --platform gemini
+drfx install                                  # 全部平台
+drfx install --platform claude,codex,gemini   # 显式列表
+drfx install --platform claude                # 单个平台
 ```
 
-卸载 manifest-owned generated routes：
+`--platform` 安装到：
+
+- `claude`: command files 到 `~/.claude/commands`。
+- `codex`: generated skill directories 到 `~/.codex/skills/review-fix-*`。
+- `gemini`: command TOML files 到 `~/.gemini/commands`。Gemini routes 仅支持 advisory read-only。
+
+报告每个平台已安装的内容：
 
 ```bash
-drfx uninstall --platform claude,codex,gemini
+drfx status
+```
+
+卸载 package-owned generated routes（`--platform` 同样可选）：
+
+```bash
+drfx uninstall                                # 全部平台
+drfx uninstall --platform claude              # 单个平台
 ```
 
 如果 uninstall 发现用户修改过的 generated files 或 Codex skill directory contents，它会保留这些文件，报告 `partially uninstalled: <platform> (... manifest retained)`，并保留一个缩窄后的 manifest。恢复或删除剩余文件后，可以再次运行 uninstall 移除剩余 package-owned files。
 
-`drfx install --platform` 支持：
-
-- `claude`: 安装 command files 到 `~/.claude/commands`。
-- `codex`: 安装 generated skill directories 到 `~/.codex/skills/review-fix-*`。
-- `gemini`: 安装 command TOML files 到 `~/.gemini/commands`。Gemini routes 仅支持 advisory read-only。
-
-`drfx check` 报告本地 platform capability status。strict verified route 需要 same-flow capability proof 时，使用 `drfx check --platform <platform> --json`。
+`drfx doctor` 报告本地 platform capability status。strict verified route 需要 same-flow capability proof 时，使用 `drfx doctor --platform <platform> --json`。
 
 ## Routes
 
@@ -79,113 +108,37 @@ Bare path 是 `target=<path>` 的简写。完整形式仍支持：
 review-fix-spec target=docs/spec.md
 ```
 
-只 review、不编辑：
+只 review、不编辑，可选带 reference documents：
 
 ```text
 review-fix-design docs/design.md read-only
-```
-
-带 reference documents review：
-
-```text
 review-fix-plan docs/plan.md ref=docs/spec.md ref=docs/design.md
 ```
 
-运行 strict review-and-fix：
+运行 strict review-and-fix，或一个有界修复循环：
 
 ```text
 review-fix-plan docs/plan.md review-and-fix strict guard=git
-```
-
-从 target-local workflow state 继续：
-
-```text
-review-fix-doc docs/notes.md read-only resume
-```
-
-打印 redacted workflow details 用于调试：
-
-```text
-review-fix-design docs/design.md debug
-```
-
-显式使用 practical assurance：
-
-```text
-review-fix-spec docs/spec.md review-and-fix assurance=practical guard=snapshot
-```
-
-使用 advisory read-only review：
-
-```text
-review-fix-design docs/design.md ref=docs/requirements.md read-only assurance=advisory
-```
-
-运行 document route 修复循环（最多 3 轮）：
-
-```text
 review-fix-plan docs/plan.md rounds=3
 ```
 
-## Code Review Routes
-
-Review pull request diff（本地 git，不 fetch）：
+Review 一个 pull request diff（仅本地 git，no fetch）：
 
 ```text
 review-fix-pr base=main
-```
-
-Review-and-fix PR diff，显式使用 snapshot guard：
-
-```text
-review-fix-pr base=main guard=snapshot
-```
-
-Read-only PR review：
-
-```text
 review-fix-pr base=main read-only
-```
-
-显式 PR resume：
-
-```text
+review-fix-pr base=main guard=snapshot
+review-fix-pr base=main rounds=2
 review-fix-pr base=main resume
 ```
 
-PR review with repair loop（最多 2 轮）：
-
-```text
-review-fix-pr base=main rounds=2
-```
-
-Review 整个 project root（省略 `scope=` 表示全项目）：
+Review 整个 project root（省略 `scope=` 表示全项目），或限定到一个/多个根目录：
 
 ```text
 review-fix-code
-```
-
-Scoped code review（一个或多个根目录）：
-
-```text
 review-fix-code scope=lib scope=test
-```
-
-Read-only code review 单目录：
-
-```text
 review-fix-code scope=lib read-only
-```
-
-显式 snapshot guard code review：
-
-```text
 review-fix-code scope=lib guard=snapshot
-```
-
-显式 CODE resume：
-
-```text
 review-fix-code scope=lib resume
 ```
 
@@ -203,7 +156,7 @@ Supported tokens:
 - `normal` 使用默认 strictness。
 - `strict` 让 low-severity findings 阻断，除非它们被显式接受为 non-blocking。
 - `assurance=practical` 使用适合 Codex 和 Claude Code 常规自动修复的 live platform checks。
-- `assurance=strict-verified` 要求 same-flow `drfx check --platform <platform> --json` proof。
+- `assurance=strict-verified` 要求 same-flow `drfx doctor --platform <platform> --json` proof。
 - `assurance=advisory` 仅允许 read-only advisory review。
 - `resume` 从 target-local state 继续。
 - `rounds=<n>` 设置最大修复循环次数（正整数）。与 `read-only` 不兼容。
@@ -236,7 +189,7 @@ Syntax:
 review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<path>] [debug]
 ```
 
-- `scope=<path>` 指定要 review 的 source root（repeatable，可重复传入多个 `scope=`）。省略 scope 表示整个 project root。
+- `scope=<path>` 指定要 review 的 source root。可重复（repeatable）传入多个 `scope=`。省略 scope 表示整个 project root。
 - 强制排除：`.git`、`.drfx`、legacy `.docs-review-fix`、`node_modules`、build outputs 及类似 infrastructure 目录始终排除在 reviewed file set 之外。
 - `read-only` 或 `review-and-fix`（Claude Code 和 Codex 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
 - `guard=git` 为默认值；Git rollback anchor 不可用时使用 `guard=snapshot`。路由永远不会静默切换 guard mode。
@@ -523,3 +476,7 @@ Route 已安全修复可修复项，并正在报告仍然存在的 accepted issu
 `resume` refuses to continue.
 
 Target state 不再匹配当前 file fingerprints、target path、references、rules 或 lock state。解决报告的 blocker 后，开始 fresh run。
+
+## License
+
+基于 [MIT License](./LICENSE) 发布。

@@ -6,9 +6,9 @@
   "adapterVersion": "v1",
   "checkedAt": "2026-05-19T00:00:00.000Z",
   "provenance": {
-    "source": "drfx-check-probe",
+    "source": "drfx-doctor-probe",
     "runId": "old-run-id",
-    "generatedBy": "drfx check",
+    "generatedBy": "drfx doctor",
     "packageVersion": "0.1.1"
   },
   "capabilities": {

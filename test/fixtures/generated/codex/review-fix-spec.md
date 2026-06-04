@@ -30,7 +30,7 @@ Read copied shared files from this skill directory when useful; the embedded con
 - A `ref=design.md` does not require a SPEC target to include `Design Coverage Import`.
 - A `ref=spec.md` does not require a PLAN target to include `SPEC-to-task mapping`.
 - Missing trace tables, stable IDs, and coverage tables are not blocking by default unless the target claims complete reference coverage, custom rules require them, or the document becomes unverifiable for its stated purpose.
-- Public CLI commands are `drfx check`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.
+- Public CLI commands are `drfx doctor`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.
 - The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, target editing, diff judgment, and final coordinator agreement are LLM work.
 - For resume, read `.drfx/targets/<target-key>/`.
 - This skill includes copied shared references under this skill directory; it does not need a home-level shared asset directory at runtime.
@@ -179,7 +179,7 @@ Fingerprint guard failure is not a downgrade path. If workflow start or context 
 Only explicit `assurance=strict-verified` requests strict verified mode. In the same-flow route invocation, run:
 
 ```text
-drfx check --platform codex --json
+drfx doctor --platform codex --json
 ```
 
 Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.codex.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Pass those current-run values to workflow start:
@@ -190,7 +190,7 @@ drfx workflow start review-fix-spec target=<path> <selectedMode> rounds=<roundLi
 
 For `review-and-fix assurance=strict-verified`, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
 
-Do not scrape human-readable `drfx check` output. Do not reuse a cached descriptor or installer-default descriptor. Do not claim strict verified assurance unless the internal workflow command accepts the descriptor proof.
+Do not scrape human-readable `drfx doctor` output. Do not reuse a cached descriptor or installer-default descriptor. Do not claim strict verified assurance unless the internal workflow command accepts the descriptor proof.
 
 ## Persistent Review-And-Fix Flow
 

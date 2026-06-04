@@ -36,7 +36,7 @@ function verifiedDescriptor({ platform = 'codex', runId = createRunId() } = {}) 
 }
 
 function writeDescriptor(t, descriptor, basename = `${descriptor.platform}.json`) {
-  const descriptorDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-check-'));
+  const descriptorDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-doctor-'));
   const descriptorPath = path.join(descriptorDirectory, basename);
   fs.writeFileSync(descriptorPath, `${JSON.stringify(descriptor, null, 2)}\n`);
   t.after(() => {
@@ -86,7 +86,7 @@ test('wrong descriptor basename returns advisory unsupported strict proof failur
 test('descriptor outside supplied descriptorDirectory returns strict proof failure', async (t) => {
   const runId = createRunId();
   const outside = writeDescriptor(t, verifiedDescriptor({ runId }));
-  const descriptorDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-check-'));
+  const descriptorDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-doctor-'));
   t.after(() => {
     fs.rmSync(descriptorDirectory, { recursive: true, force: true });
   });

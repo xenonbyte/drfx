@@ -149,9 +149,9 @@ test('builds descriptor with required schema fields and advisory reason', async 
   assert.equal(descriptor.adapterVersion, 'v1');
   assert.equal(descriptor.checkedAt, checkedAt);
   assert.deepEqual(descriptor.provenance, {
-    source: 'drfx-check-probe',
+    source: 'drfx-doctor-probe',
     runId,
-    generatedBy: 'drfx check',
+    generatedBy: 'drfx doctor',
     packageVersion: PACKAGE_VERSION
   });
   assert.deepEqual(Object.keys(descriptor.capabilities).sort(), [
@@ -1085,7 +1085,7 @@ test('check reruns current probes and reports advisory reason', async (t) => {
   for (const platform of ['claude', 'codex', 'gemini']) {
     const descriptorPath = path.join(homeDir, '.drfx', 'capabilities', `${platform}.json`);
     const descriptor = JSON.parse(fs.readFileSync(descriptorPath, 'utf8'));
-    assert.equal(descriptor.provenance.source, 'drfx-check-probe', platform);
+    assert.equal(descriptor.provenance.source, 'drfx-doctor-probe', platform);
     assert.equal(descriptor.provenance.runId, result.runId, platform);
     const validation = validateCurrentDescriptor(descriptor, {
       packageVersion: PACKAGE_VERSION,
@@ -1111,7 +1111,7 @@ test('runCheck json mode returns current-run descriptor metadata', async (t) => 
 
   assert.equal(typeof result.runId, 'string');
   assert.ok(result.runId.length > 0);
-  assert.equal(path.basename(result.descriptorDirectory).startsWith('drfx-check-'), true);
+  assert.equal(path.basename(result.descriptorDirectory).startsWith('drfx-doctor-'), true);
 
   for (const platform of ['claude', 'codex', 'gemini']) {
     const report = result.platforms[platform];
@@ -1140,7 +1140,7 @@ test('generated Claude commands use fixed type, current checks, target-local res
   assert.match(text, /review-fix-spec/);
   assert.match(text, /Document type:\s*SPEC/i);
   assert.match(text, new RegExp(`Package version:\\s*${PACKAGE_VERSION.replaceAll('.', '\\.')}`, 'i'));
-  assert.match(text, /run `drfx check`|run the same package capability check/i);
+  assert.match(text, /run `drfx doctor`|run the same package capability check/i);
   assert.match(text, /must not trust old|stale descriptor/i);
   assert.match(text, /users? must not pass `?type`?/i);
   assert.match(text, /must not infer.*type.*filename|must not infer.*type.*path/i);

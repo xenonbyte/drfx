@@ -19,7 +19,7 @@ Help-style or invalid invocations explain usage without reading files, running p
 - Users must not pass `target=`, `type`, `ref=`, `assurance=`, `strict`, `normal`, or `ledger=`; this route has no document type and no reference documents.
 - The review judges the changed file set as a diff, not a single document. Resolve the base..HEAD file set, then review correctness, regressions, safety, tests, contracts, and maintainability of the change.
 - Code review is actionable-only: pure style preferences, no-risk refactors, and over-abstraction are not blocking.
-- Public CLI commands are `drfx check`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.
+- Public CLI commands are `drfx doctor`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.
 - The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, code editing, diff judgment, and final coordinator agreement are LLM work.
 - Do not trust old or stale descriptor files for automatic fixing or workflow PASS.
 - For resume, read `.drfx/targets/<target-key>/`.
@@ -165,7 +165,7 @@ Fingerprint guard failure is not a downgrade path. If workflow start or context 
 Only explicit `assurance=strict-verified` requests strict verified mode. In the same-flow route invocation, run:
 
 ```text
-drfx check --platform claude --json
+drfx doctor --platform claude --json
 ```
 
 Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.claude.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Pass those current-run values to workflow start:
@@ -176,7 +176,7 @@ drfx workflow start review-fix-pr base=<branch> <selectedMode> rounds=<roundLimi
 
 For `review-and-fix assurance=strict-verified`, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
 
-Do not scrape human-readable `drfx check` output. Do not reuse a cached descriptor or installer-default descriptor. Do not claim strict verified assurance unless the internal workflow command accepts the descriptor proof.
+Do not scrape human-readable `drfx doctor` output. Do not reuse a cached descriptor or installer-default descriptor. Do not claim strict verified assurance unless the internal workflow command accepts the descriptor proof.
 
 ## Persistent Review-And-Fix Flow
 

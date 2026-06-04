@@ -31,5 +31,5 @@
       "detail": "Installer default has not run the local probe."
     }
   },
-  "advisoryReason": "Run drfx check to refresh capabilities; installer defaults are advisory-only."
+  "advisoryReason": "Run drfx doctor to refresh capabilities; installer defaults are advisory-only."
 }

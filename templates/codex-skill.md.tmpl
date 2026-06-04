@@ -146,7 +146,7 @@ Fingerprint guard failure is not a downgrade path. If workflow start or context 
 Only explicit `assurance=strict-verified` requests strict verified mode. In the same-flow route invocation, run:
 
 ```text
-drfx check --platform codex --json
+drfx doctor --platform codex --json
 ```
 
 Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.codex.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Pass those current-run values to workflow start:
@@ -157,7 +157,7 @@ drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} <selectedMode>{{ROUNDS_TOKEN
 
 For `review-and-fix assurance=strict-verified`, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
 
-Do not scrape human-readable `drfx check` output. Do not reuse a cached descriptor or installer-default descriptor. Do not claim strict verified assurance unless the internal workflow command accepts the descriptor proof.
+Do not scrape human-readable `drfx doctor` output. Do not reuse a cached descriptor or installer-default descriptor. Do not claim strict verified assurance unless the internal workflow command accepts the descriptor proof.
 
 ## Persistent Review-And-Fix Flow
 
