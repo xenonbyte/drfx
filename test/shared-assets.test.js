@@ -95,6 +95,22 @@ test('Claude and Codex generated starts preserve materialized rounds token', () 
   }
 });
 
+test('Claude and Codex file-set review-and-fix routes require full re-review after initial PASS', () => {
+  const SNAPSHOT_VERSION = '0.0.0-snapshot';
+
+  for (const platform of ['claude', 'codex']) {
+    for (const routeName of ['review-fix-pr', 'review-fix-code']) {
+      const rendered = renderPlatformRoute(platform, routeName, { packageVersion: SNAPSHOT_VERSION });
+
+      assert.match(
+        rendered,
+        /If initial `record-review` returns `PASS`[\s\S]*?--phase full-re-review --json[\s\S]*?--phase full-re-review --result-stdin/,
+        `${platform}:${routeName} must document the clean review-and-fix full re-review path`
+      );
+    }
+  }
+});
+
 test('shared core contains canonical loop and no runtime memory dependency', () => {
   const core = read('shared/core.md');
 
