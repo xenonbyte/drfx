@@ -1810,6 +1810,8 @@ test('persistent finalize does not archive a stopped-with-deferrals state dir', 
   });
 
   // after finalize returns status 'stopped-with-deferrals':
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'stopped-with-deferrals');
   assert.equal(fs.existsSync(fixture.targetDir), true, 'unfinished state dir is preserved');
   assert.equal(result.archivedStatePath, undefined);
 });
