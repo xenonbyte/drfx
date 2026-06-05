@@ -121,7 +121,9 @@ function assertFileSetTooLargeBlock(result) {
   assert.equal(result.errorCode, 'ERR_FILE_SET_RESOLVE');
   assert.equal(result.blockingReason, 'state-validation-failed');
   assert.match(String(result.message), /file-set-too-large/);
-  assert.equal(result.nextAction, 'resolve a valid base/scope file set before continuing');
+  // The blocker must carry the reason-aware next action from describeCodeBlock,
+  // not the generic "resolve a valid base/scope" fallback.
+  assert.match(String(result.nextAction), /pass scope=<path> to narrow the review/);
 }
 
 test('PR review-and-fix start writes a parseable pr file-set MANIFEST.md and never advisory', async (t) => {
@@ -224,6 +226,30 @@ test('CODE start reports file-set-too-large with a reason-aware message', async 
   assert.equal(result.blockingReason, 'state-validation-failed');
   assert.match(String(result.message), /file-set-too-large/);
   assert.doesNotMatch(String(result.message), /excluded-scope/);
+  assert.match(String(result.nextAction), /pass scope=<path> to narrow the review/);
+});
+
+test('no-state CODE context reports file-set-too-large with the reason-aware next action', async (t) => {
+  const root = makePrRepo(t);
+  writeOversizeDrift(root);
+
+  const result = await runWorkflowCommand('context', [
+    'review-fix-code',
+    'read-only',
+    '--no-state',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--json'
+  ], { cwd: root });
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.errorCode, 'ERR_FILE_SET_RESOLVE');
+  assert.match(String(result.message), /file-set-too-large/);
+  assert.match(String(result.nextAction), /pass scope=<path> to narrow the review/);
 });
 
 test('CODE persistent context reports file-set-too-large drift as blocked JSON', async (t) => {
