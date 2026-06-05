@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.1 - 2026-06-06
+
+`review-fix-code` file-set discovery now honors version-control ignores, gives `.drfxignore` full gitignore syntax, and accepts file scopes — with scope always winning over every ignore source.
+
+### Added
+
+- Version-control-ignored files are excluded from CODE review automatically: one local read-only `git ls-files --others --ignored --exclude-standard --directory` query captures the full gitignore stack (nested `.gitignore` files, the global excludes file, `.git/info/exclude`) with git's own semantics — tracked files are never version-ignored. Non-git roots simply skip this source.
+- The project-root `.drfxignore` file uses gitignore syntax: `#` comments, blank lines, `!` negation with last-match-wins, leading-`/` anchoring, trailing-`/` directory-only patterns, and `*` / `?` / `[...]` / `**` globs. The zero-dependency matcher is differential-tested against real `git check-ignore`, including character classes never matching `/` and the `dir/**` (re-inclusion allowed) vs `dir/` (pruned) contrast.
+- `scope=` accepts a single file in addition to directories. Explicit scopes always win over both ignore sources; scopes an ignore source would have covered — including under a directory-only ignored parent — are reported as `scopeIgnoreOverrides`, never silently re-included. Built-in exclusions stay policy: scoping an excluded directory or an OS scratch file (`.DS_Store`, `Thumbs.db`) still blocks as `excluded-scope`.
+- Privacy: the target identity and manifest carry ordered, domain-separated sha256 digests of the `.drfxignore` pattern lines (duplicates preserved — a repeated rule changes last-match-wins semantics); raw pattern text never enters workflow state, user-facing output shows redacted pattern text, and `--json` results surface `userExcludes` / `scopeIgnoreOverrides`.
+
+### Changed
+
+- The whole-root CODE cap (300 files / 1,500,000 bytes) counts after all exclusions, and the `file-set-too-large` message reports its early-termination counts as a floor (`at least N files / N+ bytes (counting stopped at the cap)`) with `.drfxignore` as a suggested remedy. Scopes that normalize to the project root (such as `scope=.`) remain capped.
+- A symlinked, non-regular, or unreadable `.drfxignore` blocks strict resolution loudly instead of being silently treated as empty; identity derivation stays lenient and deterministic.
+- Both READMEs document the complete built-in exclusion list (bound to the source constants by a parity test), the version-ignore and `.drfxignore` contracts, and directory-or-file scopes.
+- Gemini code-route invocation gates materialize the documented `read-only`/`advisory` defaults directly instead of describing a review-and-fix default rendered as unsupported; explicit `review-and-fix` renders the unsupported result.
+
 ## 0.6.0 - 2026-06-05
 
 Make the PR/CODE code routes more engineering-grade: actionable rubric standards, route-neutral prompts, a whole-root size gate, broader redaction, and a resolved-set-only fixer.
