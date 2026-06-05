@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.6.0 - 2026-06-05
+
+Make the PR/CODE code routes more engineering-grade: actionable rubric standards, route-neutral prompts, a whole-root size gate, broader redaction, and a resolved-set-only fixer.
+
+### Added
+
+- The PR and CODE rubrics gain an `## Engineering standards` section: tiered (high/medium/low) hardcoded-value findings with allowed contract-constant cases, plus error-handling and logging rules. It is gated by the existing actionable-only boundary, so it does not turn into a style war.
+- `review-fix-code` whole-root review is capped at 300 files or 1,500,000 bytes. Larger whole-root file sets block as `file-set-too-large` and ask for a narrower `scope=<path>` instead of claiming a full review they cannot prove. The gate blocks during traversal, before any file content is read, and the cap is surfaced in the generated route text and README. The cap wording is bound to the source constants by a test.
+- Redaction now covers AWS access key IDs and Slack incoming webhook URLs (GCP service-account private keys were already covered; a regression test locks this). A negative test guards against redacting high-entropy non-secrets such as git OIDs and SHA-256 digests.
+- A byte-for-byte snapshot regression guard for the embedded shared prompts/rubrics/core across every route and platform, plus a Codex copied-shared-asset fidelity test.
+
+### Changed
+
+- PR/CODE unknown Markdown rule files under `rules/` now warn and continue instead of blocking — these routes expose no `strict|normal` token, so the normal policy applies. Symlinked or non-regular `.md` entries are still rejected, and `loadRouteRuleContext` now surfaces the warnings.
+- The shared reviewer/coordinator/fixer prompts and `shared/core.md` are route-neutral (target document vs resolved file set), so PR/CODE reviews no longer inherit a document-first framing. Output schemas are unchanged.
+- Code-route invocation text no longer describes a "bare project root" token; omitting `scope=` reviews the whole project root.
+
+### Removed
+
+- The recorded-dependency mechanism for PR/CODE auto-fix. The fixer write boundary is now exactly the resolved file set; an accepted issue that needs a file outside that set is reported `Not fixed` rather than edited.
+
 ## 0.5.0 - 2026-06-05
 
 Archive passed/clean workflow state at finalization so a re-run starts fresh without `reset`.
