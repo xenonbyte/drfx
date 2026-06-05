@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.0 - 2026-06-05
+
+Archive passed/clean workflow state at finalization so a re-run starts fresh without `reset`.
+
+### Added
+
+- On `finalize`, a `pass` or `read-only-clean` run archives its target state directory to `.drfx/archived/<target-key>-<timestamp>` (renamed, never deleted) so the next run starts fresh without an explicit `reset`. Archiving is best-effort: if the rename fails, finalization still reports the terminal status plus an `archiveWarning` and a concrete delete/reset/retry next action, leaving the state directory in place.
+- `resume` over a leftover live `pass`/`read-only-clean` manifest (a pre-upgrade leftover or an archive-failed finalize) archives it and starts a fresh review instead of re-reporting PASS or re-reviewing in place; if archiving fails it blocks with a repair next action. When the post-archive fresh start itself fails or throws, the result still carries `archivedStatePath` so callers learn the old state was already moved.
+- Archive-root hardening: a symlinked or non-directory `.drfx/archived` is refused rather than followed.
+
+### Changed
+
+- Generated route output (Claude/Codex/Gemini) and the shared workflow docs document finalize-time archiving and the `archiveWarning` default-output contract. README/README.zh-CN note that `.drfx/archived/` is now populated by successful `pass`/`read-only-clean` finalization, not only by `reset`.
+
+### Removed
+
+- Dead `stalePass` resume field and the now-unreachable `validateResumeState` pass branch, plus the orphaned `evaluateResumeState`/`compareManifestTarget` helpers.
+
 ## 0.4.2 - 2026-06-05
 
 Close a finalize gap in the generated PR/CODE coordinator loop: a clean initial review still requires a full re-review before PASS.
