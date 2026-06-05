@@ -210,6 +210,32 @@ test('file-set write eligibility preflight supports bare CODE review-and-fix rou
   assert.deepEqual(result.scopes, []);
 });
 
+test('file-set write eligibility preflight reports oversized whole-root CODE as file-set-too-large', async (t) => {
+  const root = freshRepo(t);
+  for (let i = 0; i < 301; i++) fs.writeFileSync(path.join(root, `oversize-${i}.js`), 'x\n');
+
+  const result = await runWorkflowCommand('preflight', [
+    'review-fix-code',
+    'review-and-fix',
+    'guard=snapshot',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    '--json'
+  ], { cwd: root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.match(String(result.message), /file-set-too-large/);
+  assert.doesNotMatch(String(result.message), /excluded-scope/);
+});
+
 test('advisory review-and-fix PR start dispatches to unsupported (file-set context resolved, no crash)', async (t) => {
   const root = freshRepo(t);
   const result = await runWorkflowCommand('start', [

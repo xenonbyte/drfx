@@ -157,6 +157,18 @@ test('CODE start with an excluded scope is blocked, not silently empty', async (
   assert.match(String(result.message), /excluded-scope/);
 });
 
+test('CODE start reports file-set-too-large with a reason-aware message', async (t) => {
+  const root = makePrRepo(t);
+  for (let i = 0; i < 301; i++) fs.writeFileSync(path.join(root, `oversize-${i}.js`), 'x\n');
+
+  const result = await runWorkflowCommand('start', practicalArgs(['review-fix-code', 'guard=snapshot']), { cwd: root });
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.match(String(result.message), /file-set-too-large/);
+  assert.doesNotMatch(String(result.message), /excluded-scope/);
+});
+
 test('rounds=<n> round limit round-trips into the file-set manifest', async (t) => {
   const root = makePrRepo(t);
   const result = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main', 'rounds=3']), { cwd: root });

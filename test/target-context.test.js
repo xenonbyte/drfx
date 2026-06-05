@@ -10,6 +10,7 @@ const test = require('node:test');
 const {
   resolveTargetContext,
   resolveCodeTarget,
+  describeCodeBlock,
   computeFileSetFingerprint,
   buildPrIdentity,
   formatPrIdentityFields,
@@ -469,4 +470,62 @@ test('compareCodeIdentity treats a guard-mode drift as a stale mismatch', () => 
   const stored = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'git', roundLimit: 2 });
   const requested = buildCodeIdentity({ context: sampleCodeContext(), guardMode: 'snapshot', roundLimit: 2 });
   assert.ok(compareCodeIdentity({ stored, requested }).mismatches.includes('guardMode'));
+});
+
+test('whole-root CODE blocks when the file set exceeds the file-count limit', async (t) => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-bigset-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (let i = 0; i < 301; i++) fs.writeFileSync(path.join(dir, `f${i}.js`), 'x\n');
+
+  const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.reason, 'file-set-too-large');
+  assert.equal(result.fileCount, 301);
+});
+
+test('whole-root CODE blocks when the file set exceeds the byte limit', async (t) => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-bigbytes-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'large.js'), 'x'.repeat(1_500_001));
+
+  const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.reason, 'file-set-too-large');
+  assert.equal(result.totalBytes, 1_500_001);
+});
+
+test('whole-root CODE gate applies to dot, project-root, and root-plus-narrower scopes', async (t) => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-bigset-rootforms-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(dir, 'small'));
+  fs.writeFileSync(path.join(dir, 'small', 'a.js'), 'x\n');
+  for (let i = 0; i < 301; i++) fs.writeFileSync(path.join(dir, `f${i}.js`), 'x\n');
+
+  const rootReal = fs.realpathSync.native(dir);
+  for (const scopes of [['.'], [rootReal], ['small', '.']]) {
+    const result = await resolveCodeTarget({ cwd: dir, scopes });
+    assert.equal(result.status, 'blocked', `scopes=${JSON.stringify(scopes)}`);
+    assert.equal(result.reason, 'file-set-too-large');
+  }
+});
+
+test('narrow scope is not subject to the whole-root size gate', async (t) => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-bigset-narrow-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (let i = 0; i < 301; i++) fs.writeFileSync(path.join(dir, `f${i}.js`), 'x\n');
+  fs.mkdirSync(path.join(dir, 'small'));
+  fs.writeFileSync(path.join(dir, 'small', 'a.js'), 'x\n');
+
+  const result = await resolveCodeTarget({ cwd: dir, scopes: ['small'] });
+  assert.equal(result.status, undefined); // not blocked
+  assert.equal(result.files.length, 1);
+});
+
+test('describeCodeBlock is reason-aware', () => {
+  assert.match(describeCodeBlock({ reason: 'file-set-too-large', fileCount: 301, totalBytes: 9 }).message, /file-set-too-large/);
+  assert.match(describeCodeBlock({ reason: 'excluded-scope', scope: 'node_modules' }).message, /excluded-scope: node_modules/);
 });
