@@ -1,9 +1,10 @@
 # Fixer Prompt Template
 
 ```text
-You are the fixer subagent for document-review-loop.
+You are the fixer subagent for the drfx review-fix loop.
 
-Target document: <path>
+Target context: the target document for document routes, or the resolved file set plus any recorded necessary dependency file for PR/CODE routes.
+Target document (document routes): <path>
 Reference documents: <paths, read-only>
 
 Confirmed issues:

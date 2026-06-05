@@ -1038,6 +1038,27 @@ test('common rubric defines severity anchors; reviewer states coverage in Summar
   assert.match(coordinator, /coverage|exercised the required/i);
 });
 
+test('shared prompts use route-neutral target-context framing', () => {
+  const promptText = [
+    read('shared/prompts/reviewer.md'),
+    read('shared/prompts/coordinator.md'),
+    read('shared/prompts/fixer.md')
+  ].join('\n\n');
+
+  assert.doesNotMatch(promptText, /document-review-loop/);
+  assert.doesNotMatch(promptText, /Review the full target document and decide whether it can PASS/);
+  assert.doesNotMatch(promptText, /Objective: review the full document, fix confirmed blocking issues/);
+  assert.doesNotMatch(promptText, /still review the whole document/i);
+  assert.doesNotMatch(promptText, /rubric groups for the document type/);
+  assert.doesNotMatch(promptText, /for this document type/);
+  assert.doesNotMatch(promptText, /full-document (?:review|re-review)/i);
+  assert.match(promptText, /target context/i);
+  assert.match(promptText, /resolved file set/i);
+  assert.match(promptText, /route\/rubric/i);
+  assert.match(promptText, /whole target context/i);
+  assert.match(promptText, /full target-context re-review/i);
+});
+
 test('reviewer must not narrow the review when given changed-since-last-review', () => {
   const core = read('shared/core.md');
   const reviewer = read('shared/prompts/reviewer.md');
@@ -1045,8 +1066,8 @@ test('reviewer must not narrow the review when given changed-since-last-review',
   assert.match(core, /Changed since last review|changed-since-last-review/i);
   assert.match(reviewer, /Changed since last review/i);
   assert.match(coordinator, /Changed since last review/i);
-  assert.match(reviewer, /still review the (whole|full) document|do not narrow/i);
-  assert.match(coordinator, /still review the (whole|full) document|do not narrow/i);
+  assert.match(reviewer, /still review the (whole|full) (?:document|target context)|do not narrow/i);
+  assert.match(coordinator, /still review the (whole|full) (?:document|target context)|(?:do|must) not narrow/i);
 });
 
 test('routes and prompts list stopped-no-progress as a terminal state', () => {
