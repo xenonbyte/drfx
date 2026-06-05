@@ -1,4 +1,4 @@
-Full form: {{ROUTE_NAME}} [scope=<path>...] ... . scope=<path> names a source root to review; repeat scope=<path> for multiple roots. Omit scope= to review the whole project root. There is no bare-path or target= form for this route. Before workflow commands, materialize <scopeTokens> as the repeated scope=<path> tokens exactly as requested, or as an empty string when scope is omitted.
+Full form: {{ROUTE_NAME}} [scope=<path>...] ... . scope=<path> names a source root to review; repeat scope=<path> for multiple roots. Omit scope= to review the whole project root, capped at 300 files or 1,500,000 bytes. Larger whole-root file sets block as file-set-too-large and require a narrower scope=<path>. There is no bare-path or target= form for this route. Before workflow commands, materialize <scopeTokens> as the repeated scope=<path> tokens exactly as requested, or as an empty string when scope is omitted.
 
 This route accepts only scope=<path> (repeatable), optional read-only, optional guard=git|snapshot, optional root=<project-root>, and optional debug. It does not accept ref=, base=, strict, normal, assurance=, ledger=, review-and-fix, or rounds=.
 
