@@ -67,6 +67,63 @@ function practicalArgs(extra) {
   ];
 }
 
+const REVIEW_FAIL = [
+  'FAIL',
+  'Findings:',
+  '- id: R001',
+  '  severity: high',
+  '  location: src/a.js',
+  '  issue: The change drops error handling.',
+  '  why_it_matters: A failure path now throws unhandled.',
+  '  suggested_fix: Restore the try/catch around the call.',
+  '  confidence: confirmed',
+  '  sensitive: false'
+].join('\n');
+
+const TRIAGE_ACCEPT = [
+  'Triage:',
+  '- reviewer_id: R001',
+  '  issue_id: ISSUE-001',
+  '  decision: accepted',
+  '  severity: high',
+  '  original_severity: high',
+  '  rationale: The missing error handling blocks merge.',
+  '  merged_into: none',
+  '  deferred_owner: none',
+  '  deferred_next_action: none',
+  '  non_blocking: false'
+].join('\n');
+
+async function reachFileSetFixStage(root, args) {
+  const start = await runWorkflowCommand('start', args, { cwd: root });
+  assert.equal(start.ok, true, JSON.stringify(start));
+  await runWorkflowCommand('context', args, { cwd: root });
+  await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_FAIL });
+  await runWorkflowCommand('record-triage', [
+    ...args,
+    '--triage-stdin'
+  ], { cwd: root, stdin: TRIAGE_ACCEPT });
+  return start;
+}
+
+function writeOversizeDrift(root) {
+  for (let i = 0; i < 301; i++) fs.writeFileSync(path.join(root, `oversize-${i}.js`), 'x\n');
+}
+
+function assertFileSetTooLargeBlock(result) {
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.errorCode, 'ERR_FILE_SET_RESOLVE');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.match(String(result.message), /file-set-too-large/);
+  assert.equal(result.nextAction, 'resolve a valid base/scope file set before continuing');
+}
+
 test('PR review-and-fix start writes a parseable pr file-set MANIFEST.md and never advisory', async (t) => {
   const root = makePrRepo(t);
   const result = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
@@ -159,7 +216,7 @@ test('CODE start with an excluded scope is blocked, not silently empty', async (
 
 test('CODE start reports file-set-too-large with a reason-aware message', async (t) => {
   const root = makePrRepo(t);
-  for (let i = 0; i < 301; i++) fs.writeFileSync(path.join(root, `oversize-${i}.js`), 'x\n');
+  writeOversizeDrift(root);
 
   const result = await runWorkflowCommand('start', practicalArgs(['review-fix-code', 'guard=snapshot']), { cwd: root });
   assert.equal(result.ok, false);
@@ -167,6 +224,95 @@ test('CODE start reports file-set-too-large with a reason-aware message', async 
   assert.equal(result.blockingReason, 'state-validation-failed');
   assert.match(String(result.message), /file-set-too-large/);
   assert.doesNotMatch(String(result.message), /excluded-scope/);
+});
+
+test('CODE persistent context reports file-set-too-large drift as blocked JSON', async (t) => {
+  const root = makePrRepo(t);
+  const start = await runWorkflowCommand('start', practicalArgs(['review-fix-code', 'guard=snapshot']), { cwd: root });
+  assert.equal(start.ok, true);
+
+  writeOversizeDrift(root);
+
+  const result = await runWorkflowCommand('context', practicalArgs(['review-fix-code', 'guard=snapshot']), { cwd: root });
+  assertFileSetTooLargeBlock(result);
+});
+
+test('CODE persistent record-review reports file-set-too-large drift as blocked JSON', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-code', 'guard=snapshot']);
+  const start = await runWorkflowCommand('start', args, { cwd: root });
+  assert.equal(start.ok, true);
+  const context = await runWorkflowCommand('context', args, { cwd: root });
+  assert.equal(context.ok, true);
+
+  writeOversizeDrift(root);
+
+  const result = await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_FAIL });
+  assertFileSetTooLargeBlock(result);
+});
+
+test('CODE persistent record-triage reports file-set-too-large drift as blocked JSON', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-code', 'guard=snapshot']);
+  const start = await runWorkflowCommand('start', args, { cwd: root });
+  assert.equal(start.ok, true);
+  const context = await runWorkflowCommand('context', args, { cwd: root });
+  assert.equal(context.ok, true);
+  const review = await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_FAIL });
+  assert.equal(review.ok, true);
+
+  writeOversizeDrift(root);
+
+  const result = await runWorkflowCommand('record-triage', [
+    ...args,
+    '--triage-stdin'
+  ], { cwd: root, stdin: TRIAGE_ACCEPT });
+  assertFileSetTooLargeBlock(result);
+});
+
+test('PR and CODE file-set fixer context only allows resolved file-set members', async (t) => {
+  for (const routeTokens of [
+    ['review-fix-pr', 'base=main'],
+    ['review-fix-code', 'scope=src']
+  ]) {
+    const root = makePrRepo(t);
+    const args = practicalArgs(routeTokens);
+    const start = await reachFileSetFixStage(root, args);
+    const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+      cwd: root,
+      now: new Date('2026-06-03T00:00:00.000Z')
+    });
+    assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+    const context = await runWorkflowCommand('context', [
+      ...args,
+      '--phase',
+      'fix'
+    ], { cwd: root });
+    assert.equal(context.ok, true, JSON.stringify(context));
+    const contextText = fs.readFileSync(context.contextManifestPath, 'utf8');
+    const contextPack = JSON.parse(contextText.match(/```json\n([\s\S]*?)\n```/)[1]);
+
+    assert.deepEqual(contextPack.fixerGuard.expectedChangedFileSet, ['src/a.js', 'src/b.js']);
+    assert.deepEqual(
+      contextPack.fixerGuard.resolvedFileSetMembers.map((entry) => entry.path),
+      ['src/a.js', 'src/b.js']
+    );
+    assert.equal(Object.hasOwn(contextPack.fixerGuard, 'recordedDependencies'), false);
+    assert.match(contextPack.fixerGuard.fileSetWriteRule, /resolved PR\/CODE file set/);
+    assert.doesNotMatch(contextPack.fixerGuard.fileSetWriteRule, /dependenc/i);
+    assert.doesNotMatch(contextText, /recorded necessary dependenc|recordedDependencies/i);
+  }
 });
 
 test('rounds=<n> round limit round-trips into the file-set manifest', async (t) => {

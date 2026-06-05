@@ -12,6 +12,7 @@ Review target: source scope file set
 Package version: 0.0.0-snapshot
 
 Use this Codex skill with optional `scope=<path>` tokens (repeat `scope=<path>` for multiple roots; omit scope to review the project root), optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`.
+Whole-root CODE review is capped at 300 files or 1,500,000 bytes; larger whole-root file sets block as `file-set-too-large` and require a narrower `scope=<path>`.
 When mode is omitted, Codex selects `review-and-fix`.
 This code route exposes no `assurance=` token; for `review-and-fix` it internally materializes `practical` assurance, so auto-fix is not rejected as `advisory-review-and-fix-unsupported`.
 It does not accept `target=`, `ref=`, `strict`, `normal`, `assurance=`, or `ledger=`.
@@ -38,7 +39,7 @@ Invocation syntax:
 review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<project-root>] [debug]
 ```
 
-Full form: `review-fix-code [scope=<path>...] ...`. `scope=<path>` names a source root to review; repeat `scope=<path>` for multiple roots. Omit `scope=` to review the whole project root. There is no bare-path or `target=` form for this route. Before workflow commands, materialize `<scopeTokens>` as the repeated `scope=<path>` tokens exactly as requested, or as an empty string when scope is omitted.
+Full form: `review-fix-code [scope=<path>...] ...`. `scope=<path>` names a source root to review; repeat `scope=<path>` for multiple roots. Omit `scope=` to review the whole project root, capped at 300 files or 1,500,000 bytes. Larger whole-root file sets block as `file-set-too-large` and require a narrower `scope=<path>`. There is no bare-path or `target=` form for this route. Before workflow commands, materialize `<scopeTokens>` as the repeated `scope=<path>` tokens exactly as requested, or as an empty string when scope is omitted.
 
 This route accepts only `scope=<path>` (repeatable), optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`. It does not accept `ref=`, `base=`, `strict`, `normal`, `assurance=`, or `ledger=`.
 

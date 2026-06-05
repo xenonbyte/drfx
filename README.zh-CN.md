@@ -135,7 +135,7 @@ review-fix-pr base=main rounds=2
 review-fix-pr base=main resume
 ```
 
-Review 整个 project root（省略 `scope=` 表示全项目），或限定到一个/多个根目录：
+Review 整个 project root（省略 `scope=` 表示全项目），或限定到一个/多个根目录。whole-root CODE review 最多 300 个文件或 1,500,000 字节；项目更大时请使用 `scope=<path>`：
 
 ```text
 review-fix-code
@@ -194,7 +194,7 @@ Syntax:
 review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
 ```
 
-- `scope=<path>` 指定要 review 的 source root。可重复（repeatable）传入多个 `scope=`。省略 scope 表示整个 project root。
+- `scope=<path>` 指定要 review 的 source root。可重复（repeatable）传入多个 `scope=`。省略 scope 表示整个 project root，最多 300 个文件或 1,500,000 字节；更大的 whole-root file set 会以 `file-set-too-large` 阻断，并要求使用更窄的 `scope=<path>`。
 - 强制排除：`.git`、`.drfx`、legacy `.docs-review-fix`、`.claude`、`.codex`、`.codegraph`、`.gemini`、`.req-to-plan` 等 local agent/tool state、`node_modules`、build outputs 及类似 infrastructure 目录始终排除在 reviewed file set 之外。
 - `read-only` 或 `review-and-fix`（Claude Code 和 Codex 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
 - `guard=git` 为默认值；Git rollback anchor 不可用时使用 `guard=snapshot`。路由永远不会静默切换 guard mode。
@@ -239,7 +239,8 @@ Help-style 或 invalid invocations 只解释用法，不得读取文件、运行
 
 - 读取 target 和 references。
 - 运行 review、triage、fix、diff review 和 full re-review。
-- 只编辑 target document。
+- Document routes 只编辑 target document。
+- PR/CODE routes 只编辑 resolved file set 内的文件。
 - 有修改时报告 `Fixed:`。
 - accepted issues 仍存在时报告 `Unfixed:`。
 
@@ -447,7 +448,7 @@ Default target state layout:
 > [!NOTE]
 > `guard=git` 是默认。每一次自动写入都必须被证明停留在 target file set 内（在当前 guard 下），否则 run 会阻断而非写入——通过结果是挣来的，绝不假定。
 
-Reference documents 是 read-only。Fixes 必须只修改 target document。
+Reference documents 是 read-only。Document-route fixes 必须只修改 target document。PR/CODE fixes 必须只修改 resolved file set 内的文件。
 
 Automatic target writes 要求：
 

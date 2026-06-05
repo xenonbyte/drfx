@@ -135,7 +135,7 @@ review-fix-pr base=main rounds=2
 review-fix-pr base=main resume
 ```
 
-Review the whole project root (`scope=` omitted means whole project), or scope it to one or more roots:
+Review the whole project root (`scope=` omitted means whole project), or scope it to one or more roots. Whole-root CODE review is capped at 300 files or 1,500,000 bytes; use `scope=<path>` when a project is larger:
 
 ```text
 review-fix-code
@@ -194,7 +194,7 @@ Syntax:
 review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
 ```
 
-- `scope=<path>` names a source root to review. Repeat `scope=` for multiple roots. Empty scope means the whole project root.
+- `scope=<path>` names a source root to review. Repeat `scope=` for multiple roots. Empty scope means the whole project root, capped at 300 files or 1,500,000 bytes; larger whole-root file sets block as `file-set-too-large` and require a narrower `scope=<path>`.
 - Mandatory exclusions: `.git`, `.drfx`, legacy `.docs-review-fix`, local agent/tool state such as `.claude`, `.codex`, `.codegraph`, `.gemini`, `.req-to-plan`, `node_modules`, build outputs, and similar infrastructure directories are always excluded from the reviewed file set.
 - `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code and Codex; advisory read-only on Gemini).
 - `guard=git` is the default; use `guard=snapshot` when a Git rollback anchor is unavailable. The route never silently switches guard modes.
@@ -239,7 +239,8 @@ Help-style or invalid invocations explain usage only and must not read files, ru
 
 - Reads the target and references.
 - Runs review, triage, fix, diff review, and full re-review.
-- Edits only the target document.
+- Document routes edit only the target document.
+- PR/CODE routes edit only files in the resolved file set.
 - Reports `Fixed:` when changes were applied.
 - Reports `Unfixed:` when accepted issues remain.
 
@@ -447,7 +448,7 @@ The default ledger is `.drfx/targets/<target-key>/ISSUES.md`. A custom `ledger=`
 > [!NOTE]
 > `guard=git` is the default. Every automatic write must be proven to stay inside the target file set under the active guard, or the run blocks instead of writing — a passing result is earned, never assumed.
 
-Reference documents are read-only. Fixes must modify only the target document.
+Reference documents are read-only. Document-route fixes must modify only the target document. PR/CODE fixes must modify only files in the resolved file set.
 
 Automatic target writes require:
 
