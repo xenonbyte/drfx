@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.2 - 2026-06-06
+
+Template/prompt consistency for the PR/CODE file-set routes, reason-aware blocker next actions, and a minimal CI workflow.
+
+### Fixed
+
+- The shared final-response machine block now documents both finalize formats: a single target path for document routes, and `Target: none` plus comma-separated in-set relative paths for PR/CODE file-set routes — matching what the payload parser already accepted, so file-set coordinators are no longer steered into a rejected single-target payload.
+- Generated PR/CODE routes no longer inherit document-only fix-loop prose: new route-aware placeholders render the resolved-file-set write boundary ("edit only files inside the resolved target file set") and the real file-set guard contract (clean worktree before the first fix, route-owned in-set changes afterward). Document route output stays byte-identical.
+- `file-set-too-large` and other CODE resolve blockers now carry the reason-aware next action (for example `pass scope=<path> to narrow the review`) across no-state context/preflight/record-review/record-triage/finalize, persistent context, start, and resume — instead of the generic "resolve a valid base/scope file set" line. The message already named the cause; now the suggested remedy matches it.
+
+### Changed
+
+- The PR/CODE source skill descriptions use the route-neutral "review-fix loop" naming, matching the generated route text.
+
+### Added
+
+- A minimal GitHub Actions CI workflow runs `npm run typecheck` and `npm test` on Node 20 and 22 for pushes to `main` and pull requests.
+
 ## 0.6.1 - 2026-06-06
 
 `review-fix-code` file-set discovery now honors version-control ignores, gives `.drfxignore` full gitignore syntax, and accepts file scopes — with scope always winning over every ignore source.
