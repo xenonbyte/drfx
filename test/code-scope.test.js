@@ -203,6 +203,19 @@ test('code resolver accepts a FILE scope and includes it directly', async (t) =>
   assert.deepEqual(result.normalizedScopes, ['src/a.js']);
 });
 
+test('code resolver blocks explicit FILE scopes with excluded OS scratch basenames', async (t) => {
+  const fixture = makeCodeFixture(t);
+  fixture.write('.DS_Store', 'scratch\n');
+  fixture.write('src/Thumbs.db', 'scratch\n');
+
+  for (const scope of ['.DS_Store', 'src/Thumbs.db']) {
+    const result = await resolveCodeTarget({ cwd: fixture.root, scopes: [scope] });
+    assert.equal(result.status, 'blocked', `scope ${scope} must be blocked`);
+    assert.equal(result.reason, 'excluded-scope');
+    assert.equal(result.scope, scope);
+  }
+});
+
 test('a file scope nested under a directory scope dedupes into one entry', async (t) => {
   const fixture = makeCodeFixture(t);
   const result = await resolveCodeTarget({ cwd: fixture.root, scopes: ['src', 'src/a.js'] });

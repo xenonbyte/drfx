@@ -13,7 +13,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const test = require('node:test');
 
-const { runWorkflowCommand } = require('../lib/workflow');
+const { formatWorkflowJson, runWorkflowCommand } = require('../lib/workflow');
 const { parseManifestV2 } = require('../lib/workflow-state');
 const {
   resolveTargetContext,
@@ -538,6 +538,18 @@ test('CODE start with .drfxignore persists User excludes in the manifest and sur
   const contextManifest = fs.readFileSync(contextResult.contextManifestPath, 'utf8');
   assert.doesNotMatch(contextManifest, /docs\/notes\.md/);
   assert.match(contextManifest, /userExcludes/);
+});
+
+test('CODE start --json surfaces .drfxignore metadata after workflow formatting', async (t) => {
+  const root = makePrRepo(t);
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'docs', 'notes.md'), 'notes\n');
+  fs.writeFileSync(path.join(root, '.drfxignore'), 'docs\n');
+
+  const result = await runWorkflowCommand('start', practicalArgs(['review-fix-code', 'scope=docs']), { cwd: root });
+  const json = JSON.parse(formatWorkflowJson(result));
+  assert.deepEqual(json.userExcludes, ['docs']);
+  assert.deepEqual(json.scopeIgnoreOverrides, ['docs']);
 });
 
 test('CODE .drfxignore sensitive patterns use redacted output and digest resume identity', async (t) => {

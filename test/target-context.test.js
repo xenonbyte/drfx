@@ -659,6 +659,21 @@ test('an explicit FILE scope wins over a .drfxignore pattern that covers it', as
   assert.deepEqual(result.scopeIgnoreOverrides, ['docs/big.md']);
 });
 
+test('an explicit nested scope reports override when an ignored parent covers it', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-parent-override-');
+  fs.mkdirSync(path.join(dir, 'docs', 'sub'));
+  fs.writeFileSync(path.join(dir, 'docs', 'sub', 'nested.md'), 'nested\n');
+  fs.writeFileSync(path.join(dir, '.drfxignore'), 'docs/\n');
+
+  const fileResult = await resolveCodeTarget({ cwd: dir, scopes: ['docs/big.md'] });
+  assert.deepEqual(fileResult.files.map((file) => file.path), ['docs/big.md']);
+  assert.deepEqual(fileResult.scopeIgnoreOverrides, ['docs/big.md']);
+
+  const dirResult = await resolveCodeTarget({ cwd: dir, scopes: ['docs/sub'] });
+  assert.deepEqual(dirResult.files.map((file) => file.path), ['docs/sub/nested.md']);
+  assert.deepEqual(dirResult.scopeIgnoreOverrides, ['docs/sub']);
+});
+
 test('a .drfxignore entry inside an explicit scope prunes within that scope', async (t) => {
   const dir = makeIgnoreFixture(t, 'drfx-ignore-inside-scope-');
   fs.mkdirSync(path.join(dir, 'lib', 'legacy'));

@@ -66,12 +66,18 @@ test('character classes, escapes, comments, and trailing spaces follow gitignore
   const m = createDrfxignoreMatcher([
     '# comment line',
     'file[0-9].txt',
+    'a[!x]b',
+    'literal[/]slash',
     '\\#literal',
     'spaced   ',
     ''
   ].join('\n'));
   assert.equal(m.ignores('file5.txt', false), true);
   assert.equal(m.ignores('fileA.txt', false), false);
+  assert.equal(m.ignores('acb', false), true);
+  assert.equal(m.ignores('axb', false), false);
+  assert.equal(m.ignores('a/b', false), false, 'negated character classes must not match /');
+  assert.equal(m.ignores('literal/slash', false), false, 'character classes must not match /');
   assert.equal(m.ignores('#literal', false), true, 'escaped hash is a literal pattern');
   assert.equal(m.ignores('spaced', false), true, 'unescaped trailing spaces are trimmed');
 });
