@@ -1279,6 +1279,30 @@ test('generated code routes use the route-kind target token and omit document-on
   }
 });
 
+test('whole-root CODE cap wording stays bound to the target-context constants', () => {
+  const { MAX_WHOLE_ROOT_FILES, MAX_WHOLE_ROOT_BYTES } = require('../lib/target-context');
+  const withCommas = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const files = String(MAX_WHOLE_ROOT_FILES);
+  const bytes = withCommas(MAX_WHOLE_ROOT_BYTES);
+  const enPhrase = `${files} files or ${bytes} bytes`;
+  const zhPhrase = `${files} 个文件或 ${bytes} 字节`;
+
+  // Every user-facing cap statement must derive from MAX_WHOLE_ROOT_*, so changing
+  // a constant forces the wording to be updated everywhere (no silent doc drift).
+  const enSurfaces = [
+    ['README.md', read('README.md')],
+    ['skills/review-fix-code/SKILL.md', read('skills/review-fix-code/SKILL.md')],
+    ...['claude', 'codex', 'gemini'].map((platform) => [
+      `generated:${platform}`,
+      renderPlatformRoute(platform, 'review-fix-code', { packageVersion: '0.0.0-test' })
+    ])
+  ];
+  for (const [label, text] of enSurfaces) {
+    assert.ok(text.includes(enPhrase), `${label} must state the cap as "${enPhrase}" (from MAX_WHOLE_ROOT_* constants)`);
+  }
+  assert.ok(read('README.zh-CN.md').includes(zhPhrase), `README.zh-CN.md must state the cap as "${zhPhrase}"`);
+});
+
 test('generated review-fix-code route accepts omitted scope as whole project root', () => {
   for (const platform of ['claude', 'codex', 'gemini']) {
     const body = renderPlatformRoute(platform, 'review-fix-code', { packageVersion: '0.0.0-test' });

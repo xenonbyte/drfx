@@ -1,6 +1,6 @@
 ---
 name: review-fix-spec
-description: Review and fix SPEC documents through the V2 document-review-loop coordinator route.
+description: Review and fix SPEC documents through the V2 review-fix loop coordinator route.
 ---
 
 # review-fix-spec

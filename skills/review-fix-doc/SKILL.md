@@ -1,6 +1,6 @@
 ---
 name: review-fix-doc
-description: Review and fix COMMON documents through the shared document-review-loop workflow.
+description: Review and fix COMMON documents through the shared review-fix loop workflow.
 ---
 
 # review-fix-doc

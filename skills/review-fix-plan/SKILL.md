@@ -1,6 +1,6 @@
 ---
 name: review-fix-plan
-description: Review and fix PLAN documents through the shared document-review-loop workflow.
+description: Review and fix PLAN documents through the shared review-fix loop workflow.
 ---
 
 # review-fix-plan

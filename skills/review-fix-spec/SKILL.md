@@ -1,6 +1,6 @@
 ---
 name: review-fix-spec
-description: Review and fix SPEC documents through the shared document-review-loop workflow.
+description: Review and fix SPEC documents through the shared review-fix loop workflow.
 ---
 
 # review-fix-spec
