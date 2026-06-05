@@ -1422,6 +1422,37 @@ test('resume preserves archivedStatePath when fresh start fails after archiving 
   assert.equal(fs.existsSync(fixture.targetDir), false, 'old passed state was moved before fresh start failed');
 });
 
+test('resume preserves archivedStatePath when fresh start throws after archiving a live passed state', async (t) => {
+  const fixture = makeFixture(t, {
+    manifestOverrides: { status: 'pass', currentPhase: 'final' }
+  });
+  const before = parseManifestV2(fs.readFileSync(fixture.manifestPath, 'utf8'));
+  fs.writeFileSync(fixture.manifestPath, formatManifestV2({
+    ...before,
+    lastPassedContentSha256: before.lastKnownContentSha256
+  }));
+  writeResumeReports(fixture);
+  fs.appendFileSync(fixture.target, '\nChanged after pass.\n');
+
+  const missingReference = path.join(fixture.root, 'docs', 'missing-ref.md');
+  const result = await runWorkflowCommand('start', [
+    'review-fix-spec', `root=${fixture.root}`, `target=${fixture.target}`,
+    `ref=${missingReference}`, 'review-and-fix', 'resume', 'guard=snapshot',
+    '--assurance', 'practical', '--runtime-platform', 'codex',
+    '--runtime-subagent-probe', 'ready', '--runtime-stdin-handoff', 'ready'
+  ], { cwd: fixture.root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.equal(result.errorCode, 'ERR_FILE_MISSING');
+  assert.match(result.message, /reference file must exist/);
+  assert.match(result.archivedStatePath, /\.drfx\/archived\/.+/);
+  assert.equal(fs.existsSync(result.archivedStatePath), true);
+  assert.equal(fs.existsSync(path.join(result.archivedStatePath, 'MANIFEST.md')), true);
+  assert.equal(fs.existsSync(fixture.targetDir), false, 'old passed state was moved before fresh start threw');
+});
+
 test('resume archives a live read-only-clean state and starts a fresh read-only review', async (t) => {
   const fixture = makeFixture(t, {
     manifestOverrides: { mode: 'read-only', status: 'read-only-clean', currentPhase: 'final' }
