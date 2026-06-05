@@ -325,3 +325,68 @@ test('unavailable stdin handoff blocks a read-only PR start without crashing on 
   assert.equal(result.routeKind, 'pr');
   assert.match(result.targetKey, /^pr-[0-9a-f]{12}$/);
 });
+
+// ---------------------------------------------------------------------------
+// .drfxignore and the CODE target identity seed
+// ---------------------------------------------------------------------------
+
+test('CODE target key is byte-stable without .drfxignore (empty excludes never enter the seed)', (t) => {
+  const root = freshRepo(t);
+  const parsed = parsedFor('review-fix-code', ['read-only']);
+
+  // The legacy pre-.drfxignore key comes from the options-free derivation, which
+  // never sees user excludes. The metadata-resolved key (which DOES consult
+  // .drfxignore) must agree whenever no active exclude exists.
+  const legacyKey = deriveFileSetTargetKey(parsed, { normalizedScopes: [] });
+  const noFileKey = resolveRouteTargetMetadata(parsed, { cwd: root }).targetKey;
+  assert.equal(noFileKey, legacyKey, 'absent .drfxignore must keep the pre-feature target key');
+
+  fs.writeFileSync(path.join(root, '.drfxignore'), '# only comments and blanks\n\n');
+  const emptyFileKey = resolveRouteTargetMetadata(parsed, { cwd: root }).targetKey;
+  assert.equal(emptyFileKey, legacyKey, 'an effectively-empty .drfxignore must keep the pre-feature target key');
+});
+
+test('active .drfxignore entries change the CODE target key; scope-overridden entries do not', (t) => {
+  const root = freshRepo(t);
+  const wholeRoot = parsedFor('review-fix-code', ['read-only']);
+
+  const baseKey = resolveRouteTargetMetadata(wholeRoot, { cwd: root }).targetKey;
+  fs.writeFileSync(path.join(root, '.drfxignore'), 'lib\n');
+  const excludedKey = resolveRouteTargetMetadata(wholeRoot, { cwd: root }).targetKey;
+  assert.notEqual(excludedKey, baseKey, 'an active exclude is a different review target');
+
+  // scope=lib overrides the covering entry: the effective excludes are empty,
+  // so the key equals the same scoped run without any .drfxignore.
+  const scoped = parsedFor('review-fix-code', ['scope=lib', 'read-only']);
+  const scopedWithIgnore = resolveRouteTargetMetadata(scoped, { cwd: root }).targetKey;
+  fs.rmSync(path.join(root, '.drfxignore'));
+  const scopedWithout = resolveRouteTargetMetadata(scoped, { cwd: root }).targetKey;
+  assert.equal(scopedWithIgnore, scopedWithout, 'a scope-overridden entry must not perturb the target key');
+});
+
+test('an invalid .drfxignore entry never throws during identity derivation', (t) => {
+  const root = freshRepo(t);
+  fs.writeFileSync(path.join(root, '.drfxignore'), 'missing-dir\n');
+  const parsed = parsedFor('review-fix-code', ['read-only']);
+  let metadata;
+  assert.doesNotThrow(() => {
+    metadata = resolveRouteTargetMetadata(parsed, { cwd: root });
+  });
+  assert.match(metadata.targetKey, /^code-[0-9a-f]{12}$/);
+});
+
+test('a symlinked .drfxignore never throws during identity derivation and never enters the seed', (t) => {
+  const root = freshRepo(t);
+  fs.writeFileSync(path.join(root, 'real-ignore'), 'lib\n');
+  const parsed = parsedFor('review-fix-code', ['read-only']);
+  const cleanKey = resolveRouteTargetMetadata(parsed, { cwd: root }).targetKey;
+
+  fs.symlinkSync(path.join(root, 'real-ignore'), path.join(root, '.drfxignore'));
+  let metadata;
+  assert.doesNotThrow(() => {
+    metadata = resolveRouteTargetMetadata(parsed, { cwd: root });
+  });
+  // Lenient mode treats the symlinked config as empty: the key stays at the
+  // no-excludes form while the resolver reports the actionable error.
+  assert.equal(metadata.targetKey, cleanKey);
+});

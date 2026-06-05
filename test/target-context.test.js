@@ -583,3 +583,163 @@ test('describeCodeBlock is reason-aware', () => {
   assert.match(describeCodeBlock({ reason: 'file-set-too-large', fileCount: 301, totalBytes: 9 }).message, /file-set-too-large/);
   assert.match(describeCodeBlock({ reason: 'excluded-scope', scope: 'node_modules' }).message, /excluded-scope: node_modules/);
 });
+
+// ---------------------------------------------------------------------------
+// .drfxignore — user-level CODE exclusions
+// ---------------------------------------------------------------------------
+
+function makeIgnoreFixture(t, prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(dir, 'lib'));
+  fs.mkdirSync(path.join(dir, 'docs'));
+  fs.writeFileSync(path.join(dir, 'lib', 'a.js'), 'a\n');
+  fs.writeFileSync(path.join(dir, 'docs', 'big.md'), 'b\n');
+  return dir;
+}
+
+test('.drfxignore excludes a directory from the whole-root CODE file set', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-basic-');
+  fs.writeFileSync(path.join(dir, '.drfxignore'), '# local excludes\n\ndocs\n');
+
+  const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
+  assert.deepEqual(result.files.map((file) => file.path), ['.drfxignore', 'lib/a.js']);
+  assert.deepEqual(result.userExcludes, ['docs']);
+  assert.deepEqual(result.overriddenUserExcludes, []);
+});
+
+test('.drfxignore shrinks the whole-root file set below the cap', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-cap-');
+  fs.writeFileSync(path.join(dir, 'docs', 'huge.md'), 'x'.repeat(1_600_000));
+
+  const blocked = await resolveCodeTarget({ cwd: dir, scopes: [] });
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.reason, 'file-set-too-large');
+
+  fs.writeFileSync(path.join(dir, '.drfxignore'), 'docs\n');
+  const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
+  assert.equal(result.status, undefined);
+  assert.deepEqual(result.userExcludes, ['docs']);
+});
+
+test('explicit scope= overrides a covering .drfxignore entry, reported not silent', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-override-');
+  fs.writeFileSync(path.join(dir, '.drfxignore'), 'docs\n');
+
+  const result = await resolveCodeTarget({ cwd: dir, scopes: ['docs'] });
+  assert.deepEqual(result.files.map((file) => file.path), ['docs/big.md']);
+  assert.deepEqual(result.userExcludes, []);
+  assert.deepEqual(result.overriddenUserExcludes, ['docs']);
+});
+
+test('a .drfxignore entry inside an explicit scope prunes within that scope', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-inside-scope-');
+  fs.mkdirSync(path.join(dir, 'lib', 'legacy'));
+  fs.writeFileSync(path.join(dir, 'lib', 'legacy', 'old.js'), 'old\n');
+  fs.writeFileSync(path.join(dir, '.drfxignore'), 'lib/legacy\n');
+
+  const result = await resolveCodeTarget({ cwd: dir, scopes: ['lib'] });
+  assert.deepEqual(result.files.map((file) => file.path), ['lib/a.js']);
+  assert.deepEqual(result.userExcludes, ['lib/legacy']);
+});
+
+test('.drfxignore entries disjoint from the scopes stay out of the active list', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-disjoint-');
+  fs.writeFileSync(path.join(dir, '.drfxignore'), 'docs\n');
+
+  const result = await resolveCodeTarget({ cwd: dir, scopes: ['lib'] });
+  assert.deepEqual(result.files.map((file) => file.path), ['lib/a.js']);
+  assert.deepEqual(result.userExcludes, []);
+  assert.deepEqual(result.overriddenUserExcludes, []);
+});
+
+test('nested and built-in-covered .drfxignore entries collapse out of the active list', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-collapse-');
+  fs.mkdirSync(path.join(dir, 'docs', 'plans'));
+  fs.writeFileSync(path.join(dir, 'docs', 'plans', 'p.md'), 'p\n');
+  fs.mkdirSync(path.join(dir, 'node_modules'));
+  fs.mkdirSync(path.join(dir, 'node_modules', 'pkg'));
+  fs.writeFileSync(path.join(dir, '.drfxignore'), 'docs\ndocs/plans\nnode_modules/pkg\n');
+
+  const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
+  assert.deepEqual(result.userExcludes, ['docs']);
+  assert.deepEqual(result.files.map((file) => file.path), ['.drfxignore', 'lib/a.js']);
+});
+
+test('.drfxignore strict validation fails loudly with the offending line', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-strict-');
+
+  fs.writeFileSync(path.join(dir, '.drfxignore'), 'missing-dir\n');
+  await assert.rejects(
+    () => resolveCodeTarget({ cwd: dir, scopes: [] }),
+    (error) => error.code === 'ERR_CODE_USER_EXCLUDE_MISSING' && /\.drfxignore line 1/.test(error.message)
+  );
+
+  fs.writeFileSync(path.join(dir, '.drfxignore'), '# comment\n../outside\n');
+  await assert.rejects(
+    () => resolveCodeTarget({ cwd: dir, scopes: [] }),
+    (error) => error.code === 'ERR_CODE_USER_EXCLUDE_OUTSIDE_ROOT' && /\.drfxignore line 2/.test(error.message)
+  );
+
+  fs.writeFileSync(path.join(dir, '.drfxignore'), 'lib/a.js\n');
+  await assert.rejects(
+    () => resolveCodeTarget({ cwd: dir, scopes: [] }),
+    (error) => error.code === 'ERR_CODE_USER_EXCLUDE_NOT_DIRECTORY'
+  );
+
+  fs.writeFileSync(path.join(dir, '.drfxignore'), '.\n');
+  await assert.rejects(
+    () => resolveCodeTarget({ cwd: dir, scopes: [] }),
+    (error) => error.code === 'ERR_CODE_USER_EXCLUDE_ROOT'
+  );
+});
+
+test('CODE identity carries userExcludes strictly: edited excludes are stale, same set stays resumable', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-identity-');
+  fs.writeFileSync(path.join(dir, '.drfxignore'), 'docs\n');
+
+  const context = await resolveCodeTarget({ cwd: dir, scopes: [] });
+  const stored = buildCodeIdentity({ context, guardMode: 'git', roundLimit: null });
+  assert.deepEqual(stored.userExcludes, ['docs']);
+
+  // Same .drfxignore ⇒ identity matches.
+  const same = buildCodeIdentity({
+    context: await resolveCodeTarget({ cwd: dir, scopes: [] }),
+    guardMode: 'git',
+    roundLimit: null
+  });
+  assert.deepEqual(compareCodeIdentity({ stored, requested: same }), { match: true, mismatches: [] });
+
+  // Removing the entry changes BOTH the file set and userExcludes: strict mismatch.
+  fs.rmSync(path.join(dir, '.drfxignore'));
+  const without = buildCodeIdentity({
+    context: await resolveCodeTarget({ cwd: dir, scopes: [] }),
+    guardMode: 'git',
+    roundLimit: null
+  });
+  const compared = compareCodeIdentity({ stored, requested: without });
+  assert.equal(compared.match, false);
+  assert.ok(compared.mismatches.includes('userExcludes'));
+
+  // format/parse round-trip preserves the list field.
+  const fields = formatCodeIdentityFields(stored);
+  assert.deepEqual(parseCodeIdentityFields(fields).userExcludes, ['docs']);
+});
+
+test('the file-set-too-large message reports early-termination counts as a floor', () => {
+  const described = describeCodeBlock({ reason: 'file-set-too-large', fileCount: 61, totalBytes: 1_514_715 });
+  assert.match(described.message, /at least 61 files \/ 1514715\+ bytes \(counting stopped at the cap\)/);
+  assert.match(described.nextAction, /\.drfxignore/);
+});
+
+test('a symlinked .drfxignore is refused in strict resolution and inert for identity', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-symlink-');
+  const realConfig = path.join(dir, 'docs', 'real-ignore');
+  fs.writeFileSync(realConfig, 'docs\n');
+  fs.symlinkSync(realConfig, path.join(dir, '.drfxignore'));
+
+  await assert.rejects(
+    () => resolveCodeTarget({ cwd: dir, scopes: [] }),
+    (error) => error.code === 'ERR_CODE_USER_EXCLUDE_CONFIG_SYMLINK'
+  );
+});

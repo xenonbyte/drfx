@@ -599,3 +599,36 @@ test('a unified Round limit line round-trips identically across document, pr, an
     assert.equal(formatManifestV2(parsed), text);
   }
 });
+
+test('code-kind manifest round-trips User excludes and defaults absent label to empty', () => {
+  const text = formatManifestV2(makeCodeManifest({ userExcludes: ['design/archive', 'docs'] }));
+  assert.match(text, /User excludes:/);
+  assert.match(text, /^- design\/archive$/m);
+  assert.match(text, /^- docs$/m);
+
+  const parsed = parseManifestV2(text);
+  assert.deepEqual(parsed.userExcludes, ['design/archive', 'docs']);
+  assert.equal(formatManifestV2(parsed), text);
+
+  // Pre-.drfxignore manifests carry no "User excludes:" label: parse defaults to [].
+  const legacy = formatManifestV2(makeCodeManifest())
+    .split('\n')
+    .filter((line) => line !== 'User excludes:')
+    .join('\n');
+  assert.deepEqual(parseManifestV2(legacy).userExcludes, []);
+});
+
+test('code-kind manifest sorts and validates User excludes like other path lists', () => {
+  const unsorted = formatManifestV2(makeCodeManifest({ userExcludes: ['docs', 'design/archive'] }));
+  const sorted = formatManifestV2(makeCodeManifest({ userExcludes: ['design/archive', 'docs'] }));
+  assert.equal(unsorted, sorted);
+
+  assert.throws(
+    () => formatManifestV2(makeCodeManifest({ userExcludes: ['/abs/path'] })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED'
+  );
+  assert.throws(
+    () => formatManifestV2(makeCodeManifest({ userExcludes: ['../escape'] })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED'
+  );
+});

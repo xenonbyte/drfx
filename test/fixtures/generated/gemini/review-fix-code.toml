@@ -12,14 +12,15 @@ Review target: source scope file set
 Package version: 0.0.0-snapshot
 
 Use this Gemini command with optional `scope=<path>` tokens (repeat `scope=<path>` for multiple roots; omit scope to review the project root), optional `read-only`, optional `guard=git|snapshot`, optional `root=<project-root>`, and optional `debug`.
-Whole-root CODE review is capped at 300 files or 1,500,000 bytes; larger whole-root file sets block as `file-set-too-large` and require a narrower `scope=<path>`.
+Whole-root CODE review is capped at 300 files or 1,500,000 bytes; larger whole-root file sets block as `file-set-too-large` and require a narrower `scope=<path>` or a project-root `.drfxignore` file (one root-relative directory path per line; `#` comments; no globs or negation) that shrinks the file set. An explicit `scope=` overrides any `.drfxignore` entry that covers it; `.gitignore` is never read.
 This is a code route and is advisory-only on Gemini: `review-and-fix` is unsupported, workflow PASS is unavailable, Gemini must not edit files, and it must not claim workflow PASS.
 It does not accept `target=`, `ref=`, `strict`, `normal`, `assurance=`, `ledger=`, or `rounds=`.
 Help-style or invalid invocations explain usage without reading files, running probes, creating state, or declaring review results.
 
 Route contract:
 - This route reviews a source scope: the file set under one or more scope=<path> roots, or the whole project root when scope= is omitted.
-- Whole-root CODE review is capped at 300 files or 1,500,000 bytes; larger whole-root file sets block as file-set-too-large and require a narrower scope=<path>.
+- Whole-root CODE review is capped at 300 files or 1,500,000 bytes; larger whole-root file sets block as file-set-too-large and require a narrower scope=<path> or a project-root .drfxignore file that shrinks the file set.
+- A project-root .drfxignore file (one root-relative directory path per line; # comments; no globs or negation) excludes directories from the CODE file set; an explicit scope= overrides any entry that covers it. .gitignore is never read.
 - Users must not pass target=, type, ref=, base=, assurance=, strict, normal, or ledger=; this route has no document type and no reference documents.
 - The review judges the resolved source file set, not a single document. Discover the in-scope source files deterministically, then review correctness, architecture, state-and-io, safety, tests, contracts, and maintainability.
 - Code review is actionable-only: pure style preferences, no-risk refactors, and over-abstraction are not blocking.
@@ -36,7 +37,7 @@ Route contract:
 Invocation:
 review-fix-code [scope=<path>...] [read-only] [guard=git|snapshot] [root=<project-root>] [debug]
 
-Full form: review-fix-code [scope=<path>...] ... . scope=<path> names a source root to review; repeat scope=<path> for multiple roots. Omit scope= to review the whole project root, capped at 300 files or 1,500,000 bytes. Larger whole-root file sets block as file-set-too-large and require a narrower scope=<path>. There is no bare-path or target= form for this route. Before workflow commands, materialize <scopeTokens> as the repeated scope=<path> tokens exactly as requested, or as an empty string when scope is omitted.
+Full form: review-fix-code [scope=<path>...] ... . scope=<path> names a source root to review; repeat scope=<path> for multiple roots. Omit scope= to review the whole project root, capped at 300 files or 1,500,000 bytes. Larger whole-root file sets block as file-set-too-large and require a narrower scope=<path> or a project-root .drfxignore file (one root-relative directory path per line; # comments; no globs or negation) that shrinks the file set. An explicit scope= overrides any .drfxignore entry that covers it; .gitignore is never read. There is no bare-path or target= form for this route. Before workflow commands, materialize <scopeTokens> as the repeated scope=<path> tokens exactly as requested, or as an empty string when scope is omitted.
 
 This route accepts only scope=<path> (repeatable), optional read-only, optional guard=git|snapshot, optional root=<project-root>, and optional debug. It does not accept ref=, base=, strict, normal, assurance=, ledger=, or rounds=. Explicit review-and-fix is unsupported on Gemini and must render the unsupported result instead of starting a fix loop.
 

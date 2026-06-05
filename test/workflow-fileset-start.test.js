@@ -517,3 +517,24 @@ test('read-only no-state CODE review never creates auto-fix state and never clai
   assert.equal(result.mode, 'read-only');
   assert.equal(fs.existsSync(path.join(root, '.drfx', 'targets')), false);
 });
+
+test('CODE start with .drfxignore persists User excludes in the manifest and surfaces them in the result', async (t) => {
+  const root = makePrRepo(t);
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'docs', 'notes.md'), 'notes\n');
+  fs.writeFileSync(path.join(root, '.drfxignore'), '# local\ndocs\n');
+
+  const result = await runWorkflowCommand('start', practicalArgs(['review-fix-code']), { cwd: root });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.deepEqual(result.userExcludes, ['docs']);
+
+  const manifestText = fs.readFileSync(result.manifestPath, 'utf8');
+  assert.match(manifestText, /User excludes:\n- docs/);
+
+  // The excluded directory never enters the reviewed file set.
+  const contextResult = await runWorkflowCommand('context', practicalArgs(['review-fix-code']), { cwd: root });
+  assert.equal(contextResult.ok, true, JSON.stringify(contextResult));
+  const contextManifest = fs.readFileSync(contextResult.contextManifestPath, 'utf8');
+  assert.doesNotMatch(contextManifest, /docs\/notes\.md/);
+  assert.match(contextManifest, /userExcludes/);
+});

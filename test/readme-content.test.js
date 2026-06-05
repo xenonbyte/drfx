@@ -13,6 +13,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const ROOT = path.join(__dirname, '..');
+const { CODE_EXCLUDED_DIRECTORIES, DRFXIGNORE_FILENAME } = require('../lib/target-context');
 
 function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
@@ -93,6 +94,53 @@ test('both READMEs document scope= repeatable for review-fix-code', () => {
   const zh = read('README.zh-CN.md');
   assert.match(en, /scope=[\s\S]{0,200}repeat|repeat[\s\S]{0,200}scope=/i);
   assert.match(zh, /scope=[\s\S]{0,200}repeat|repeat[\s\S]{0,200}scope=/i);
+});
+
+// ---------------------------------------------------------------------------
+// CODE exclusion rules: full built-in list, no-gitignore, .drfxignore syntax
+// ---------------------------------------------------------------------------
+
+test('both READMEs list every built-in CODE excluded directory', () => {
+  const en = read('README.md');
+  const zh = read('README.zh-CN.md');
+  for (const directory of CODE_EXCLUDED_DIRECTORIES) {
+    const literal = `\`${directory}\``;
+    assert.ok(en.includes(literal), `README.md missing built-in exclusion: ${literal}`);
+    assert.ok(zh.includes(literal), `README.zh-CN.md missing built-in exclusion: ${literal}`);
+  }
+});
+
+test('both READMEs state that .gitignore is never read by CODE discovery', () => {
+  const en = read('README.md');
+  const zh = read('README.zh-CN.md');
+  assert.match(en, /`\.gitignore` is never read/);
+  assert.match(zh, /不读取 `\.gitignore`/);
+});
+
+test('both READMEs state explicit scope= runs are not capped', () => {
+  const en = read('README.md');
+  const zh = read('README.zh-CN.md');
+  assert.match(en, /Explicit `scope=` runs are not subject to the cap/);
+  assert.match(zh, /显式传入 `scope=` 的运行不受该上限约束/);
+});
+
+test('both READMEs document the .drfxignore contract', () => {
+  const en = read('README.md');
+  const zh = read('README.zh-CN.md');
+  const literal = `\`${DRFXIGNORE_FILENAME}\``;
+  assert.ok(en.includes(literal), `README.md missing ${literal}`);
+  assert.ok(zh.includes(literal), `README.zh-CN.md missing ${literal}`);
+  // One root-relative directory path per line; comments; no globs/negation.
+  assert.match(en, /one root-relative directory path per line/i);
+  assert.match(zh, /每行一个 root-relative 目录路径/);
+  assert.match(en, /No globs and no negation/i);
+  assert.match(zh, /无 glob、无否定/);
+  // Explicit scope= overrides covering entries; the override is never silent.
+  assert.match(en, /scope=[\s\S]{0,200}overrides[\s\S]{0,200}entry|entry[\s\S]{0,200}overrides/i);
+  assert.match(zh, /scope=[\s\S]{0,120}失效/);
+  // Active entries join the review-target identity.
+  assert.match(en, /\.drfxignore[\s\S]{0,400}identity|identity[\s\S]{0,400}\.drfxignore/i);
+  assert.match(zh, /\.drfxignore[\s\S]{0,400}身份|身份[\s\S]{0,400}\.drfxignore/);
 });
 
 // ---------------------------------------------------------------------------
@@ -284,6 +332,7 @@ test('critical technical literals are identical in both READMEs', () => {
     'resume',
     'read-only',
     'review-and-fix',
+    '.drfxignore',
     '~/.drfx/rules/PR.md',
     '~/.drfx/rules/CODE.md',
     '.drfx/rules/PR.md',

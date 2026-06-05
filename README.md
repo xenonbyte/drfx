@@ -135,7 +135,7 @@ review-fix-pr base=main rounds=2
 review-fix-pr base=main resume
 ```
 
-Review the whole project root (`scope=` omitted means whole project), or scope it to one or more roots. Whole-root CODE review is capped at 300 files or 1,500,000 bytes; use `scope=<path>` when a project is larger:
+Review the whole project root (`scope=` omitted means whole project), or scope it to one or more roots. Whole-root CODE review is capped at 300 files or 1,500,000 bytes; use `scope=<path>` or a project-root `.drfxignore` file when a project is larger:
 
 ```text
 review-fix-code
@@ -194,8 +194,9 @@ Syntax:
 review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
 ```
 
-- `scope=<path>` names a source root to review. Repeat `scope=` for multiple roots. Empty scope means the whole project root, capped at 300 files or 1,500,000 bytes; larger whole-root file sets block as `file-set-too-large` and require a narrower `scope=<path>`.
-- Mandatory exclusions: `.git`, `.drfx`, legacy `.docs-review-fix`, local agent/tool state such as `.claude`, `.codex`, `.codegraph`, `.gemini`, `.req-to-plan`, `node_modules`, build outputs, and similar infrastructure directories are always excluded from the reviewed file set.
+- `scope=<path>` names a source root to review. Repeat `scope=` for multiple roots. Empty scope means the whole project root, capped at 300 files or 1,500,000 bytes; larger whole-root file sets block as `file-set-too-large` and require a narrower `scope=<path>` or a `.drfxignore` file that shrinks the file set. Explicit `scope=` runs are not subject to the cap.
+- Built-in exclusions (fixed, always applied): VCS state (`.git`, `.hg`, `.svn`); this tool's state (`.drfx`, legacy `.docs-review-fix`); local agent/tool state (`.claude`, `.codex`, `.codegraph`, `.gemini`, `.req-to-plan`); dependency trees and package caches (`node_modules`, `bower_components`, `vendor`, `.pnp`, `.yarn`, `.pnpm-store`, `.gradle`, `.m2`); build outputs (`dist`, `build`, `out`, `target`, `.next`, `.nuxt`, `.svelte-kit`, `.output`); coverage and tool caches (`coverage`, `.nyc_output`, `.cache`, `.parcel-cache`, `.turbo`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.tox`); temp and editor scratch (`tmp`, `temp`, `.tmp`, `.idea`, `.vscode`); plus the OS scratch files `.DS_Store` and `Thumbs.db`. The list is built in: `.gitignore` is never read, so git-ignored paths outside this list still enter the reviewed file set.
+- A project-root `.drfxignore` file adds user-level exclusions: one root-relative directory path per line; a line starting with `#` is a comment; blank lines are ignored. No globs and no negation. The file must be a regular file (a symlinked `.drfxignore` is refused), and every entry must name an existing in-root directory. An explicit `scope=` that is, or is inside, an entry overrides that entry for the run (the override is reported, never silent). Active entries are part of the review-target identity: editing `.drfxignore` produces a different review target, so existing state cannot be resumed across the change — start fresh (or `reset`).
 - `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code and Codex; advisory read-only on Gemini).
 - `guard=git` is the default; use `guard=snapshot` when a Git rollback anchor is unavailable. The route never silently switches guard modes.
 - `resume` explicitly continues from saved state. Stale state is refused; there is no silent reuse.
