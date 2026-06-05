@@ -478,6 +478,23 @@ Blocking findings include incorrect logic, unhandled error paths that could caus
 
 PASS for `CODE` means the code is correct, architecturally sound, safely handles errors and I/O, adequately tested, and leaves the codebase in a maintainable state.
 
+## Engineering standards
+
+Apply these only when the issue is concrete and actionable. Do not block on pure style preferences unless the style creates correctness, safety, portability, testability, or maintainability risk.
+
+### Hardcoded values
+
+- High (blocking): hardcoded secrets, credentials, tokens, private keys, cookies, production identifiers, or raw sensitive log values.
+- Medium (blocking when a config/constant/injection/documented-default was expected): environment-specific URLs, hosts, ports, filesystem paths, branch names, model names, tenant/region IDs, feature flags, timeouts, retry counts, limits, locale/timezone assumptions, or platform-specific commands.
+- Low (report, rarely blocking): unexplained magic strings/numbers in local logic that hurt readability or make future change risky but do not currently affect behavior.
+
+Allowed, not findings: named constants with clear scope and rationale; obviously fake local test fixtures; protocol constants, documented file names, CLI command/token names, schema enum values, and route names that are part of the public contract.
+
+### Error handling and logging
+
+- Do not silently swallow errors, downgrade a security check, or continue after a failed validation; fallbacks must be explicit, observable, and safe by default.
+- Do not log raw secrets, credentials, tokens, cookies, private keys, or PII. Findings must identify a secret's location without quoting its value.
+
 ---
 
 <!-- shared/prompts/reviewer.md -->
