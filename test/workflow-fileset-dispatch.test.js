@@ -346,7 +346,7 @@ test('CODE target key is byte-stable without .drfxignore (empty excludes never e
   assert.equal(emptyFileKey, legacyKey, 'an effectively-empty .drfxignore must keep the pre-feature target key');
 });
 
-test('.drfxignore pattern text and ORDER are the CODE target identity input', (t) => {
+test('.drfxignore pattern digests and ORDER are the CODE target identity input', (t) => {
   const root = freshRepo(t);
   const wholeRoot = parsedFor('review-fix-code', ['read-only']);
 

@@ -529,7 +529,8 @@ test('CODE start with .drfxignore persists User excludes in the manifest and sur
   assert.deepEqual(result.userExcludes, ['docs']);
 
   const manifestText = fs.readFileSync(result.manifestPath, 'utf8');
-  assert.match(manifestText, /User excludes:\n- docs/);
+  assert.match(manifestText, /User excludes:\n- [a-f0-9]{64}/);
+  assert.doesNotMatch(manifestText, /^- docs$/m);
 
   // The excluded directory never enters the reviewed file set.
   const contextResult = await runWorkflowCommand('context', practicalArgs(['review-fix-code']), { cwd: root });
@@ -537,4 +538,24 @@ test('CODE start with .drfxignore persists User excludes in the manifest and sur
   const contextManifest = fs.readFileSync(contextResult.contextManifestPath, 'utf8');
   assert.doesNotMatch(contextManifest, /docs\/notes\.md/);
   assert.match(contextManifest, /userExcludes/);
+});
+
+test('CODE .drfxignore sensitive patterns use redacted output and digest resume identity', async (t) => {
+  const root = makePrRepo(t);
+  const sensitivePattern = 'secret=super-sensitive-token';
+  fs.writeFileSync(path.join(root, '.drfxignore'), `${sensitivePattern}\n`);
+
+  const result = await runWorkflowCommand('start', practicalArgs(['review-fix-code']), { cwd: root });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.deepEqual(result.userExcludes, ['secret=[REDACTED:credential]']);
+  assert.doesNotMatch(JSON.stringify(result), /super-sensitive-token/);
+
+  const manifestText = fs.readFileSync(result.manifestPath, 'utf8');
+  assert.match(manifestText, /User excludes:\n- [a-f0-9]{64}/);
+  assert.doesNotMatch(manifestText, /super-sensitive-token/);
+  assert.doesNotMatch(manifestText, /\[REDACTED:credential\]/);
+
+  const resumed = await runWorkflowCommand('start', practicalArgs(['review-fix-code', 'resume']), { cwd: root });
+  assert.equal(resumed.ok, true, JSON.stringify(resumed));
+  assert.notEqual(resumed.errorCode, 'ERR_FILE_SET_STALE_IDENTITY');
 });

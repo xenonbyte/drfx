@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -19,8 +20,21 @@ const {
   buildCodeIdentity,
   formatCodeIdentityFields,
   parseCodeIdentityFields,
+  normalizeCodeUserExcludesForIdentity,
   compareCodeIdentity
 } = require('../lib/target-context');
+
+function digestPattern(pattern) {
+  return crypto
+    .createHash('sha256')
+    .update('drfxignore-pattern\0')
+    .update(String(pattern))
+    .digest('hex');
+}
+
+function digestPatterns(patterns) {
+  return patterns.map((pattern) => digestPattern(pattern));
+}
 
 function git(root, args) {
   return execFileSync('git', args, {
@@ -604,7 +618,8 @@ test('.drfxignore excludes a directory from the whole-root CODE file set', async
 
   const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
   assert.deepEqual(result.files.map((file) => file.path), ['.drfxignore', 'lib/a.js']);
-  assert.deepEqual(result.userExcludes, ['docs']);
+  assert.deepEqual(result.userExcludes, digestPatterns(['docs']));
+  assert.deepEqual(result.userExcludePatterns, ['docs']);
   assert.deepEqual(result.scopeIgnoreOverrides, []);
   assert.equal(result.versionIgnoreSource, 'none', 'temp fixture is not a git worktree');
 });
@@ -620,7 +635,8 @@ test('.drfxignore shrinks the whole-root file set below the cap', async (t) => {
   fs.writeFileSync(path.join(dir, '.drfxignore'), 'docs\n');
   const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
   assert.equal(result.status, undefined);
-  assert.deepEqual(result.userExcludes, ['docs']);
+  assert.deepEqual(result.userExcludes, digestPatterns(['docs']));
+  assert.deepEqual(result.userExcludePatterns, ['docs']);
 });
 
 test('explicit scope= overrides a covering .drfxignore pattern, reported not silent', async (t) => {
@@ -629,7 +645,8 @@ test('explicit scope= overrides a covering .drfxignore pattern, reported not sil
 
   const result = await resolveCodeTarget({ cwd: dir, scopes: ['docs'] });
   assert.deepEqual(result.files.map((file) => file.path), ['docs/big.md']);
-  assert.deepEqual(result.userExcludes, ['docs'], 'pattern text stays whole-file identity');
+  assert.deepEqual(result.userExcludes, digestPatterns(['docs']), 'pattern digest stays whole-file identity');
+  assert.deepEqual(result.userExcludePatterns, ['docs']);
   assert.deepEqual(result.scopeIgnoreOverrides, ['docs']);
 });
 
@@ -650,7 +667,8 @@ test('a .drfxignore entry inside an explicit scope prunes within that scope', as
 
   const result = await resolveCodeTarget({ cwd: dir, scopes: ['lib'] });
   assert.deepEqual(result.files.map((file) => file.path), ['lib/a.js']);
-  assert.deepEqual(result.userExcludes, ['lib/legacy']);
+  assert.deepEqual(result.userExcludes, digestPatterns(['lib/legacy']));
+  assert.deepEqual(result.userExcludePatterns, ['lib/legacy']);
 });
 
 test('.drfxignore patterns disjoint from the scopes leave the scoped set intact', async (t) => {
@@ -659,20 +677,22 @@ test('.drfxignore patterns disjoint from the scopes leave the scoped set intact'
 
   const result = await resolveCodeTarget({ cwd: dir, scopes: ['lib'] });
   assert.deepEqual(result.files.map((file) => file.path), ['lib/a.js']);
-  assert.deepEqual(result.userExcludes, ['docs'], 'pattern text is whole-file identity');
+  assert.deepEqual(result.userExcludes, digestPatterns(['docs']), 'pattern digest is whole-file identity');
+  assert.deepEqual(result.userExcludePatterns, ['docs']);
   assert.deepEqual(result.scopeIgnoreOverrides, []);
 });
 
-test('.drfxignore patterns are kept verbatim in file order', async (t) => {
+test('.drfxignore patterns are kept verbatim in file order, including semantic duplicates', async (t) => {
   const dir = makeIgnoreFixture(t, 'drfx-ignore-verbatim-');
   fs.mkdirSync(path.join(dir, 'docs', 'plans'));
   fs.writeFileSync(path.join(dir, 'docs', 'plans', 'p.md'), 'p\n');
   fs.mkdirSync(path.join(dir, 'node_modules'));
   fs.mkdirSync(path.join(dir, 'node_modules', 'pkg'));
-  fs.writeFileSync(path.join(dir, '.drfxignore'), 'docs\ndocs/plans\nnode_modules/pkg\n');
+  fs.writeFileSync(path.join(dir, '.drfxignore'), 'docs\ndocs/plans\nnode_modules/pkg\ndocs\n');
 
   const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
-  assert.deepEqual(result.userExcludes, ['docs', 'docs/plans', 'node_modules/pkg']);
+  assert.deepEqual(result.userExcludes, digestPatterns(['docs', 'docs/plans', 'node_modules/pkg', 'docs']));
+  assert.deepEqual(result.userExcludePatterns, ['docs', 'docs/plans', 'node_modules/pkg', 'docs']);
   assert.deepEqual(result.files.map((file) => file.path), ['.drfxignore', 'lib/a.js']);
 });
 
@@ -689,7 +709,20 @@ test('.drfxignore uses gitignore syntax: globs, negation, and non-existent patte
     result.files.map((file) => file.path),
     ['.drfxignore', 'docs/big.md', 'lib/a.js', 'lib/keep.log']
   );
-  assert.deepEqual(result.userExcludes, ['*.log', '!keep.log', 'no-such-dir/']);
+  assert.deepEqual(result.userExcludes, digestPatterns(['*.log', '!keep.log', 'no-such-dir/']));
+  assert.deepEqual(result.userExcludePatterns, ['*.log', '!keep.log', 'no-such-dir/']);
+});
+
+test('.drfxignore identity patterns preserve leading and escaped trailing spaces', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-spaces-');
+  fs.writeFileSync(path.join(dir, ' leading.js'), 'leading\n');
+  fs.writeFileSync(path.join(dir, 'trailing.js '), 'trailing\n');
+  fs.writeFileSync(path.join(dir, '.drfxignore'), ' leading.js\ntrailing.js\\ \n');
+
+  const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
+  assert.deepEqual(result.userExcludes, digestPatterns([' leading.js', 'trailing.js\\ ']));
+  assert.deepEqual(result.userExcludePatterns, [' leading.js', 'trailing.js\\ ']);
+  assert.deepEqual(result.files.map((file) => file.path), ['.drfxignore', 'docs/big.md', 'lib/a.js']);
 });
 
 test('CODE identity carries userExcludes strictly: edited excludes are stale, same set stays resumable', async (t) => {
@@ -698,7 +731,7 @@ test('CODE identity carries userExcludes strictly: edited excludes are stale, sa
 
   const context = await resolveCodeTarget({ cwd: dir, scopes: [] });
   const stored = buildCodeIdentity({ context, guardMode: 'git', roundLimit: null });
-  assert.deepEqual(stored.userExcludes, ['docs']);
+  assert.deepEqual(stored.userExcludes, digestPatterns(['docs']));
 
   // Same .drfxignore ⇒ identity matches.
   const same = buildCodeIdentity({
@@ -721,7 +754,7 @@ test('CODE identity carries userExcludes strictly: edited excludes are stale, sa
 
   // format/parse round-trip preserves the list field.
   const fields = formatCodeIdentityFields(stored);
-  assert.deepEqual(parseCodeIdentityFields(fields).userExcludes, ['docs']);
+  assert.deepEqual(parseCodeIdentityFields(fields).userExcludes, digestPatterns(['docs']));
 });
 
 test('the file-set-too-large message reports early-termination counts as a floor', () => {
@@ -740,6 +773,18 @@ test('a symlinked .drfxignore is refused in strict resolution and inert for iden
     () => resolveCodeTarget({ cwd: dir, scopes: [] }),
     (error) => error.code === 'ERR_CODE_USER_EXCLUDE_CONFIG_SYMLINK'
   );
+});
+
+test('a non-regular .drfxignore is refused in strict resolution and inert for identity', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-directory-');
+  fs.mkdirSync(path.join(dir, '.drfxignore'));
+
+  await assert.rejects(
+    () => resolveCodeTarget({ cwd: dir, scopes: [] }),
+    (error) => error.code === 'ERR_CODE_USER_EXCLUDE_CONFIG_NOT_FILE'
+  );
+
+  assert.deepEqual(normalizeCodeUserExcludesForIdentity({ cwd: dir }), []);
 });
 
 // ---------------------------------------------------------------------------

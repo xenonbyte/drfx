@@ -76,9 +76,12 @@ test('character classes, escapes, comments, and trailing spaces follow gitignore
   assert.equal(m.ignores('spaced', false), true, 'unescaped trailing spaces are trimmed');
 });
 
-test('patterns list preserves file order and collapses exact duplicates', () => {
-  const m = createDrfxignoreMatcher('*.log\n!keep.log\ndocs\n*.log\n');
-  assert.deepEqual(m.patterns, ['*.log', '!keep.log', 'docs']);
+test('patterns list preserves file order, duplicates, and significant spaces', () => {
+  const m = createDrfxignoreMatcher('*.log\n!keep.log\ndocs\n*.log\n foo\nfoo\\ \nfoo   \n');
+  assert.deepEqual(m.patterns, ['*.log', '!keep.log', 'docs', '*.log', ' foo', 'foo\\ ', 'foo']);
+  assert.equal(m.ignores('keep.log', false), true, 'the repeated later *.log changes last-match-wins semantics');
+  assert.equal(m.ignores(' foo', false), true, 'leading spaces are significant pattern text');
+  assert.equal(m.ignores('foo ', false), true, 'backslash-escaped trailing spaces are significant pattern text');
 });
 
 test('malformed patterns degrade to literals instead of throwing', () => {

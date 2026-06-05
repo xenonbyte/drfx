@@ -601,13 +601,15 @@ test('a unified Round limit line round-trips identically across document, pr, an
 });
 
 test('code-kind manifest round-trips User excludes and defaults absent label to empty', () => {
-  const text = formatManifestV2(makeCodeManifest({ userExcludes: ['design/archive', 'docs'] }));
+  const digestA = 'a'.repeat(64);
+  const digestB = 'b'.repeat(64);
+  const text = formatManifestV2(makeCodeManifest({ userExcludes: [digestA, digestB] }));
   assert.match(text, /User excludes:/);
-  assert.match(text, /^- design\/archive$/m);
-  assert.match(text, /^- docs$/m);
+  assert.match(text, new RegExp(`^- ${digestA}$`, 'm'));
+  assert.match(text, new RegExp(`^- ${digestB}$`, 'm'));
 
   const parsed = parseManifestV2(text);
-  assert.deepEqual(parsed.userExcludes, ['design/archive', 'docs']);
+  assert.deepEqual(parsed.userExcludes, [digestA, digestB]);
   assert.equal(formatManifestV2(parsed), text);
 
   // Pre-.drfxignore manifests carry no "User excludes:" label: parse defaults to [].
@@ -618,24 +620,30 @@ test('code-kind manifest round-trips User excludes and defaults absent label to 
   assert.deepEqual(parseManifestV2(legacy).userExcludes, []);
 });
 
-test('code-kind manifest keeps User excludes as ORDERED gitignore patterns', () => {
+test('code-kind manifest keeps User excludes as ORDERED sha256 pattern digests', () => {
   // Order is semantic (negation is last-match-wins): never sorted.
-  const ordered = formatManifestV2(makeCodeManifest({ userExcludes: ['*.log', '!keep.log'] }));
+  const digestA = 'a'.repeat(64);
+  const digestB = 'b'.repeat(64);
+  const ordered = formatManifestV2(makeCodeManifest({ userExcludes: [digestA, digestB] }));
   const lines = ordered.split('\n');
   const start = lines.indexOf('User excludes:');
-  assert.deepEqual(lines.slice(start + 1, start + 3), ['- *.log', '- !keep.log']);
+  assert.deepEqual(lines.slice(start + 1, start + 3), [`- ${digestA}`, `- ${digestB}`]);
 
-  const reversed = formatManifestV2(makeCodeManifest({ userExcludes: ['!keep.log', '*.log'] }));
-  assert.notEqual(ordered, reversed, 'pattern order must survive the manifest');
+  const reversed = formatManifestV2(makeCodeManifest({ userExcludes: [digestB, digestA] }));
+  assert.notEqual(ordered, reversed, 'pattern digest order must survive the manifest');
 
-  // gitignore pattern text is NOT path-validated: anchored and glob forms are
-  // legal entries; exact duplicates collapse; empty entries are rejected.
+  // Duplicate digests stay semantic; raw pattern text and empty entries are rejected.
   const parsed = parseManifestV2(
-    formatManifestV2(makeCodeManifest({ userExcludes: ['/dist', '**/logs', '/dist'] }))
+    formatManifestV2(makeCodeManifest({ userExcludes: [digestA, digestB, digestA] }))
   );
-  assert.deepEqual(parsed.userExcludes, ['/dist', '**/logs']);
+  assert.deepEqual(parsed.userExcludes, [digestA, digestB, digestA]);
+
   assert.throws(
     () => formatManifestV2(makeCodeManifest({ userExcludes: ['   '] })),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED'
+  );
+  assert.throws(
+    () => formatManifestV2(makeCodeManifest({ userExcludes: ['*.log'] })),
     (error) => error.code === 'ERR_STATE_VALIDATION_FAILED'
   );
 });

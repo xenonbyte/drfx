@@ -194,10 +194,10 @@ Syntax:
 review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
 ```
 
-- `scope=<path>` 指定要遍历的目录或要直接纳入的单个文件。可重复（repeatable）传入多个 `scope=`。省略 scope 表示整个 project root，最多 300 个文件或 1,500,000 字节（在全部排除生效后计数）；更大的 whole-root file set 会以 `file-set-too-large` 阻断，并要求使用更窄的 `scope=<path>` 或通过忽略规则缩减 file set。显式传入 `scope=` 的运行不受该上限约束。
+- `scope=<path>` 指定要遍历的目录或要直接纳入的单个文件。可重复（repeatable）传入多个 `scope=`。省略 scope 表示整个 project root，最多 300 个文件或 1,500,000 字节（在全部排除生效后计数）；更大的 whole-root file set 会以 `file-set-too-large` 阻断，并要求使用更窄的 `scope=<path>` 或通过忽略规则缩减 file set。显式传入非根目录/文件 `scope=` 的运行不受该上限约束；规范化到 project root 的 scope（例如 `scope=.`）仍按 whole-root 处理并受上限约束。
 - 内置排除（固定、始终生效）：VCS 状态（`.git`、`.hg`、`.svn`）；本工具状态（`.drfx`、legacy `.docs-review-fix`）；本地 agent/tool 状态（`.claude`、`.codex`、`.codegraph`、`.gemini`、`.req-to-plan`）；依赖树与包缓存（`node_modules`、`bower_components`、`vendor`、`.pnp`、`.yarn`、`.pnpm-store`、`.gradle`、`.m2`）；构建产物（`dist`、`build`、`out`、`target`、`.next`、`.nuxt`、`.svelte-kit`、`.output`）；覆盖率与工具缓存（`coverage`、`.nyc_output`、`.cache`、`.parcel-cache`、`.turbo`、`__pycache__`、`.pytest_cache`、`.mypy_cache`、`.tox`）；临时与编辑器目录（`tmp`、`temp`、`.tmp`、`.idea`、`.vscode`）；以及 OS 杂项文件 `.DS_Store` 与 `Thumbs.db`。
 - 版本忽略的文件自动排除：通过一次本地只读 git 查询（`git ls-files --others --ignored --exclude-standard`）捕获完整的 gitignore 体系——嵌套 `.gitignore`、全局 excludes 文件、`.git/info/exclude`——并沿用 git 自身语义，因此 **tracked 文件永远不会被版本忽略**。非 git 根目录下该来源自然缺位，仅内置排除与 `.drfxignore` 生效。两个忽略来源相互独立：`.drfxignore` 的 `!` 否定无法复活被版本忽略的路径——需要时请用显式 `scope=`。
-- 项目根的 `.drfxignore` 文件提供用户级排除，**语法与 `.gitignore` 一致**：`#` 注释、空行、`!` 否定（后匹配规则胜出）、前导 `/` 锚定、尾随 `/` 仅匹配目录，以及 `*` / `?` / `[...]` / `**` glob。仅读取根目录这一个文件（不支持嵌套 ignore 文件），且必须是常规文件（符号链接形式的 `.drfxignore` 会被拒绝）。pattern 行（包含顺序——否定是后匹配胜出）参与 review-target 身份：修改 `.drfxignore` 即产生不同的 review target，旧状态无法跨该变更 resume——请全新开始（或 `reset`）。
+- 项目根的 `.drfxignore` 文件提供用户级排除，**语法与 `.gitignore` 一致**：`#` 注释、空行、`!` 否定（后匹配规则胜出）、前导 `/` 锚定、尾随 `/` 仅匹配目录，以及 `*` / `?` / `[...]` / `**` glob。仅读取根目录这一个文件（不支持嵌套 ignore 文件），且必须是常规文件（符号链接形式的 `.drfxignore` 会被拒绝）。pattern 行（包含顺序——否定是后匹配胜出）参与 review-target 身份：修改 `.drfxignore` 即产生不同的 review target，旧状态无法跨该变更 resume——请全新开始（或 `reset`）。Raw pattern text 不会写入 workflow state；身份由有序 digest 承载，用户可见输出使用 redacted pattern text。
 - 显式 `scope=` 永远优先：被 scope 指定的目录或文件即使被忽略来源覆盖也会纳入审查（覆盖会被报告，绝不静默）。scope 目录内部独立命中的忽略规则仍然生效。
 - `read-only` 或 `review-and-fix`（Claude Code 和 Codex 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
 - `guard=git` 为默认值；Git rollback anchor 不可用时使用 `guard=snapshot`。路由永远不会静默切换 guard mode。

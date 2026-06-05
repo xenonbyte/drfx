@@ -123,11 +123,13 @@ test('both READMEs state that version-control-ignored files are excluded via git
   assert.match(zh, /非 git 根目录/);
 });
 
-test('both READMEs state explicit scope= runs are not capped', () => {
+test('both READMEs state only non-root explicit scope= runs are not capped', () => {
   const en = read('README.md');
   const zh = read('README.zh-CN.md');
-  assert.match(en, /Explicit `scope=` runs are not subject to the cap/);
-  assert.match(zh, /显式传入 `scope=` 的运行不受该上限约束/);
+  assert.match(en, /Explicit non-root directory\/file scopes are not subject to the cap/);
+  assert.match(en, /`scope=\.`[\s\S]{0,120}remain capped/);
+  assert.match(zh, /显式传入非根目录\/文件 `scope=` 的运行不受该上限约束/);
+  assert.match(zh, /`scope=\.`[\s\S]{0,120}受上限约束/);
 });
 
 test('both READMEs document the .drfxignore contract', () => {
@@ -149,6 +151,11 @@ test('both READMEs document the .drfxignore contract', () => {
   // Pattern lines (order included) join the review-target identity.
   assert.match(en, /pattern lines[\s\S]{0,200}identity|identity[\s\S]{0,200}pattern/i);
   assert.match(zh, /pattern 行[\s\S]{0,80}身份/);
+  // Raw pattern text must not be persisted in workflow state.
+  assert.match(en, /Raw pattern text is not stored in workflow state/);
+  assert.match(zh, /Raw pattern text 不会写入 workflow state/);
+  assert.match(en, /ordered digests carry identity/);
+  assert.match(zh, /身份由有序 digest 承载/);
 });
 
 test('both READMEs document directory-or-file scopes for review-fix-code', () => {
