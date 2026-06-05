@@ -181,6 +181,7 @@ review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [res
 - `guard=git` 为默认值；Git rollback anchor 不可用时使用 `guard=snapshot`。路由永远不会静默切换 guard mode。
 - `resume` 显式从已保存的 state 继续。拒绝 stale state，不存在静默复用。
 - `reset` 归档现有 target state（移到 `.drfx/archived/`，绝不删除）并全新开始 review。当 stale state 已无法 resume 时（例如排除策略变化改变了 file set），这是显式的逃生口。`resume` 与 `reset` 互斥。
+- 自动修复默认只改 resolved file set。该集合之外的依赖文件，只有在先声明（路径、必要理由、所服务的 issue ID）、in-root、non-excluded、并在首次写入前纳入受监控且 guard 的集合后才可修改。修复不是无条件只限 scope/diff 文件，但绝不触碰未声明、未 guard 的文件。
 - `rounds=<n>` 设置最大修复循环次数（正整数）。与 `read-only` 不兼容。
 - `root=<path>` 设置 project root。
 - 不接受 `target=`、`ref=`、`strict`、`normal`、`assurance=` 或 `ledger=`。
@@ -199,6 +200,7 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 - `guard=git` 为默认值；Git rollback anchor 不可用时使用 `guard=snapshot`。路由永远不会静默切换 guard mode。
 - `resume` 显式从已保存的 state 继续。拒绝 stale state，不存在静默复用。
 - `reset` 归档现有 target state（移到 `.drfx/archived/`，绝不删除）并全新开始 review。当 stale state 已无法 resume 时（例如排除策略变化改变了 file set），这是显式的逃生口。`resume` 与 `reset` 互斥。
+- 自动修复默认只改 resolved file set。该集合之外的依赖文件，只有在先声明（路径、必要理由、所服务的 issue ID）、in-root、non-excluded、并在首次写入前纳入受监控且 guard 的集合后才可修改。修复不是无条件只限 scope/diff 文件，但绝不触碰未声明、未 guard 的文件。
 - `rounds=<n>` 设置最大修复循环次数（正整数）。与 `read-only` 不兼容。
 - `root=<path>` 设置 project root。
 - 不接受 `target=`、`ref=`、`base=`、`strict`、`normal`、`assurance=` 或 `ledger=`。

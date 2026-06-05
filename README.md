@@ -181,6 +181,7 @@ review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [res
 - `guard=git` is the default; use `guard=snapshot` when a Git rollback anchor is unavailable. The route never silently switches guard modes.
 - `resume` explicitly continues from saved state. Stale state is refused; there is no silent reuse.
 - `reset` archives the existing target state (moved to `.drfx/archived/`, never deleted) and starts a fresh review. It is the explicit escape when stale state can no longer be resumed (for example after an exclusion-policy change shifted the file set). `resume` and `reset` are mutually exclusive.
+- Auto-fix by default modifies only the resolved file set. A necessary dependency file outside that set may be edited only after it is declared (path, why it is necessary, the issue ID it serves), is in-root and non-excluded, and is added to the monitored, guarded set before its first write. Fixes are not unconditionally limited to scope/diff files, but never touch undeclared, unguarded files.
 - `rounds=<n>` sets the maximum repair-loop count (positive integer). Unsupported with `read-only`.
 - `root=<path>` sets the project root.
 - Does not accept `target=`, `ref=`, `strict`, `normal`, `assurance=`, or `ledger=`.
@@ -199,6 +200,7 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 - `guard=git` is the default; use `guard=snapshot` when a Git rollback anchor is unavailable. The route never silently switches guard modes.
 - `resume` explicitly continues from saved state. Stale state is refused; there is no silent reuse.
 - `reset` archives the existing target state (moved to `.drfx/archived/`, never deleted) and starts a fresh review. It is the explicit escape when stale state can no longer be resumed (for example after an exclusion-policy change shifted the file set). `resume` and `reset` are mutually exclusive.
+- Auto-fix by default modifies only the resolved file set. A necessary dependency file outside that set may be edited only after it is declared (path, why it is necessary, the issue ID it serves), is in-root and non-excluded, and is added to the monitored, guarded set before its first write. Fixes are not unconditionally limited to scope/diff files, but never touch undeclared, unguarded files.
 - `rounds=<n>` sets the maximum repair-loop count (positive integer). Unsupported with `read-only`.
 - `root=<path>` sets the project root.
 - Does not accept `target=`, `ref=`, `base=`, `strict`, `normal`, `assurance=`, or `ledger=`.
