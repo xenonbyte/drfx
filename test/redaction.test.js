@@ -16,7 +16,10 @@ function assertNoRawSecrets(value) {
     'token=plain-secret-token',
     'BEGIN PRIVATE KEY',
     'line-one-secret',
-    'line-two-secret'
+    'line-two-secret',
+    'AKIAIOSFODNN7EXAMPLE',
+    'B11111111',
+    'MIIEvQIBADANBg'
   ]) {
     assert.equal(text.includes(secret), false, `raw secret leaked: ${secret}`);
   }
@@ -127,6 +130,32 @@ test('reports whether sensitive text was redacted', () => {
   assert.equal(result.redacted, true);
   assert.equal(result.value, 'Authorization: Bearer [REDACTED:api-token]');
   assertNoRawSecrets(result.value);
+});
+
+test('redacts AWS access key ids', () => {
+  const text = 'aws_access_key_id=AKIAIOSFODNN7EXAMPLE region=us-east-1';
+  const out = redactSensitive(text);
+  assert.match(out, /\[REDACTED:api-token\]/);
+  assert.equal(out.includes('AKIAIOSFODNN7EXAMPLE'), false);
+});
+
+test('redacts Slack incoming webhook URLs', () => {
+  const text = 'hook https://hooks.slack.com/services/' + 'T00000000/B11111111/abcdEFGHijklMNOPqrstUVwx end';
+  const out = redactSensitive(text);
+  assert.match(out, /\[REDACTED:api-token\]/);
+  assert.equal(out.includes('/B11111111/'), false);
+});
+
+test('redacts GCP service-account private_key in JSON-escaped form', () => {
+  const json = String.raw`{"type":"service_account","private_key":"-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\n-----END PRIVATE KEY-----\n"}`;
+  const out = redactSensitive(json);
+  assert.match(out, /\[REDACTED:private-key\]/);
+  assert.equal(out.includes('MIIEvQIBADANBg'), false);
+});
+
+test('does not redact non-secret high-entropy git/hash values', () => {
+  const text = 'oid 3f8c2a1b9d4e5f60718293a4b5c6d7e8f9012345 sha 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8';
+  assert.equal(redactSensitive(text), text);
 });
 
 // PLAN-TASK-009 (Phase D): file-set (PR/CODE) state writes go through the same
