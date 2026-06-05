@@ -14,7 +14,7 @@ Canonical loop:
 review -> triage -> fix -> diff review -> full re-review -> repeat until PASS or a defined terminal/pause state
 ```
 
-The initial `review` and every `full re-review` must inspect the whole target document through an isolated read-only reviewer task. A `diff review` after fixes is mandatory, but it is only a gate before the next full-document re-review.
+The initial `review` and every `full re-review` must inspect the whole target context through an isolated read-only reviewer task. The target context is the target document for document routes, or the resolved file set for PR/CODE routes. A `diff review` after fixes is mandatory, but it is only a gate before the next full target-context re-review.
 
 The fix loop is bounded: after a deterministic fix-attempt cap (default 5 fixes per target), or when a previously fixed high/medium finding recurs, the loop stops as `stopped-no-progress` rather than fixing indefinitely.
 
@@ -59,8 +59,8 @@ Treat those structural items as low-severity improvements unless the target docu
 ## Roles
 
 - Coordinator: owns the loop, reads instructions and rules, dispatches reviewer work, triages findings, manages target state, applies fixes by default, performs diff review, and decides terminal status.
-- Reviewer: mandatory isolated read-only critic for every initial review and full re-review. The reviewer reports `PASS` or structured `FAIL` findings and must not edit files.
-- Fixer: the coordinator by default. A fixer subagent is optional, bounded, serial, and may modify only the target document for accepted issue IDs.
+- Reviewer: mandatory isolated read-only critic for every initial review and full target-context re-review. The reviewer reports `PASS` or structured `FAIL` findings and must not edit files.
+- Fixer: the coordinator by default. A fixer subagent is optional, bounded, serial, and may modify only files in the target context: the target document for document routes, or the resolved file set for PR/CODE routes, for accepted issue IDs.
 
 The coordinator is the only role allowed to mark workflow PASS.
 
@@ -68,13 +68,13 @@ The coordinator is the only role allowed to mark workflow PASS.
 
 General PASS requires:
 
-- The relevant full-document review returns `PASS`, or returns only low issues that the coordinator explicitly accepts as non-blocking in normal mode.
+- The relevant full target-context review returns `PASS`, or returns only low issues that the coordinator explicitly accepts as non-blocking in normal mode.
 - The coordinator independently agrees with the reviewer result.
 - No unresolved high or medium issues remain.
 - Accepted high and medium issues are fixed, merged into fixed issues, downgraded with rationale, or rejected with rationale.
 - Deferred high or medium issues are not treated as PASS; they stop as `stopped-with-deferrals`.
 - Required sections contain no blocking placeholders such as `TBD`, `TODO`, `later`, or "to be discussed".
-- Scope, constraints, assumptions, risks, and verification path are clear enough for the selected document type.
+- Scope, constraints, assumptions, risks, and verification path are clear enough for the selected route/rubric.
 - Reference documents, when provided, have been checked for material conformance without treating them as mandatory upstream chains.
 
 Strict PASS additionally requires unresolved low issues to be fixed or explicitly accepted as non-blocking and carried into later reviewer context.
@@ -83,7 +83,7 @@ Strict PASS additionally requires unresolved low issues to be fixed or explicitl
 
 The loop stops only at one of these states:
 
-- `pass`: the full-document review gate passes and the coordinator agrees. On `finalize`, `pass` archives its target-local state directory under `.drfx/archived/` so the next run starts fresh without `reset`.
+- `pass`: the full target-context review gate passes and the coordinator agrees. On `finalize`, `pass` archives its target-local state directory under `.drfx/archived/` so the next run starts fresh without `reset`.
 - `read-only-clean`: read-only mode found no blocking findings under selected strictness; this is not workflow PASS. On `finalize`, `read-only-clean` archives its target-local state directory under `.drfx/archived/` so the next run starts fresh without `reset`.
 - `stopped-with-deferrals`: high or medium issues are intentionally deferred with reason and owner; the internal workflow payload may include redacted issue IDs, reasons, owners, and next action. Default user output uses concise Unfixed/Next without internal issue IDs; debug may show redacted internal IDs and audit details.
 - `stopped-no-progress`: the fix loop hit the fix-attempt cap or a recurring unresolved finding; high or medium issues remain. This is a pause state, not PASS.
@@ -143,7 +143,7 @@ Fix accepted issues directly by default. Use one serial fixer subagent only when
 
 Fixers must:
 
-- Modify only the target document.
+- Modify only the target document for document routes, or files inside the resolved file set for PR/CODE routes.
 - Treat reference documents as read-only.
 - Fix only coordinator-accepted issue IDs unless the coordinator expands scope.
 - Preserve intent, terminology, and structure where possible.
@@ -162,11 +162,11 @@ After each fix round, the coordinator reviews the changed target and confirms:
 - Sensitive values were not copied into workflow state or responses.
 - Every claimed fix actually resolves the original finding's `why_it_matters`, not merely that an edit was made at its location. If a claimed fix does not resolve its finding, record it as a `DIFF-FAIL` using the existing fields (`problem` = why the change does not resolve the original finding; `required_action` = the concrete next step). Do not add new fields.
 
-Diff review is not sufficient for PASS. It only allows the next full re-review.
+Diff review is not sufficient for PASS. It only allows the next full target-context re-review.
 
 ## Full Re-Review Context Pack
 
-When a context pack includes `Changed since last review`, it carries a redacted hint for regression hunting: the fixed issue IDs and section anchors from the latest fix round. It is not a scope limiter. The reviewer must still review the whole document; the hint directs additional focus on those sections and issue IDs for regressions or new contradictions introduced by the last fix, but it must not replace whole-document re-review.
+When a context pack includes `Changed since last review`, it carries a redacted hint for regression hunting: the fixed issue IDs and section anchors from the latest fix round. It is not a scope limiter. The reviewer must still review the whole target context; the hint directs additional focus on those sections and issue IDs for regressions or new contradictions introduced by the last fix, but it must not replace full target-context re-review.
 
 The `changedSinceLastReview` field is populated only when the target has already been fixed this session (i.e., the persisted content fingerprint differs from the initial fingerprint and a latest fix report exists). It is absent on first review. It carries only issue IDs and redacted section anchors — never document body text.
 
@@ -227,7 +227,7 @@ Default user output uses concise Route Output after workflow finalization. It mu
 
 ## Read-Only Behavior
 
-In `read-only` mode, review and triage only. Do not modify the target document or reference documents. If blocking findings remain, stop as `read-only-findings`. Codex and Claude Code routes may tell users to rerun the same route with `review-and-fix`; Gemini routes must tell users to apply fixes manually or rerun with a Codex/Claude Code review-and-fix route.
+In `read-only` mode, review and triage only. Do not modify the target document, resolved file set, or reference documents. If blocking findings remain, stop as `read-only-findings`. Codex and Claude Code routes may tell users to rerun the same route with `review-and-fix`; Gemini routes must tell users to apply fixes manually or rerun with a Codex/Claude Code review-and-fix route.
 
 One-shot `read-only` without `ledger=` and without `resume` must not create `.drfx`, `MANIFEST.md`, `ISSUES.md`, `CONTINUITY.md`, `SUMMARY.md`, or `rounds/`. Keep fingerprints in memory unless a guard failure must be reported.
 
@@ -549,7 +549,7 @@ Findings:
 ```text
 You are the fixer subagent for the drfx review-fix loop.
 
-Target context: the target document for document routes, or the resolved file set plus any recorded necessary dependency file for PR/CODE routes.
+Target context: the target document for document routes, or the resolved file set for PR/CODE routes.
 Target document (document routes): <path>
 Reference documents: <paths, read-only>
 
@@ -559,7 +559,7 @@ Confirmed issues:
 Constraints:
 - Fix only coordinator-accepted issue IDs.
 - For a document route, the fixer may modify only the target document.
-- For a PR/CODE route, the fixer may modify only files inside the resolved target file set, plus any recorded necessary dependency file. Each dependency file edited outside that set must be declared with its path, the reason it is necessary, and the issue ID it serves; it must be in-root, non-excluded, and present in the monitored file set before its first write. Never edit a dependency file that is not in this recorded, guarded set.
+- For a PR/CODE route, the fixer may modify only files inside the resolved target file set. Files outside that set remain read-only; if an accepted issue cannot be fixed without editing one, leave it unchanged and report it under Not fixed.
 - References and other files remain read-only.
 - Work serially and stop for coordinator lock refresh before writes after 60 seconds.
 - Do not expand scope.
@@ -585,7 +585,7 @@ Residual risk:
 
 For every fix round, record the verification command or inspection method used, its result, and the residual risk when no suitable verification can run.
 
-If a requested fix cannot be made within the target context and its recorded dependency set, leave the affected files unchanged for that issue and report it under Not fixed.
+If a requested fix cannot be made within the target context, leave the affected files unchanged for that issue and report it under Not fixed.
 ```
 
 ---
@@ -623,7 +623,7 @@ Constraints:
 - reviewer subagent is mandatory and read-only
 - fixer subagent is optional and serial
 - coordinator fixes directly by default
-- only the target context may be modified: the target document for document routes, or the resolved file set plus recorded necessary dependency files for PR/CODE routes
+- only the target context may be modified: the target document for document routes, or the resolved file set for PR/CODE routes
 - reference documents are read-only
 - ref= documents are consistency sources, not mandatory upstream chains
 - no unconfirmed background, requirements, or external facts

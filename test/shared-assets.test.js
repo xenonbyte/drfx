@@ -955,6 +955,21 @@ test('README documents unknown markdown rule file strictness behavior', () => {
   assert.match(readme, /strict[^\n]*block before target state is written/i);
 });
 
+test('README keeps PR/CODE auto-fix writes inside the resolved file set', () => {
+  const readme = read('README.md');
+  const localized = read('README.zh-CN.md');
+
+  assert.match(readme, /Auto-fix modifies only the resolved file set/i);
+  assert.match(readme, /report (?:the issue|it) as `Not fixed`/i);
+  assert.doesNotMatch(readme, /may be edited only after it is declared/i);
+  assert.doesNotMatch(readme, /added to the monitored, guarded set before its first write/i);
+
+  assert.match(localized, /自动修复只改 resolved file set/);
+  assert.match(localized, /`Not fixed`/);
+  assert.doesNotMatch(localized, /只有在先声明/);
+  assert.doesNotMatch(localized, /首次写入前纳入受监控且 guard 的集合/);
+});
+
 test('long-task keeps project-root rules outside target state', () => {
   const longTask = read('shared/long-task.md');
 
@@ -1057,6 +1072,18 @@ test('shared prompts use route-neutral target-context framing', () => {
   assert.match(promptText, /route\/rubric/i);
   assert.match(promptText, /whole target context/i);
   assert.match(promptText, /full target-context re-review/i);
+});
+
+test('shared core uses target-context framing for document and file-set routes', () => {
+  const core = read('shared/core.md');
+
+  assert.doesNotMatch(core, /whole target document through an isolated read-only reviewer task/i);
+  assert.doesNotMatch(core, /full-document (?:review|re-review|review gate)/i);
+  assert.doesNotMatch(core, /may modify only the target document for accepted issue IDs/i);
+  assert.doesNotMatch(core, /^- Modify only the target document\.$/m);
+  assert.match(core, /whole target context/i);
+  assert.match(core, /target-context re-review/i);
+  assert.match(core, /target document for document routes, or the resolved file set for PR\/CODE routes/i);
 });
 
 test('reviewer must not narrow the review when given changed-since-last-review', () => {
@@ -1233,6 +1260,11 @@ test('generated code routes use the route-kind target token and omit document-on
   for (const output of generatedCodeRoutes()) {
     const requiredToken = output.routeKind === 'pr' ? /base=<branch>/ : /\[scope=<path>\.\.\.\]|<scopeTokens>/;
     assert.match(output.body, requiredToken, `${output.platform}:${output.routeName} must use its target token`);
+    assert.doesNotMatch(
+      output.body,
+      /bare project-root invocation/i,
+      `${output.platform}:${output.routeName} must not advertise an unsupported bare-root invocation`
+    );
     // No fixed Document type semantics for code routes (check the route SHELL,
     // not the embedded coordinator prompt which legitimately mentions Document type).
     const shell = maskEmbeddedSharedContent(output.platform, output.body);
@@ -1415,12 +1447,17 @@ test('generated PR/CODE route content carries generalized target-context text an
   }
 });
 
-test('fixer/coordinator prompts describe the file-set dependency boundary and per-round verification', () => {
+test('fixer/coordinator prompts keep undeclared dependency files read-only and require per-round verification', () => {
   const fixer = read('shared/prompts/fixer.md');
   const coordinator = read('shared/prompts/coordinator.md');
-  // Dependency-file boundary for PR/CODE routes (recorded, in-root, non-excluded, guarded).
-  assert.match(fixer, /recorded necessary dependency file/i);
-  assert.match(fixer, /in-root, non-excluded, and present in the monitored file set/i);
+  // PR/CODE routes cannot currently register new dependency files before begin-fix.
+  assert.match(fixer, /only files inside the resolved target file set/i);
+  assert.match(fixer, /cannot be made within the target context/i);
+  assert.match(fixer, /Not fixed/i);
+  assert.doesNotMatch(fixer, /declared with its path/i);
+  assert.doesNotMatch(fixer, /plus any recorded necessary dependency file/i);
+  assert.doesNotMatch(fixer, /present in the monitored file set before its first write/i);
+  assert.doesNotMatch(coordinator, /recorded necessary dependency files for PR\/CODE routes/i);
   // Per-round verification recording.
   assert.match(fixer, /record the verification command or inspection method used/i);
   assert.match(coordinator, /record the verification command or inspection method used/i);

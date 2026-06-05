@@ -29,7 +29,7 @@ Constraints:
 - reviewer subagent is mandatory and read-only
 - fixer subagent is optional and serial
 - coordinator fixes directly by default
-- only the target context may be modified: the target document for document routes, or the resolved file set plus recorded necessary dependency files for PR/CODE routes
+- only the target context may be modified: the target document for document routes, or the resolved file set for PR/CODE routes
 - reference documents are read-only
 - ref= documents are consistency sources, not mandatory upstream chains
 - no unconfirmed background, requirements, or external facts

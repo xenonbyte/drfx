@@ -484,6 +484,33 @@ test('whole-root CODE blocks when the file set exceeds the file-count limit', as
   assert.equal(result.fileCount, 301);
 });
 
+test('whole-root CODE count gate blocks before reading file contents', async (t) => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-bigset-early-count-'));
+  const rootReal = fs.realpathSync.native(dir);
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (let i = 0; i < 301; i++) fs.writeFileSync(path.join(dir, `f${i}.js`), 'x\n');
+
+  const originalReadFileSync = fs.readFileSync;
+  let readAttempts = 0;
+  fs.readFileSync = function patchedReadFileSync(filePath, ...args) {
+    if (typeof filePath === 'string' && filePath.startsWith(`${rootReal}${path.sep}`)) {
+      readAttempts += 1;
+      throw new Error('whole-root gate should not read file contents before blocking');
+    }
+    return originalReadFileSync.call(this, filePath, ...args);
+  };
+  t.after(() => {
+    fs.readFileSync = originalReadFileSync;
+  });
+
+  const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.reason, 'file-set-too-large');
+  assert.equal(result.fileCount, 301);
+  assert.equal(readAttempts, 0);
+});
+
 test('whole-root CODE blocks when the file set exceeds the byte limit', async (t) => {
   const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-bigbytes-'));
@@ -494,6 +521,33 @@ test('whole-root CODE blocks when the file set exceeds the byte limit', async (t
   assert.equal(result.status, 'blocked');
   assert.equal(result.reason, 'file-set-too-large');
   assert.equal(result.totalBytes, 1_500_001);
+});
+
+test('whole-root CODE byte gate blocks before reading file contents', async (t) => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-bigset-early-bytes-'));
+  const rootReal = fs.realpathSync.native(dir);
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'large.js'), 'x'.repeat(1_500_001));
+
+  const originalReadFileSync = fs.readFileSync;
+  let readAttempts = 0;
+  fs.readFileSync = function patchedReadFileSync(filePath, ...args) {
+    if (typeof filePath === 'string' && filePath.startsWith(`${rootReal}${path.sep}`)) {
+      readAttempts += 1;
+      throw new Error('whole-root gate should not read file contents before blocking');
+    }
+    return originalReadFileSync.call(this, filePath, ...args);
+  };
+  t.after(() => {
+    fs.readFileSync = originalReadFileSync;
+  });
+
+  const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.reason, 'file-set-too-large');
+  assert.equal(result.totalBytes, 1_500_001);
+  assert.equal(readAttempts, 0);
 });
 
 test('whole-root CODE gate applies to dot, project-root, and root-plus-narrower scopes', async (t) => {

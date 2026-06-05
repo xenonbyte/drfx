@@ -42,7 +42,7 @@ Full form: `review-fix-code [scope=<path>...] ...`. `scope=<path>` names a sourc
 
 This route accepts only `scope=<path>` (repeatable), optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`. It does not accept `ref=`, `base=`, `strict`, `normal`, `assurance=`, or `ledger=`.
 
-If a valid `scope=<path>` invocation or bare project-root invocation omits mode, missing mode selects `review-and-fix`. This is a code route: there is no user-facing `assurance=` token. For `review-and-fix`, the route internally materializes `practical` assurance (or `strict-verified` only via the same-flow strict proof path); it never runs `review-and-fix` with advisory assurance, so code auto-fix is not rejected as `advisory-review-and-fix-unsupported`.
+If a valid CODE invocation omits mode, including an omitted `scope=` that reviews the whole project root, missing mode selects `review-and-fix`. This is a code route: there is no user-facing `assurance=` token. For `review-and-fix`, the route internally materializes `practical` assurance (or `strict-verified` only via the same-flow strict proof path); it never runs `review-and-fix` with advisory assurance, so code auto-fix is not rejected as `advisory-review-and-fix-unsupported`.
 
 Help-style or invalid invocations still explain usage only. Do not read scope files, run workflow commands, run probes, create state, or declare a review result for unknown usage or explicit help.
 
