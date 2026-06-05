@@ -306,6 +306,22 @@ test('CODE persistent record-triage reports file-set-too-large drift as blocked 
   assertFileSetTooLargeBlock(result);
 });
 
+test('CODE resume reports file-set-too-large drift with the reason-aware next action', async (t) => {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-code', 'guard=snapshot']);
+  const start = await runWorkflowCommand('start', args, { cwd: root });
+  assert.equal(start.ok, true);
+
+  writeOversizeDrift(root);
+
+  const result = await runWorkflowCommand('start', practicalArgs([
+    'review-fix-code',
+    'guard=snapshot',
+    'resume'
+  ]), { cwd: root });
+  assertFileSetTooLargeBlock(result);
+});
+
 test('PR and CODE file-set fixer context only allows resolved file-set members', async (t) => {
   for (const routeTokens of [
     ['review-fix-pr', 'base=main'],
