@@ -1,6 +1,6 @@
 ---
 name: review-fix-code
-description: Review and fix a source scope (the file set under one or more scope roots) through the shared code-review-loop workflow.
+description: Review and fix a source scope (the file set under one or more scope roots) through the shared review-fix loop workflow.
 ---
 
 # review-fix-code

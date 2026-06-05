@@ -209,7 +209,7 @@ Then coordinate this loop:
 3. Spawn a read-only reviewer subagent and submit its exact output with `drfx workflow record-review review-fix-code <scopeTokens> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --result-stdin --json`.
 4. Triage every finding semantically and submit the triage with `drfx workflow record-triage review-fix-code <scopeTokens> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --triage-stdin --json`.
 5. For accepted or reopened blocking issues, run `drfx workflow begin-fix <targetStateDir> --json`.
-6. Edit only the target directly by default. Use a bounded serial fixer only when lock refresh rules can be satisfied and the issue list is scoped.
+6. Edit only files inside the resolved target file set directly by default; never expand the write scope beyond it. Use a bounded serial fixer only when lock refresh rules can be satisfied and the issue list is scoped.
 7. Run `drfx workflow refresh-lock <targetStateDir> --json` before writes after 60 seconds, before a delegated fixer writes, and before ending a long fix.
 8. Submit a valid fix report with `drfx workflow end-fix <targetStateDir> --fix-report-stdin --json`.
 9. If interruption, blocker, checkpoint, context pressure, or user stop happens before a valid fix report, run `drfx workflow abort-fix <targetStateDir> --status checkpoint --reason checkpoint-requested --next-action <redacted next action> --json` or use `--status blocked` with an allowed blocking reason.
@@ -219,7 +219,7 @@ Then coordinate this loop:
 13. Repeat triage, fix, diff review, and full re-review until terminal status (`pass`, `stopped-with-deferrals`, `stopped-no-progress`, `read-only-findings`, `blocked`, `unsupported`, `externally-changed`, `possible-target-replacement`, user stop, or `checkpoint`).
 14. Finalize only through `drfx workflow finalize <targetStateDir> --final-response-stdin --json`.
 
-Automatic target writes require `review-and-fix` and a selected guard mode: use `guard=git` with a tracked, clean, HEAD-backed git target, or `guard=snapshot` with a valid snapshot rollback anchor. The target-only guard must remain available and parseable before and after writes.
+Automatic file-set writes require `review-and-fix` and a selected guard mode: use `guard=git` with a worktree whose changes stay inside the resolved file set, or `guard=snapshot` with a valid snapshot rollback anchor. The file-set guard must remain available and parseable before and after writes.
 
 ## No-State Read-Only Flow
 

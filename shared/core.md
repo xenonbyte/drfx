@@ -205,8 +205,8 @@ Final status: pass | read-only-clean | read-only-findings | stopped-with-deferra
 Assurance: practical | strict-verified | advisory
 Runtime platform: codex | claude-code | gemini | manual
 Mode: review-and-fix | read-only
-Target: <target path>
-Files changed: <none or exact target path>
+Target: <target path for document routes, or none for PR/CODE file-set routes>
+Files changed: <none, the exact target path for document routes, or comma-separated in-set relative paths for PR/CODE file-set routes>
 Fixed issue IDs: <none or comma-separated ISSUE-### values>
 Verification performed: <redacted summary>
 Deferrals or blockers: <none or redacted issue/blocker summary with owner and next action when applicable>
