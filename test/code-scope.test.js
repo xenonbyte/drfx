@@ -196,12 +196,18 @@ test('code resolver blocks a scope that descends INTO an excluded directory', as
   assert.equal(result.reason, 'excluded-scope');
 });
 
-test('code resolver rejects a scope that points to a file, not a directory', async (t) => {
+test('code resolver accepts a FILE scope and includes it directly', async (t) => {
   const fixture = makeCodeFixture(t);
-  await assert.rejects(
-    resolveCodeTarget({ cwd: fixture.root, scopes: ['src/a.js'] }),
-    (error) => error.code === 'ERR_CODE_SCOPE_NOT_DIRECTORY'
-  );
+  const result = await resolveCodeTarget({ cwd: fixture.root, scopes: ['src/a.js'] });
+  assert.deepEqual(result.files.map((entry) => entry.path), ['src/a.js']);
+  assert.deepEqual(result.normalizedScopes, ['src/a.js']);
+});
+
+test('a file scope nested under a directory scope dedupes into one entry', async (t) => {
+  const fixture = makeCodeFixture(t);
+  const result = await resolveCodeTarget({ cwd: fixture.root, scopes: ['src', 'src/a.js'] });
+  const paths = result.files.map((entry) => entry.path);
+  assert.equal(paths.filter((p) => p === 'src/a.js').length, 1);
 });
 
 test('code resolver de-duplicates overlapping scopes into one file set', async (t) => {

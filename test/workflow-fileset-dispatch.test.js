@@ -346,25 +346,34 @@ test('CODE target key is byte-stable without .drfxignore (empty excludes never e
   assert.equal(emptyFileKey, legacyKey, 'an effectively-empty .drfxignore must keep the pre-feature target key');
 });
 
-test('active .drfxignore entries change the CODE target key; scope-overridden entries do not', (t) => {
+test('.drfxignore pattern text and ORDER are the CODE target identity input', (t) => {
   const root = freshRepo(t);
   const wholeRoot = parsedFor('review-fix-code', ['read-only']);
 
   const baseKey = resolveRouteTargetMetadata(wholeRoot, { cwd: root }).targetKey;
   fs.writeFileSync(path.join(root, '.drfxignore'), 'lib\n');
   const excludedKey = resolveRouteTargetMetadata(wholeRoot, { cwd: root }).targetKey;
-  assert.notEqual(excludedKey, baseKey, 'an active exclude is a different review target');
+  assert.notEqual(excludedKey, baseKey, 'a pattern list is a different review target');
 
-  // scope=lib overrides the covering entry: the effective excludes are empty,
-  // so the key equals the same scoped run without any .drfxignore.
+  // Reordering negation rules changes exclusion semantics (last match wins),
+  // so it must change the key too.
+  fs.writeFileSync(path.join(root, '.drfxignore'), '*.log\n!keep.log\n');
+  const negationLast = resolveRouteTargetMetadata(wholeRoot, { cwd: root }).targetKey;
+  fs.writeFileSync(path.join(root, '.drfxignore'), '!keep.log\n*.log\n');
+  const negationFirst = resolveRouteTargetMetadata(wholeRoot, { cwd: root }).targetKey;
+  assert.notEqual(negationLast, negationFirst, 'pattern ORDER is identity');
+
+  // Patterns are whole-file identity even for scoped runs: glob expansion is
+  // filesystem-dependent, so no static scope-relevance filtering applies.
   const scoped = parsedFor('review-fix-code', ['scope=lib', 'read-only']);
+  fs.writeFileSync(path.join(root, '.drfxignore'), 'lib\n');
   const scopedWithIgnore = resolveRouteTargetMetadata(scoped, { cwd: root }).targetKey;
   fs.rmSync(path.join(root, '.drfxignore'));
   const scopedWithout = resolveRouteTargetMetadata(scoped, { cwd: root }).targetKey;
-  assert.equal(scopedWithIgnore, scopedWithout, 'a scope-overridden entry must not perturb the target key');
+  assert.notEqual(scopedWithIgnore, scopedWithout, 'patterns enter the key even when a scope overrides them at walk time');
 });
 
-test('an invalid .drfxignore entry never throws during identity derivation', (t) => {
+test('a non-existent .drfxignore pattern never throws during identity derivation', (t) => {
   const root = freshRepo(t);
   fs.writeFileSync(path.join(root, '.drfxignore'), 'missing-dir\n');
   const parsed = parsedFor('review-fix-code', ['read-only']);

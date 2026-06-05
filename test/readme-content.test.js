@@ -110,11 +110,17 @@ test('both READMEs list every built-in CODE excluded directory', () => {
   }
 });
 
-test('both READMEs state that .gitignore is never read by CODE discovery', () => {
+test('both READMEs state that version-control-ignored files are excluded via git', () => {
   const en = read('README.md');
   const zh = read('README.zh-CN.md');
-  assert.match(en, /`\.gitignore` is never read/);
-  assert.match(zh, /不读取 `\.gitignore`/);
+  assert.match(en, /Version-control-ignored files are excluded automatically/);
+  assert.match(zh, /版本忽略的文件自动排除/);
+  // git's own semantics: tracked files are never version-ignored.
+  assert.match(en, /tracked files are never version-ignored/i);
+  assert.match(zh, /tracked 文件永远不会被版本忽略/);
+  // Non-git roots skip this source instead of failing.
+  assert.match(en, /non-git root/i);
+  assert.match(zh, /非 git 根目录/);
 });
 
 test('both READMEs state explicit scope= runs are not capped', () => {
@@ -130,17 +136,26 @@ test('both READMEs document the .drfxignore contract', () => {
   const literal = `\`${DRFXIGNORE_FILENAME}\``;
   assert.ok(en.includes(literal), `README.md missing ${literal}`);
   assert.ok(zh.includes(literal), `README.zh-CN.md missing ${literal}`);
-  // One root-relative directory path per line; comments; no globs/negation.
-  assert.match(en, /one root-relative directory path per line/i);
-  assert.match(zh, /每行一个 root-relative 目录路径/);
-  assert.match(en, /No globs and no negation/i);
-  assert.match(zh, /无 glob、无否定/);
-  // Explicit scope= overrides covering entries; the override is never silent.
-  assert.match(en, /scope=[\s\S]{0,200}overrides[\s\S]{0,200}entry|entry[\s\S]{0,200}overrides/i);
-  assert.match(zh, /scope=[\s\S]{0,120}失效/);
-  // Active entries join the review-target identity.
-  assert.match(en, /\.drfxignore[\s\S]{0,400}identity|identity[\s\S]{0,400}\.drfxignore/i);
-  assert.match(zh, /\.drfxignore[\s\S]{0,400}身份|身份[\s\S]{0,400}\.drfxignore/);
+  // .drfxignore shares .gitignore syntax: negation, anchoring, globs.
+  assert.match(en, /\.drfxignore[\s\S]{0,200}`\.gitignore` syntax/i);
+  assert.match(zh, /语法与 `\.gitignore` 一致/);
+  assert.match(en, /last-match-wins/i);
+  assert.match(zh, /后匹配规则胜出|后匹配胜出/);
+  // Explicit scope= always wins over every ignore source, never silently.
+  assert.match(en, /Explicit `scope=` always wins/i);
+  assert.match(zh, /显式 `scope=` 永远优先/);
+  assert.match(en, /reported, never silent/i);
+  assert.match(zh, /覆盖会被报告，绝不静默/);
+  // Pattern lines (order included) join the review-target identity.
+  assert.match(en, /pattern lines[\s\S]{0,200}identity|identity[\s\S]{0,200}pattern/i);
+  assert.match(zh, /pattern 行[\s\S]{0,80}身份/);
+});
+
+test('both READMEs document directory-or-file scopes for review-fix-code', () => {
+  const en = read('README.md');
+  const zh = read('README.zh-CN.md');
+  assert.match(en, /scope=<path>` names a directory to walk or a single file/i);
+  assert.match(zh, /指定要遍历的目录或要直接纳入的单个文件/);
 });
 
 // ---------------------------------------------------------------------------

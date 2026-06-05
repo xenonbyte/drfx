@@ -618,17 +618,24 @@ test('code-kind manifest round-trips User excludes and defaults absent label to 
   assert.deepEqual(parseManifestV2(legacy).userExcludes, []);
 });
 
-test('code-kind manifest sorts and validates User excludes like other path lists', () => {
-  const unsorted = formatManifestV2(makeCodeManifest({ userExcludes: ['docs', 'design/archive'] }));
-  const sorted = formatManifestV2(makeCodeManifest({ userExcludes: ['design/archive', 'docs'] }));
-  assert.equal(unsorted, sorted);
+test('code-kind manifest keeps User excludes as ORDERED gitignore patterns', () => {
+  // Order is semantic (negation is last-match-wins): never sorted.
+  const ordered = formatManifestV2(makeCodeManifest({ userExcludes: ['*.log', '!keep.log'] }));
+  const lines = ordered.split('\n');
+  const start = lines.indexOf('User excludes:');
+  assert.deepEqual(lines.slice(start + 1, start + 3), ['- *.log', '- !keep.log']);
 
-  assert.throws(
-    () => formatManifestV2(makeCodeManifest({ userExcludes: ['/abs/path'] })),
-    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED'
+  const reversed = formatManifestV2(makeCodeManifest({ userExcludes: ['!keep.log', '*.log'] }));
+  assert.notEqual(ordered, reversed, 'pattern order must survive the manifest');
+
+  // gitignore pattern text is NOT path-validated: anchored and glob forms are
+  // legal entries; exact duplicates collapse; empty entries are rejected.
+  const parsed = parseManifestV2(
+    formatManifestV2(makeCodeManifest({ userExcludes: ['/dist', '**/logs', '/dist'] }))
   );
+  assert.deepEqual(parsed.userExcludes, ['/dist', '**/logs']);
   assert.throws(
-    () => formatManifestV2(makeCodeManifest({ userExcludes: ['../escape'] })),
+    () => formatManifestV2(makeCodeManifest({ userExcludes: ['   '] })),
     (error) => error.code === 'ERR_STATE_VALIDATION_FAILED'
   );
 });

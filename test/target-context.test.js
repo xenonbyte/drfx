@@ -605,7 +605,8 @@ test('.drfxignore excludes a directory from the whole-root CODE file set', async
   const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
   assert.deepEqual(result.files.map((file) => file.path), ['.drfxignore', 'lib/a.js']);
   assert.deepEqual(result.userExcludes, ['docs']);
-  assert.deepEqual(result.overriddenUserExcludes, []);
+  assert.deepEqual(result.scopeIgnoreOverrides, []);
+  assert.equal(result.versionIgnoreSource, 'none', 'temp fixture is not a git worktree');
 });
 
 test('.drfxignore shrinks the whole-root file set below the cap', async (t) => {
@@ -622,14 +623,23 @@ test('.drfxignore shrinks the whole-root file set below the cap', async (t) => {
   assert.deepEqual(result.userExcludes, ['docs']);
 });
 
-test('explicit scope= overrides a covering .drfxignore entry, reported not silent', async (t) => {
+test('explicit scope= overrides a covering .drfxignore pattern, reported not silent', async (t) => {
   const dir = makeIgnoreFixture(t, 'drfx-ignore-override-');
   fs.writeFileSync(path.join(dir, '.drfxignore'), 'docs\n');
 
   const result = await resolveCodeTarget({ cwd: dir, scopes: ['docs'] });
   assert.deepEqual(result.files.map((file) => file.path), ['docs/big.md']);
-  assert.deepEqual(result.userExcludes, []);
-  assert.deepEqual(result.overriddenUserExcludes, ['docs']);
+  assert.deepEqual(result.userExcludes, ['docs'], 'pattern text stays whole-file identity');
+  assert.deepEqual(result.scopeIgnoreOverrides, ['docs']);
+});
+
+test('an explicit FILE scope wins over a .drfxignore pattern that covers it', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-file-scope-');
+  fs.writeFileSync(path.join(dir, '.drfxignore'), '*.md\n');
+
+  const result = await resolveCodeTarget({ cwd: dir, scopes: ['docs/big.md'] });
+  assert.deepEqual(result.files.map((file) => file.path), ['docs/big.md']);
+  assert.deepEqual(result.scopeIgnoreOverrides, ['docs/big.md']);
 });
 
 test('a .drfxignore entry inside an explicit scope prunes within that scope', async (t) => {
@@ -643,18 +653,18 @@ test('a .drfxignore entry inside an explicit scope prunes within that scope', as
   assert.deepEqual(result.userExcludes, ['lib/legacy']);
 });
 
-test('.drfxignore entries disjoint from the scopes stay out of the active list', async (t) => {
+test('.drfxignore patterns disjoint from the scopes leave the scoped set intact', async (t) => {
   const dir = makeIgnoreFixture(t, 'drfx-ignore-disjoint-');
   fs.writeFileSync(path.join(dir, '.drfxignore'), 'docs\n');
 
   const result = await resolveCodeTarget({ cwd: dir, scopes: ['lib'] });
   assert.deepEqual(result.files.map((file) => file.path), ['lib/a.js']);
-  assert.deepEqual(result.userExcludes, []);
-  assert.deepEqual(result.overriddenUserExcludes, []);
+  assert.deepEqual(result.userExcludes, ['docs'], 'pattern text is whole-file identity');
+  assert.deepEqual(result.scopeIgnoreOverrides, []);
 });
 
-test('nested and built-in-covered .drfxignore entries collapse out of the active list', async (t) => {
-  const dir = makeIgnoreFixture(t, 'drfx-ignore-collapse-');
+test('.drfxignore patterns are kept verbatim in file order', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-verbatim-');
   fs.mkdirSync(path.join(dir, 'docs', 'plans'));
   fs.writeFileSync(path.join(dir, 'docs', 'plans', 'p.md'), 'p\n');
   fs.mkdirSync(path.join(dir, 'node_modules'));
@@ -662,36 +672,24 @@ test('nested and built-in-covered .drfxignore entries collapse out of the active
   fs.writeFileSync(path.join(dir, '.drfxignore'), 'docs\ndocs/plans\nnode_modules/pkg\n');
 
   const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
-  assert.deepEqual(result.userExcludes, ['docs']);
+  assert.deepEqual(result.userExcludes, ['docs', 'docs/plans', 'node_modules/pkg']);
   assert.deepEqual(result.files.map((file) => file.path), ['.drfxignore', 'lib/a.js']);
 });
 
-test('.drfxignore strict validation fails loudly with the offending line', async (t) => {
-  const dir = makeIgnoreFixture(t, 'drfx-ignore-strict-');
+test('.drfxignore uses gitignore syntax: globs, negation, and non-existent patterns', async (t) => {
+  const dir = makeIgnoreFixture(t, 'drfx-ignore-gitignore-syntax-');
+  fs.writeFileSync(path.join(dir, 'lib', 'debug.log'), 'log\n');
+  fs.writeFileSync(path.join(dir, 'lib', 'keep.log'), 'keep\n');
+  // Globs, negation (last match wins), and a pattern matching nothing — all
+  // legal gitignore forms; nothing requires entries to exist on disk.
+  fs.writeFileSync(path.join(dir, '.drfxignore'), '*.log\n!keep.log\nno-such-dir/\n');
 
-  fs.writeFileSync(path.join(dir, '.drfxignore'), 'missing-dir\n');
-  await assert.rejects(
-    () => resolveCodeTarget({ cwd: dir, scopes: [] }),
-    (error) => error.code === 'ERR_CODE_USER_EXCLUDE_MISSING' && /\.drfxignore line 1/.test(error.message)
+  const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
+  assert.deepEqual(
+    result.files.map((file) => file.path),
+    ['.drfxignore', 'docs/big.md', 'lib/a.js', 'lib/keep.log']
   );
-
-  fs.writeFileSync(path.join(dir, '.drfxignore'), '# comment\n../outside\n');
-  await assert.rejects(
-    () => resolveCodeTarget({ cwd: dir, scopes: [] }),
-    (error) => error.code === 'ERR_CODE_USER_EXCLUDE_OUTSIDE_ROOT' && /\.drfxignore line 2/.test(error.message)
-  );
-
-  fs.writeFileSync(path.join(dir, '.drfxignore'), 'lib/a.js\n');
-  await assert.rejects(
-    () => resolveCodeTarget({ cwd: dir, scopes: [] }),
-    (error) => error.code === 'ERR_CODE_USER_EXCLUDE_NOT_DIRECTORY'
-  );
-
-  fs.writeFileSync(path.join(dir, '.drfxignore'), '.\n');
-  await assert.rejects(
-    () => resolveCodeTarget({ cwd: dir, scopes: [] }),
-    (error) => error.code === 'ERR_CODE_USER_EXCLUDE_ROOT'
-  );
+  assert.deepEqual(result.userExcludes, ['*.log', '!keep.log', 'no-such-dir/']);
 });
 
 test('CODE identity carries userExcludes strictly: edited excludes are stale, same set stays resumable', async (t) => {
@@ -742,4 +740,64 @@ test('a symlinked .drfxignore is refused in strict resolution and inert for iden
     () => resolveCodeTarget({ cwd: dir, scopes: [] }),
     (error) => error.code === 'ERR_CODE_USER_EXCLUDE_CONFIG_SYMLINK'
   );
+});
+
+// ---------------------------------------------------------------------------
+// Version ignores — git-ignored files are excluded from CODE review
+// ---------------------------------------------------------------------------
+
+function makeGitIgnoreFixture(t) {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-vcs-ignore-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  git(dir, ['init', '-b', 'main']);
+  fs.mkdirSync(path.join(dir, 'lib'));
+  fs.mkdirSync(path.join(dir, 'generated'));
+  fs.writeFileSync(path.join(dir, 'lib', 'a.js'), 'a\n');
+  fs.writeFileSync(path.join(dir, 'lib', 'debug.log'), 'log\n');
+  fs.writeFileSync(path.join(dir, 'generated', 'out.js'), 'gen\n');
+  fs.writeFileSync(path.join(dir, 'tracked.log'), 'tracked\n');
+  fs.writeFileSync(path.join(dir, '.gitignore'), '*.log\ngenerated/\n');
+  // tracked.log matches *.log but is COMMITTED: git never ignores tracked files.
+  git(dir, ['add', '-f', 'tracked.log']);
+  git(dir, ['add', '.gitignore', 'lib/a.js']);
+  git(dir, ['commit', '-m', 'init']);
+  return dir;
+}
+
+test('git-ignored files and directories are excluded from the CODE file set', async (t) => {
+  const dir = makeGitIgnoreFixture(t);
+  const result = await resolveCodeTarget({ cwd: dir, scopes: [] });
+  assert.equal(result.versionIgnoreSource, 'git');
+  assert.deepEqual(
+    result.files.map((file) => file.path),
+    ['.gitignore', 'lib/a.js', 'tracked.log'],
+    'untracked *.log and generated/ are version-ignored; the TRACKED .log stays reviewable'
+  );
+});
+
+test('nested .gitignore files are honored through the git query', async (t) => {
+  const dir = makeGitIgnoreFixture(t);
+  fs.mkdirSync(path.join(dir, 'lib', 'cache'));
+  fs.writeFileSync(path.join(dir, 'lib', 'cache', 'c.js'), 'c\n');
+  fs.writeFileSync(path.join(dir, 'lib', '.gitignore'), 'cache/\n');
+
+  const result = await resolveCodeTarget({ cwd: dir, scopes: ['lib'] });
+  assert.deepEqual(result.files.map((file) => file.path), ['lib/.gitignore', 'lib/a.js']);
+});
+
+test('an explicit scope into a git-ignored directory wins and is reported', async (t) => {
+  const dir = makeGitIgnoreFixture(t);
+  const result = await resolveCodeTarget({ cwd: dir, scopes: ['generated'] });
+  assert.deepEqual(result.files.map((file) => file.path), ['generated/out.js']);
+  assert.deepEqual(result.scopeIgnoreOverrides, ['generated']);
+});
+
+test('the version-ignore git queries are read-only plumbing only', async (t) => {
+  const dir = makeGitIgnoreFixture(t);
+  const commandLog = [];
+  await resolveCodeTarget({ cwd: dir, scopes: [], commandLog });
+  assert.ok(commandLog.length > 0);
+  for (const command of commandLog) {
+    assert.match(command, /^git (rev-parse|ls-files) /);
+  }
 });
