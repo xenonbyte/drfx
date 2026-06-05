@@ -12,7 +12,7 @@ Review target: source scope file set
 Package version: 0.0.0-snapshot
 
 Use this Codex skill with optional `scope=<path>` tokens (repeat `scope=<path>` for multiple roots; omit scope to review the project root), optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`.
-When a valid scope=<path> or bare project root is present and mode is omitted, Codex selects `review-and-fix`.
+When mode is omitted, Codex selects `review-and-fix`.
 This code route exposes no `assurance=` token; for `review-and-fix` it internally materializes `practical` assurance, so auto-fix is not rejected as `advisory-review-and-fix-unsupported`.
 It does not accept `target=`, `ref=`, `strict`, `normal`, `assurance=`, or `ledger=`.
 The generated route must materialize effective mode, assurance, and guard before workflow calls; never pass omitted values through to `drfx workflow`.
