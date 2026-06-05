@@ -812,3 +812,56 @@ test('loadRouteRuleContext with empty PR.md files skips those layers', (t) => {
   assert.ok(!names.includes('user-global-pr-rules'), 'empty user PR.md must not produce a layer');
   assert.ok(!names.includes('project-local-pr-rules'), 'empty project PR.md must not produce a layer');
 });
+
+test('loadRouteRuleContext warns on unknown .md and does not throw (PR/CODE normal policy)', (t) => {
+  const fixture = makeRulesFixture(t);
+  fs.writeFileSync(path.join(fixture.projectRoot, '.drfx', 'rules', 'CODE.md'), 'Project code rules\n');
+  fs.writeFileSync(path.join(fixture.projectRoot, '.drfx', 'rules', 'NOTES.md'), 'unrelated\n');
+
+  const context = loadRouteRuleContext({
+    routeKind: 'code',
+    builtInRubric: 'BUILTIN',
+    homeDir: fixture.homeDir,
+    projectRoot: fixture.projectRoot
+  });
+
+  assert.ok(Array.isArray(context.warnings), 'warnings must be returned');
+  assert.equal(context.warnings.length, 1);
+  assert.equal(context.warnings[0].code, 'WARN_UNKNOWN_CUSTOM_RULE_FILE');
+  assert.match(context.warnings[0].filePath, /NOTES\.md$/);
+  // The known CODE.md project layer still loaded.
+  assert.ok(context.layers.some((l) => l.source === 'project-local-code-rules'));
+});
+
+test('loadRouteRuleContext still rejects an unknown-named .md symlink under normal policy', (t) => {
+  const fixture = makeRulesFixture(t);
+  const realOutside = path.join(fixture.root, 'evil.md');
+  fs.writeFileSync(realOutside, 'x\n');
+  const linkPath = path.join(fixture.projectRoot, '.drfx', 'rules', 'NOTES.md');
+  if (!symlinkOrSkip(t, realOutside, linkPath, 'file')) return;
+
+  assert.throws(
+    () => loadRouteRuleContext({
+      routeKind: 'code',
+      builtInRubric: 'BUILTIN',
+      homeDir: fixture.homeDir,
+      projectRoot: fixture.projectRoot
+    }),
+    /must not be a symlink/i
+  );
+});
+
+test('loadRouteRuleContext still rejects an unknown-named .md directory under normal policy', (t) => {
+  const fixture = makeRulesFixture(t);
+  fs.mkdirSync(path.join(fixture.projectRoot, '.drfx', 'rules', 'NOTES.md'));
+
+  assert.throws(
+    () => loadRouteRuleContext({
+      routeKind: 'code',
+      builtInRubric: 'BUILTIN',
+      homeDir: fixture.homeDir,
+      projectRoot: fixture.projectRoot
+    }),
+    /not a file|regular file/i
+  );
+});

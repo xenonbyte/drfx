@@ -390,6 +390,8 @@ Rule precedence（code routes — 无 COMMON layer）：
 3. user-global PR.md 或 CODE.md rules
 4. project-local PR.md 或 CODE.md rules
 
+对于 code routes（`review-fix-pr`、`review-fix-code`），`rules/` 下的未知 Markdown 文件只产生警告、不阻塞：这两个 route 不暴露 `strict|normal` token，始终使用 normal 策略。symlink 或非常规 `.md` 条目仍会被拒绝。
+
 Project-local rules 比 user-global rules 更具体。Custom rules 不能覆盖 workflow hard constraints。
 
 ## State and Resume

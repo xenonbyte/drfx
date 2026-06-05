@@ -390,6 +390,8 @@ Rule precedence (code routes — no COMMON layer):
 3. user-global PR.md or CODE.md rules
 4. project-local PR.md or CODE.md rules
 
+Unknown Markdown files under `rules/` are a warning for code routes (`review-fix-pr`, `review-fix-code`) and do not block: these routes expose no `strict|normal` token and always use the normal policy. Symlinked or non-regular `.md` entries are still rejected.
+
 Project-local rules are more specific than user-global rules. Custom rules cannot override workflow hard constraints.
 
 ## State and Resume
