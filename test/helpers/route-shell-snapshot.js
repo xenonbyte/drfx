@@ -93,11 +93,57 @@ function stripAdditiveRounds(text) {
     .replace(/ rounds=<[^>]+>/g, '');
 }
 
+/**
+ * Return the {{EMBEDDED_SHARED_CONTENT}} expansion (heading/marker + body) that
+ * maskEmbeddedSharedContent() replaces. This is the prompt/rubric/core text that
+ * the shell snapshot intentionally masks out, snapshotted here so any wording
+ * change in shared prompts or rubrics is forced through explicit review.
+ *
+ * Inverse of maskEmbeddedSharedContent(): the two functions share the same
+ * markers and slice boundaries and MUST stay in sync — edit them together.
+ */
+function extractEmbeddedSharedContent(platform, rendered) {
+  if (platform === 'claude' || platform === 'codex') {
+    const heading = '## Embedded Shared Content';
+    const index = rendered.indexOf(heading);
+    if (index === -1) {
+      throw new Error(`embedded extract: missing "${heading}" marker for ${platform}`);
+    }
+    return rendered.slice(index);
+  }
+
+  if (platform === 'gemini') {
+    const marker = 'Embedded shared content:';
+    const markerIndex = rendered.indexOf(marker);
+    if (markerIndex === -1) {
+      throw new Error('embedded extract: missing "Embedded shared content:" marker for gemini');
+    }
+    const closingIndex = rendered.indexOf("\n'''", markerIndex);
+    if (closingIndex === -1) {
+      throw new Error('embedded extract: missing closing triple-quote after gemini embedded content');
+    }
+    return rendered.slice(markerIndex, closingIndex);
+  }
+  throw new Error(`embedded extract: unsupported platform: ${platform}`);
+}
+
+function embeddedSnapshotPath(platform, routeName) {
+  const extension = EXTENSION_BY_PLATFORM[platform];
+  return path.join(__dirname, '..', 'fixtures', 'embedded', platform, `${routeName}.${extension}`);
+}
+
+function readEmbeddedSnapshot(platform, routeName) {
+  return fs.readFileSync(embeddedSnapshotPath(platform, routeName), 'utf8');
+}
+
 module.exports = {
   SENTINEL,
   EXTENSION_BY_PLATFORM,
   maskEmbeddedSharedContent,
   snapshotPath,
   readSnapshot,
-  stripAdditiveRounds
+  stripAdditiveRounds,
+  extractEmbeddedSharedContent,
+  embeddedSnapshotPath,
+  readEmbeddedSnapshot
 };

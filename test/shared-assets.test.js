@@ -10,7 +10,9 @@ const { listDocumentRoutes, listRoutes } = require('../lib/routes');
 const {
   maskEmbeddedSharedContent,
   readSnapshot,
-  stripAdditiveRounds
+  stripAdditiveRounds,
+  extractEmbeddedSharedContent,
+  readEmbeddedSnapshot
 } = require('./helpers/route-shell-snapshot');
 
 const ROOT = path.join(__dirname, '..');
@@ -1403,4 +1405,54 @@ test('fixer/coordinator prompts describe the file-set dependency boundary and pe
   assert.match(coordinator, /record the verification command or inspection method used/i);
   // Never PASS from read-only/advisory/diff-review-only/unverified.
   assert.match(coordinator, /Never claim PASS from a read-only, advisory-only, diff-review-only, or otherwise unverified path/i);
+});
+
+test('embedded shared content equals golden snapshots (prompts/rubrics/core)', () => {
+  const routeNames = listRoutes().map((route) => route.routeName);
+  for (const platform of ['claude', 'codex', 'gemini']) {
+    for (const routeName of routeNames) {
+      const rendered = renderPlatformRoute(platform, routeName, { packageVersion: '0.0.0-snapshot' });
+      const embedded = extractEmbeddedSharedContent(platform, rendered);
+      const golden = readEmbeddedSnapshot(platform, routeName);
+      assert.equal(
+        embedded,
+        golden,
+        `${platform}:${routeName} embedded shared content drifted from test/fixtures/embedded — regenerate intentionally after reviewing the diff`
+      );
+    }
+  }
+});
+
+test('codex generated skills copy shared assets byte-for-byte from source', () => {
+  const codexSkills = generatePlatformFiles('codex', { packageVersion: '0.0.0-snapshot' });
+  const routesByName = new Map(listRoutes().map((route) => [route.routeName, route]));
+
+  function expectedSharedPathsForRoute(route) {
+    const paths = ['shared/core.md', 'shared/long-task.md'];
+    if (route.routeKind === 'document') paths.push('shared/rubrics/common.md');
+    if (route.rubric) paths.push(`shared/rubrics/${route.rubric}.md`);
+    paths.push(
+      'shared/prompts/reviewer.md',
+      'shared/prompts/fixer.md',
+      'shared/prompts/coordinator.md'
+    );
+    return paths.map((entry) => entry.split('/').join(path.sep)).sort();
+  }
+
+  for (const skill of codexSkills) {
+    const route = routesByName.get(skill.routeName);
+    const copiedFiles = skill.files.filter((entry) => entry.sourcePath);
+    assert.deepEqual(
+      copiedFiles.map((entry) => entry.relativePath).sort(),
+      expectedSharedPathsForRoute(route),
+      `${skill.routeName} copied shared asset path set drifted`
+    );
+    for (const file of copiedFiles) {
+      assert.equal(
+        file.content,
+        read(file.sourcePath),
+        `${skill.routeName}:${file.relativePath} copied shared asset drifted from source`
+      );
+    }
+  }
 });

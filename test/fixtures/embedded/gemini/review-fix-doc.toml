@@ -1,0 +1,751 @@
+Embedded shared content:
+
+<!-- shared/core.md -->
+
+# Document Review Loop Core
+
+This file is the shared workflow source for every route: the document routes `review-fix-spec`, `review-fix-plan`, `review-fix-design`, and `review-fix-doc`, and the file-set routes `review-fix-pr` and `review-fix-code`. Document entry skills fix the document type; users must not pass type. File-set routes (PR/CODE) have no fixed document type and resolve a file set rather than a single target document; the loop, guards, and terminal states below apply to that file set as the target context.
+
+## Loop
+
+Canonical loop:
+
+```text
+review -> triage -> fix -> diff review -> full re-review -> repeat until PASS or a defined terminal/pause state
+```
+
+The initial `review` and every `full re-review` must inspect the whole target document through an isolated read-only reviewer task. A `diff review` after fixes is mandatory, but it is only a gate before the next full-document re-review.
+
+The fix loop is bounded: after a deterministic fix-attempt cap (default 5 fixes per target), or when a previously fixed high/medium finding recurs, the loop stops as `stopped-no-progress` rather than fixing indefinitely.
+
+## V2 Operational Boundary
+
+The generated route coordinates host LLM work with deterministic `drfx workflow ...` commands. The CLI validates inputs, guards, state, tokens, and machine payload shapes. It does not perform semantic review, semantic triage, target edits, diff judgment, or final coordinator agreement.
+
+Generated Codex and Claude Code routes default a valid target invocation to `review-and-fix assurance=practical` when mode and assurance are omitted. Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code. Generated Gemini routes default a valid target invocation to `read-only assurance=advisory`. Help-style or invalid invocations explain usage only and must not read target/reference bodies, run workflow commands, run probes, create state, or declare a review result.
+
+Usage prefers a bare path target: `review-fix-spec docs/spec.md`. The full form `target=<path>` remains supported; a bare path is shorthand for `target=<path>`. `guard=git|snapshot` selects the rollback and target-only guard family. `guard=snapshot` monitors the target, explicit `ref=` documents, ordinary project files, and unrelated file symlinks as opaque entries. Well-known infrastructure directories (`.git`, `node_modules`, `.pnpm-store`, `.yarn`, `.cache`, `dist`, `build`, `coverage`) are excluded from monitoring unless the target or a reference lives inside one; when any directory is excluded the guard reports `monitorScope: project-tree-files-and-references-excluding-infrastructure`. Directory symlinks are not supported and block the guard. Opaque file-symlink entries are checked by symlink metadata and `readlink` target text, but they do not detect writes made through the symlink to its resolved target; directory symlinks remain unsupported for that reason.
+
+Default user output uses concise Route Output and is user-focused. It must not print handoff blocks, raw workflow JSON, probe transcripts, prompt text, raw subagent transcripts, internal issue IDs, or the final-response machine block. The explicit `debug` route token may surface redacted workflow audit details and the redacted final-response machine block after validation, but it must not print raw document bodies, raw prompts, raw transcripts, secrets, tokens, or raw logs.
+
+`assurance=practical|strict-verified|advisory` selects runtime assurance. `strict` and `normal` select review strictness only.
+
+## Reference Conformance
+
+Reference documents supplied through `ref=` are consistency sources, not mandatory upstream chains. A `ref=design.md` does not require a SPEC target to include `Design Coverage Import`; a `ref=spec.md` does not require a PLAN target to include `SPEC-to-task mapping`.
+
+Use references to check whether the target contradicts declared facts, scope, non-goals, behavior, constraints, risks, acceptance expectations, terminology, or safety boundaries.
+
+Blocking reference conflict findings are limited to:
+
+- the target directly conflicts with a reference on a material point;
+- the target introduces an unsupported new requirement, product decision, design decision, or execution decision while presenting it as reference-backed;
+- the target omits a reference constraint that is required for the target document's stated purpose;
+- execution or implementation following the target would violate a reference;
+- the target makes a complete coverage claim for a reference but materially omits required referenced content.
+
+These are not blocking by default:
+
+- missing trace tables;
+- missing stable IDs;
+- missing coverage matrices;
+- missing `Design Coverage Import`;
+- missing `SPEC-to-task mapping`;
+- missing DESIGN references in SPEC documents;
+- missing SPEC references in PLAN documents.
+
+Treat those structural items as low-severity improvements unless the target document itself makes a complete coverage claim, the user's custom rules require them, or their absence makes the document unverifiable for its own stated purpose.
+
+## Roles
+
+- Coordinator: owns the loop, reads instructions and rules, dispatches reviewer work, triages findings, manages target state, applies fixes by default, performs diff review, and decides terminal status.
+- Reviewer: mandatory isolated read-only critic for every initial review and full re-review. The reviewer reports `PASS` or structured `FAIL` findings and must not edit files.
+- Fixer: the coordinator by default. A fixer subagent is optional, bounded, serial, and may modify only the target document for accepted issue IDs.
+
+The coordinator is the only role allowed to mark workflow PASS.
+
+## PASS Criteria
+
+General PASS requires:
+
+- The relevant full-document review returns `PASS`, or returns only low issues that the coordinator explicitly accepts as non-blocking in normal mode.
+- The coordinator independently agrees with the reviewer result.
+- No unresolved high or medium issues remain.
+- Accepted high and medium issues are fixed, merged into fixed issues, downgraded with rationale, or rejected with rationale.
+- Deferred high or medium issues are not treated as PASS; they stop as `stopped-with-deferrals`.
+- Required sections contain no blocking placeholders such as `TBD`, `TODO`, `later`, or "to be discussed".
+- Scope, constraints, assumptions, risks, and verification path are clear enough for the selected document type.
+- Reference documents, when provided, have been checked for material conformance without treating them as mandatory upstream chains.
+
+Strict PASS additionally requires unresolved low issues to be fixed or explicitly accepted as non-blocking and carried into later reviewer context.
+
+## Terminal And Pause States
+
+The loop stops only at one of these states:
+
+- `pass`: the full-document review gate passes and the coordinator agrees. On `finalize`, `pass` archives its target-local state directory under `.drfx/archived/` so the next run starts fresh without `reset`.
+- `read-only-clean`: read-only mode found no blocking findings under selected strictness; this is not workflow PASS. On `finalize`, `read-only-clean` archives its target-local state directory under `.drfx/archived/` so the next run starts fresh without `reset`.
+- `stopped-with-deferrals`: high or medium issues are intentionally deferred with reason and owner; the internal workflow payload may include redacted issue IDs, reasons, owners, and next action. Default user output uses concise Unfixed/Next without internal issue IDs; debug may show redacted internal IDs and audit details.
+- `stopped-no-progress`: the fix loop hit the fix-attempt cap or a recurring unresolved finding; high or medium issues remain. This is a pause state, not PASS.
+- `read-only-findings`: read-only mode found issues that block PASS under the selected strictness.
+- `blocked`: the workflow cannot continue until a concrete blocker is resolved.
+- `unsupported`: the runtime lacks verified reviewer isolation for automatic review-fix work.
+- `externally-changed`: the target changed outside the current lock or known fix round.
+- `possible-target-replacement`: the same path appears to contain a different document.
+- user stop: the user explicitly stops the loop.
+- `checkpoint`: the task pauses with durable target-local state and a concrete next action.
+
+Blocking reasons include `reviewer-mutated-file`, `lock-held`, `corrupt-lock`, `lock-release-failed`, `reviewer-output-unparseable`, `fingerprint-guard-unavailable`, `fingerprint-guard-output-invalid`, `state-validation-failed`, `state-token-too-large`, `final-validation-failed`, `target-only-guard-unavailable`, `unexpected-worktree-change`, `reference-mutated-file`, `fix-report-mismatch`, `diff-review-failed`, `rollback-unavailable`, and `unsafe-handoff-file`. Status reasons include `none`, `strict-proof-validation-failed`, `target-fingerprint-mismatch`, `manifest-fingerprint-mismatch`, `stale-fingerprint-mismatch`, `same-path-replacement-suspected`, `read-only-blocking-findings`, `deferred-findings`, `no-progress-detected`, `unsupported-runtime-capability`, and `checkpoint-requested`.
+
+Blocker wording must distinguish guard failures: `rollback-unavailable` means the target lacks a clean rollback anchor, `target-only-guard-unavailable` means the target-only guard is unavailable or unparseable, and `unexpected-worktree-change` means non-target worktree changes make automatic fixing unsafe.
+
+Unknown Markdown rule files under `.drfx/rules/` or `~/.drfx/rules/` are a normal-mode warning and a strict-mode blocker before target state is written.
+
+## Reviewer Guard
+
+Before dispatching a reviewer, record SHA-256, file size, and modified timestamp for the target and all reference documents. After the reviewer returns, recompute the same fingerprints.
+
+If any target or reference fingerprint changed and the coordinator did not intentionally write the file, stop as `blocked: reviewer-mutated-file`. Report the changed path and ask for user confirmation before restoring, continuing, or discarding state. Do not fix or claim PASS after a reviewer mutation.
+
+Prompt-only read-only instructions are not enough for automatic PASS. Automatic review-fix work requires verified isolated reviewer execution, verified reviewer write blocking, and an available fingerprint guard. Runtimes without those capabilities may provide advisory review only.
+
+## Triage
+
+The coordinator triages every reviewer finding before fixing:
+
+- `accepted`: valid and should be fixed.
+- `merged`: duplicate or covered by another issue.
+- `downgraded`: valid but lower severity, with rationale.
+- `rejected`: incorrect, out of scope, or based on a false premise, with rationale.
+- `deferred`: valid but intentionally not fixed now, with reason and owner.
+
+Accepted high and medium issues block PASS until resolved. Deferred high and medium issues stop as `stopped-with-deferrals`, not PASS. Low issues are non-blocking in normal mode unless they affect the objective; low issues block strict PASS unless explicitly accepted as non-blocking.
+
+Triage payload schema:
+
+```text
+Triage:
+- reviewer_id: R001
+  issue_id: ISSUE-001
+  decision: accepted | reopened | merged | downgraded | rejected | deferred
+  severity: high | medium | low
+  original_severity: high | medium | low | none
+  rationale: <required except plain accepted with non_blocking=false>
+  merged_into: ISSUE-### | none
+  deferred_owner: <owner or none>
+  deferred_next_action: <next action or none>
+  non_blocking: true | false
+```
+
+## Fixer Constraints
+
+Fix accepted issues directly by default. Use one serial fixer subagent only when the accepted issue list is bounded, every issue has a clear ID and location, and the fixer can work from a compact context pack.
+
+Fixers must:
+
+- Modify only the target document.
+- Treat reference documents as read-only.
+- Fix only coordinator-accepted issue IDs unless the coordinator expands scope.
+- Preserve intent, terminology, and structure where possible.
+- Avoid broad rewrites unless a confirmed issue requires structural repair.
+- Not invent background, goals, requirements, external facts, product decisions, or risk decisions.
+- Redact sensitive values as `[REDACTED:<kind>]` in reports, ledgers, receipts, and final responses.
+
+## Diff Review
+
+After each fix round, the coordinator reviews the changed target and confirms:
+
+- Every claimed fix maps to an accepted issue.
+- No unrelated scope was introduced.
+- Terminology and structure remain coherent.
+- No required-section placeholder was added.
+- Sensitive values were not copied into workflow state or responses.
+- Every claimed fix actually resolves the original finding's `why_it_matters`, not merely that an edit was made at its location. If a claimed fix does not resolve its finding, record it as a `DIFF-FAIL` using the existing fields (`problem` = why the change does not resolve the original finding; `required_action` = the concrete next step). Do not add new fields.
+
+Diff review is not sufficient for PASS. It only allows the next full re-review.
+
+## Full Re-Review Context Pack
+
+When a context pack includes `Changed since last review`, it carries a redacted hint for regression hunting: the fixed issue IDs and section anchors from the latest fix round. It is not a scope limiter. The reviewer must still review the whole document; the hint directs additional focus on those sections and issue IDs for regressions or new contradictions introduced by the last fix, but it must not replace whole-document re-review.
+
+The `changedSinceLastReview` field is populated only when the target has already been fixed this session (i.e., the persisted content fingerprint differs from the initial fingerprint and a latest fix report exists). It is absent on first review. It carries only issue IDs and redacted section anchors — never document body text.
+
+Diff review contract:
+
+```text
+DIFF-OK
+Summary: <one redacted sentence or none>
+```
+
+or:
+
+```text
+DIFF-FAIL
+Findings:
+- issue_id: ISSUE-001
+  problem: <specific problem>
+  required_action: <specific next action>
+```
+
+## Final Response Contract
+
+The payload submitted to `drfx workflow finalize ... --final-response-stdin` is an internal workflow final-response payload only. It remains required for workflow validation and audit, and it may carry redacted internal issue IDs needed to reconcile ledgers and receipts. It is not the default user-visible output.
+
+The internal workflow final-response payload records:
+
+- Final status: one of the terminal or pause states above.
+- Changes made and fixed issue IDs when available.
+- Files changed, limited to files actually modified.
+- Verification performed, including reviewer passes and any local checks.
+- Not fixed items, deferrals with issue IDs, reason, owner, and next action, blockers, or unsupported capability reasons.
+- Residual risk, or `none identified`.
+
+Do not print raw secrets, credentials, cookies, tokens, private keys, raw sensitive logs, or partial secret values. Use `[REDACTED:<kind>]` and location anchors.
+
+Internal workflow final-response payload machine block:
+
+```text
+Final status: pass | read-only-clean | read-only-findings | stopped-with-deferrals | stopped-no-progress | blocked | unsupported | externally-changed | possible-target-replacement | checkpoint
+Assurance: practical | strict-verified | advisory
+Runtime platform: codex | claude-code | gemini | manual
+Mode: review-and-fix | read-only
+Target: <target path>
+Files changed: <none or exact target path>
+Fixed issue IDs: <none or comma-separated ISSUE-### values>
+Verification performed: <redacted summary>
+Deferrals or blockers: <none or redacted issue/blocker summary with owner and next action when applicable>
+Blocking reason: <allowed blocker code or none>
+Status reason: <allowed status reason or none>
+Residual risk: <risk or none identified>
+Redaction statement: <statement or none>
+Coordinator agreement: <required when Final status is pass; otherwise none>
+```
+
+Internal payload checklist: include final status, assurance, runtime platform, mode, target, files changed, fixed issue IDs, verification performed, deferrals or blockers, blocker/status reason, residual risk, redaction statement, and coordinator agreement. Read-only finalization uses `read-only-clean` or `read-only-findings`, never `pass`.
+
+Default user output uses concise Route Output after workflow finalization. It must summarize status, locations, problems, fixes or needed actions, and verification without printing the 14-line machine block or internal issue IDs. If workflow finalization returns `archiveWarning`, the concise default output must include an archive warning line and one concrete repair/reset/rerun next action. Debug output may additionally show the redacted `archiveWarning` field and redacted audit details.
+
+## Read-Only Behavior
+
+In `read-only` mode, review and triage only. Do not modify the target document or reference documents. If blocking findings remain, stop as `read-only-findings`. Codex and Claude Code routes may tell users to rerun the same route with `review-and-fix`; Gemini routes must tell users to apply fixes manually or rerun with a Codex/Claude Code review-and-fix route.
+
+One-shot `read-only` without `ledger=` and without `resume` must not create `.drfx`, `MANIFEST.md`, `ISSUES.md`, `CONTINUITY.md`, `SUMMARY.md`, or `rounds/`. Keep fingerprints in memory unless a guard failure must be reported.
+
+No-state read-only flow keeps `reviewGuard` and `stateToken` in coordinator memory only. Do not write tokens to disk, do not hand-edit tokens, and repeat the same runtime platform, assurance, subagent probe, stdin handoff, and downgrade fields on no-state `record-review`, `record-triage`, and `finalize`. A no-state finalizer that consumes `--final-response-stdin` must pass `--runtime-stdin-handoff ready`.
+
+## Runtime Independence
+
+The workflow must not depend on runtime objective/session/platform memory. Durable state for long work is file-backed under `.drfx/targets/<target-key>/`, and each reviewer or fixer context pack must be self-contained enough to work without chat history.
+
+---
+
+<!-- shared/long-task.md -->
+
+# Long-Task Protocol
+
+Long tasks must be resumable from project files, not from chat history or runtime memory. Create target-local state only when persistent state is needed: long or multi-round work, `resume`, `ledger=`, an auditable trail, context pressure, interruption, or a blocker.
+
+One-shot `read-only` without `ledger=` and without `resume` is no-state: do not create `.drfx`, target directories, manifests, ledgers, continuity files, summaries, receipts, or locks.
+
+No-state read-only uses command-generated `reviewGuard` and `stateToken` values kept only in coordinator memory. These tokens are redacted normalized state, not document content. Do not write them to disk, do not edit them, and never finalize no-state as `pass`; clean read-only status is `read-only-clean`.
+
+## Route Target Contexts
+
+A route resolves one of three target contexts. The protocol below is identical across them; only the target identity differs.
+
+- Document routes (`review-fix-spec`/`plan`/`design`/`doc`): the target context is a single file. Its identity is the normalized target path relative to the project root.
+- PR route (`review-fix-pr`): the target context is the file set of a local PR diff (`base=<branch>` vs `HEAD`, via the local merge base). Its identity is the route kind plus the base ref, with a deterministic file-set fingerprint over the diff. PR resolution is local and read-only: never fetch, push, or mutate refs.
+- CODE route (`review-fix-code`): the target context is the file set discovered by traversing in-root source `scope=<path>` directories under mandatory exclusions. Its identity is the route kind plus the normalized scopes and a deterministic file-set fingerprint over the discovered files; stored exclusions describe the resolver policy used for audit, but default exclusion-list drift alone does not make resume stale when the file-set fingerprint is unchanged.
+
+## Target State Directory
+
+All persistent state for one target context lives under:
+
+```text
+.drfx/targets/<target-key>/
+```
+
+For a document route the target key is derived from the normalized target path relative to the project root, not from content. For a file-set route (PR/CODE) the target key is derived from the route kind plus the base/scope identity, not from content. In both cases use a readable slug or route-kind prefix plus a 12-hex SHA-256 prefix of that identity.
+
+Target-local layout:
+
+```text
+.drfx/targets/<target-key>/
+├── MANIFEST.md
+├── ISSUES.md
+├── CONTINUITY.md
+├── SUMMARY.md
+├── LOCK/
+│   └── lease.json
+├── stale-locks/
+└── rounds/
+```
+
+Project-root `.drfx/rules/` is shared project configuration, not target state. Do not write target review state to project-root `.drfx/ISSUES.md`, `.drfx/CONTINUITY.md`, `.drfx/SUMMARY.md`, or `.drfx/rules/`.
+
+## Manifest Fields
+
+`MANIFEST.md` records enough state to resume safely. The manifest carries an optional `Target context kind` discriminator (`document`, `pr`, or `code`); absent means `document`, so existing document manifests are unchanged. The identity block varies by kind; the shared workflow fields below apply to every kind.
+
+Shared fields (all kinds):
+
+- Manifest schema: `2`.
+- Target context kind: `document`, `pr`, or `code` (omitted for document, which is the default).
+- Strictness: `normal` or `strict`.
+- Mode: `review-and-fix` or `read-only`.
+- Assurance: `practical`, `strict-verified`, or `advisory`.
+- Runtime platform: `codex`, `claude-code`, `gemini`, or `manual`.
+- Runtime subagent probe, stdin handoff, fingerprint guard, downgrade reason, assurance proof, blocking reason, and status reason.
+- Target key.
+- Ledger path, defaulting to `.drfx/targets/<target-key>/ISSUES.md`.
+- Status: `review`, `triage`, `fix`, `diff-review`, `full-re-review`, `pass`, `stopped-with-deferrals`, `stopped-no-progress`, `read-only-findings`, `blocked`, `unsupported`, `externally-changed`, `possible-target-replacement`, or `checkpoint`.
+- Read-only clean status: `read-only-clean`.
+- Current round.
+- Current phase.
+- Round limit when `rounds=<n>` is supplied; omitted otherwise.
+- Last modified timestamp.
+- Created and updated timestamps.
+
+Document target context identity:
+
+- Target path and normalized target path.
+- Document type: `SPEC`, `PLAN`, `DESIGN`, or `COMMON`.
+- Initial, last known, last reviewed, and last passed content sha256.
+- File size when available.
+- Reference paths. The manifest records reference paths; read-only role is preserved in context packs/normalized references, not as per-reference manifest flags.
+
+File-set (PR/CODE) target context identity:
+
+- Document type is `none`; PR/CODE routes have no fixed document type and record no single-file content sha256 or file size.
+- A deterministic file-set fingerprint over the resolved files identifies the reviewed set; a changed fingerprint means the set drifted.
+- PR records the base ref plus the resolved base, merge-base, and HEAD commits.
+- CODE records the normalized scopes and the mandatory exclusion list.
+
+If `ledger=` is supplied, record the resolved target-local ledger path. A custom ledger must stay inside `.drfx/targets/<target-key>/` and must not point to reserved state files, `LOCK/`, `stale-locks/`, or `rounds/`.
+
+## Issue Ledger
+
+The issue ledger records durable issue state, not a transcript. Default path:
+
+```text
+.drfx/targets/<target-key>/ISSUES.md
+```
+
+Recommended table:
+
+```markdown
+## Issue Ledger
+
+| ID | Severity | Status | Location | Summary | Resolution |
+| --- | --- | --- | --- | --- | --- |
+| ISSUE-001 | high | fixed | Requirements | Missing failure path | Added invalid-token behavior |
+```
+
+Allowed statuses are `accepted`, `fixed`, `merged`, `rejected`, `deferred`, and `reopened`. Every accepted issue receives a stable ID. Reopened issues keep their original ID. Rejected issues need a short reason. Deferred issues need a reason and owner.
+
+Redact all sensitive values as `[REDACTED:<kind>]`. Store location anchors, not raw secrets, raw logs, partial tokens, checksums, or transcript excerpts.
+
+## Lock Lease
+
+Before any target modification, acquire `.drfx/targets/<target-key>/LOCK/` by atomically creating the directory. `LOCK/lease.json` contains:
+
+- `schemaVersion`
+- `targetKey`
+- `targetPath`
+- `ownerId`
+- `processId` when available
+- `hostname`
+- `startedAt`
+- `updatedAt`
+- `expiresAt`
+- `mode`
+- `strictness`
+- `targetFingerprintAtAcquire`
+
+Default lease duration is 15 minutes. Refresh the lease before each write and at least once every 60 seconds during delegated fixer work.
+
+If an unexpired lock exists, stop as `blocked` with reason `lock-held`. If `lease.json` is missing or corrupt, stop as `blocked` with reason `corrupt-lock`. If an expired lock exists, archive the stale lease under `stale-locks/<timestamp>.json` only after confirming the current target fingerprint still matches the last known fingerprint; otherwise stop as `externally-changed`.
+
+Immediately before each fix, recompute the target fingerprint. If it differs from `targetFingerprintAtAcquire` or the manifest's last known fingerprint, stop as `externally-changed`. Release a lock only when `ownerId` matches the coordinator owner.
+
+One-shot `read-only` without persistent state never acquires a lock.
+
+## Receipts
+
+Round receipts live under `.drfx/targets/<target-key>/rounds/` when an auditable trail is requested, the loop reaches round 2, the coordinator stops due to interruption or context pressure, or a blocker state needs durable proof.
+
+Receipts should record:
+
+- Round number and phase.
+- Reviewer result or fixer report summary.
+- Issue IDs touched.
+- Files changed.
+- Verification performed.
+- Next action.
+- Redacted blocker or residual-risk details.
+
+Receipts must be compact and must not store raw secrets, raw logs, or transcripts.
+
+Semantic payloads enter workflow commands through real stdin handoff. Do not use shell pipes, heredocs, herestrings, command substitution, argv, environment variables, env vars, or raw temp files for reviewer results, triage, fix reports, diff reviews, or final responses. If stdin handoff is unavailable, stop as `blocked` with `unsafe-handoff-file` or use the no-state preflight terminal path before any file body read.
+
+## Resume Rules
+
+Resume is never silent. A matching target context without an explicit `resume` token is not reused; a fresh start over existing state stops as state-already-exists. An explicit `resume` whose recorded identity is stale (any mismatch, including the round limit) is refused, not silently continued.
+
+When stale state can no longer be resumed (for example after an exclusion-policy change shifted the CODE file set, drifting its fingerprint), use the explicit `reset` token. `reset` archives the existing target state under `.drfx/archived/<target-key>-<timestamp>` — never deleting or overwriting it — and then starts fresh, recomputing identity under the current resolver policy. `resume` and `reset` are mutually exclusive, and `reset` over no existing state is just a fresh start.
+
+`reset` is the escape for non-archived terminal and paused states: `stopped-with-deferrals`, `stopped-no-progress`, `blocked`, `checkpoint`, `externally-changed`, `possible-target-replacement`, `read-only-findings`, and mid-flight states. `reset` is no longer required after `pass` or `read-only-clean` — those are archived automatically at `finalize` time.
+
+On `resume`:
+
+1. Derive the target key from the requested target context identity (document: the normalized target path; PR/CODE: the route kind plus base/scope identity).
+2. Read that target's `MANIFEST.md`.
+3. Read the manifest `Ledger path`, defaulting to target-local `ISSUES.md`.
+4. Read `CONTINUITY.md` when present.
+5. Confirm the manifest target context matches the requested one (document: the manifest target path matches the requested target; PR/CODE: the base/scope identity and file-set fingerprint match).
+6. Restore strictness and mode from the manifest unless the user explicitly asks to change them.
+7. Rebuild the merged rule set from current shared rubrics (document routes) or the route-kind rule stack (PR/CODE), plus user-global and project-local rules.
+8. Recompute the current target context identity and compare it with the manifest: document routes compare the content fingerprint; PR/CODE routes compare the file-set fingerprint.
+9. Continue from the recorded next action only when state is still valid.
+
+If the current invocation supplies different strictness or mode from the manifest, stop and ask whether to resume with manifest values or start a new review round. A `read-only` manifest must not resume into `review-and-fix` without explicit user confirmation.
+
+## Stale PASS Clearing
+
+On `finalize`, a `pass` or `read-only-clean` run archives its target state directory to `.drfx/archived/<target-key>-<timestamp>` (renamed, never deleted). The next run starts fresh without requiring `reset`. Archiving is best-effort: if it fails, the run still reports its terminal status plus an `archiveWarning`, the state directory stays in place, and a subsequent bare start falls back to `ERR_STATE_EXISTS` (use `reset` to clear it manually).
+
+On `resume`, if the target state directory contains a live `pass` or `read-only-clean` manifest (a leftover from a failed archive or a pre-upgrade run), the resume handler archives the directory and starts a fresh review — no `reset` needed. If archiving fails, the run blocks with a concrete repair/`reset` next action rather than re-reporting the old PASS or re-reviewing in place.
+
+Pre-existing or legacy leftover `pass` directories are not retroactively migrated; a bare `start` over one still returns `ERR_STATE_EXISTS`. Use `reset` to clear it once, then proceed normally.
+
+If the target changed while status was not `pass`, set status to `externally-changed`, require a full re-review, and reopen affected issues when uncertain.
+
+If the file appears to be a different document at the same path, set `possible-target-replacement` and ask whether to restart, archive, or migrate state. Do not silently reuse old issue IDs for a different document.
+
+## Continuity
+
+Use target-local `CONTINUITY.md` only as a compact handoff brief. Include current goal, decisions, recent done items, now, next, open questions, working set, and receipts. Keep it bounded and current; it is not a transcript.
+
+---
+
+<!-- shared/rubrics/common.md -->
+
+# COMMON Rubric
+
+Use `COMMON` as the base rubric for every document type and as the full rubric for generic documents.
+
+## Severity anchors
+
+Apply these to all document types; type rubrics do not redefine them:
+
+- high: blocks the document's stated purpose, or makes execution/acceptance unsafe or impossible.
+- medium: materially weakens correctness or completeness, but a competent next actor can still proceed with caution.
+- low: a clarity, consistency, or structure improvement that does not block use in normal mode.
+
+## Coverage groups
+
+State, in the reviewer Summary line, which of these groups you exercised (terse, e.g. `covered background/objective/coherence/constraints/risks/reference`):
+
+- COMMON: background, objective, coherence, actionability, constraints, risks, project-alignment, reference.
+- SPEC adds: requirements, scope, actors, permissions, io/errors, acceptance, edge cases.
+- PLAN adds: executable-order, prerequisites, verification, rollback, blast-radius, stop-conditions.
+- DESIGN adds: flows, states, transitions, contracts, data-flow, accessibility, hidden-scope.
+
+Review for:
+
+- Background: the document explains why it exists and what source context matters.
+- Objective: the intended outcome is clear enough to judge success.
+- Coherence: the document is internally consistent and does not contradict itself.
+- Actionability: the next actor can use it without inventing key decisions.
+- Assumptions: material assumptions are explicit and marked `UNCONFIRMED` when not verified.
+- Constraints: technical, product, operational, timing, security, or process constraints are visible.
+- Risks: material risks are described, mitigated, constrained, verified, or explicitly accepted.
+- Project alignment: claims fit known project code, architecture, conventions, dependencies, runtime environment, and repository instructions.
+- Terminology: terms are used consistently where differences would change meaning.
+- Placeholders: required sections contain no blocking `TBD`, `TODO`, `later`, "to be discussed", or equivalent placeholder text.
+- External facts: unstable or external facts are verified with authoritative sources, or marked `UNCONFIRMED`.
+- Document type fit: if the document is functioning as a DESIGN, SPEC, or PLAN, flag that the user may get a better review from the matching route.
+- Reference Conformance: when references are provided, the document remains consistent with their material facts, constraints, terminology, scope, non-goals, and risks.
+
+Blocking findings include missing purpose, missing required context, ambiguity that affects execution or acceptance, unresolved questions that block use, unsupported project claims, and risk omissions that make the document unsafe to rely on.
+
+Missing DESIGN, SPEC, or PLAN-specific structure is not blocking for `COMMON` unless the document's stated purpose depends on that structure.
+
+PASS for `COMMON` means the document has sufficient background and objective context, is coherent, is aligned with known project facts, is actionable for its stated purpose, and has no unresolved high or medium issues.
+
+---
+
+<!-- shared/prompts/reviewer.md -->
+
+# Reviewer Prompt Template
+
+```text
+You are the reviewer subagent for document-review-loop.
+
+Mode: read-only. Do not modify files. A read-only review never claims PASS on its own; PASS is decided by the coordinator only after a full re-review.
+
+Target context: a single target document for document routes, or the full resolved file set for PR/CODE routes (review the whole set, not only a sample). The fields below describe the document-route case; PR/CODE routes carry no fixed document type.
+
+Target document: <path>
+Reference documents: <paths, read-only>
+Document type: <SPEC|PLAN|DESIGN|COMMON>
+Strictness: <normal|strict>
+Workflow mode: <review-and-fix|read-only>
+Merged review rules:
+<merged common + type + user-global + project-local rules>
+Accepted non-blocking low issues:
+<issue IDs and anchors, or none>
+Changed since last review:
+<fixed issue IDs and section anchors from the last fix, or none>
+
+Objective:
+Review the full target document and decide whether it can PASS.
+
+Instructions:
+- Review the whole target document, not only recent changes.
+- If the context pack includes "Changed since last review", still review the whole document, but additionally focus on those sections and fixed issue IDs for regressions or new contradictions introduced by the last fix. Do not narrow the review to only those areas.
+- Use reference documents only to check consistency, coverage, and constraints.
+- Treat `ref=` documents as consistency sources, not mandatory upstream chains.
+- Do not fail a SPEC solely because it lacks `Design Coverage Import`, DESIGN references, trace tables, or stable IDs by default; still report the missing structure when custom rules require it, the target makes a complete coverage claim, or the missing structure makes the target unverifiable for its stated purpose.
+- Do not fail a PLAN solely because it lacks `SPEC-to-task mapping`, SPEC references, trace tables, or stable IDs by default; still report the missing structure when custom rules require it, the target makes a complete coverage claim, or the missing structure makes the target unverifiable for its stated purpose.
+- Report a reference conflict when the target contradicts a provided reference, depends on an unsupported new requirement, or would cause execution to violate a reference.
+- Treat missing coverage tables or upstream mappings as low severity unless the target makes a complete coverage claim, custom rules require the structure, or the missing structure makes the target unverifiable for its stated purpose.
+- Do not request or make changes to reference documents.
+- Report concrete issues only.
+- Do not suggest broad rewrites unless the structure itself blocks execution.
+- Mark uncertain external facts as UNCONFIRMED.
+- If you find suspected secrets or credentials, do not quote them. Use the path, line, heading, or non-sensitive anchor, set sensitive: true, and redact values as [REDACTED:<kind>].
+- In normal strictness, PASS only if there are no high or medium issues.
+- In strict strictness, PASS only if there are no high or medium issues and no low issues except coordinator-accepted non-blocking low issues explicitly listed in this prompt.
+- Always report low issues that would block strict PASS, even when running in normal strictness.
+- Assign severity using the severity anchors defined in the merged rubric (high/medium/low), not by intuition.
+- On PASS, state the rubric coverage groups you exercised within the Summary line (terse), for this document type. This applies only to the PASS Summary line; do not add a Summary line or a Coverage line to a FAIL report (a FAIL report has no Summary — its second line must be `Findings:`).
+
+Output schema:
+PASS
+Summary: <one redacted sentence or none>
+
+or:
+
+FAIL
+Findings:
+- id: R001
+  severity: high | medium | low
+  location: <heading, section, line, or quoted anchor>
+  issue: <specific issue>
+  why_it_matters: <impact, with sensitive values redacted>
+  suggested_fix: <specific fix>
+  confidence: confirmed | unconfirmed
+  sensitive: true | false
+```
+
+---
+
+<!-- shared/prompts/fixer.md -->
+
+# Fixer Prompt Template
+
+```text
+You are the fixer subagent for document-review-loop.
+
+Target document: <path>
+Reference documents: <paths, read-only>
+
+Confirmed issues:
+<issue list>
+
+Constraints:
+- Fix only coordinator-accepted issue IDs.
+- For a document route, the fixer may modify only the target document.
+- For a PR/CODE route, the fixer may modify only files inside the resolved target file set, plus any recorded necessary dependency file. Each dependency file edited outside that set must be declared with its path, the reason it is necessary, and the issue ID it serves; it must be in-root, non-excluded, and present in the monitored file set before its first write. Never edit a dependency file that is not in this recorded, guarded set.
+- References and other files remain read-only.
+- Work serially and stop for coordinator lock refresh before writes after 60 seconds.
+- Do not expand scope.
+- Do not add new background, requirements, or external facts.
+- Do not invent product decisions, risk decisions, goals, or requirements.
+- Preserve terminology and structure unless an accepted issue requires changing them.
+- Do not perform a broad rewrite unless an accepted structural issue requires it.
+- Do not quote raw secrets, credentials, cookies, tokens, private keys, or raw sensitive logs in the fix report. Use [REDACTED:<kind>] and location anchors.
+- If an issue cannot be fixed cleanly, report it instead of guessing.
+
+Output:
+Fixed:
+- ISSUE-001: <summary; state briefly how the change resolves the original finding, for diff-review verification>
+
+Files changed:
+- <path>
+
+Not fixed:
+- ISSUE-002: <reason, or none>
+
+Residual risk:
+- <risk, or none identified>
+
+For every fix round, record the verification command or inspection method used, its result, and the residual risk when no suitable verification can run.
+
+If a requested fix cannot be made within the target context and its recorded dependency set, leave the affected files unchanged for that issue and report it under Not fixed.
+```
+
+---
+
+<!-- shared/prompts/coordinator.md -->
+
+# Coordinator Prompt Template
+
+```text
+You are the coordinator for document-review-loop.
+
+Own the review-fix loop. Use reviewer subagents for every read-only review. Fix accepted issues directly by default, or use one serial fixer subagent only for bounded accepted issue lists.
+
+Target document: <path>
+Reference documents: <paths, read-only>
+Document type: <SPEC|PLAN|DESIGN|COMMON>
+Entry skill: <review-fix-spec|review-fix-plan|review-fix-design|review-fix-doc>
+Strictness: <normal|strict>
+Mode: <review-and-fix|read-only>
+Invocation target form: prefer bare path; bare path is shorthand for target=<path>
+
+Reviewer context pack:
+Target document: <path>
+Reference documents: <paths, read-only>
+Document type: <SPEC|PLAN|DESIGN|COMMON>
+Strictness: <normal|strict>
+Mode: <review-and-fix|read-only>
+Objective: review the full document, fix confirmed blocking issues when mode permits, and continue until a defined terminal or pause state.
+Merged rule set: <workflow hard constraints + COMMON rubric + type rubric + user-global rules + project-local rules>
+Accepted non-blocking low issues: <issue IDs and anchors, or none>
+Changed since last review: <fixed issue IDs and section anchors from the last fix, or none>
+Constraints:
+- reviewer subagent is mandatory and read-only
+- fixer subagent is optional and serial
+- coordinator fixes directly by default
+- only the target context may be modified: the target document for document routes, or the resolved file set plus recorded necessary dependency files for PR/CODE routes
+- reference documents are read-only
+- ref= documents are consistency sources, not mandatory upstream chains
+- no unconfirmed background, requirements, or external facts
+- preserve scope, terminology, readability, and structural coherence
+- "Changed since last review" is an additional regression focus only; the reviewer must still review the whole document and must not narrow the review to only those sections
+Output schema: PASS or FAIL with findings that include severity, location, issue, why_it_matters, suggested_fix, confidence, and sensitive.
+
+Reviewer machine schema:
+PASS
+Summary: <one redacted sentence or none>
+
+or:
+
+FAIL
+Findings:
+- id: R001
+  severity: high | medium | low
+  location: <heading, section, line, or safe anchor>
+  issue: <specific issue>
+  why_it_matters: <impact, with sensitive values redacted>
+  suggested_fix: <specific fix>
+  confidence: confirmed | unconfirmed
+  sensitive: true | false
+
+Advisory-only behavior:
+- Before automatic PASS or any fix, check current runtime capability for isolated reviewer execution, reviewer write blocking, and fingerprint guard availability.
+- If the runtime is advisory-only, run read-only advisory review only. Do not fix files and do not claim workflow PASS.
+
+Loop:
+1. Select the rubric and read shared core rules.
+2. Read only the merged rules supplied by the workflow context. Custom file-backed rule loading is handled by `drfx workflow ...`; do not read unrelated rule files.
+3. Derive .drfx/targets/<target-key>/ when persistent state is needed.
+4. Merge built-in and project rules, including strictness handling.
+5. Run the reviewer guard: fingerprint target and references before review.
+6. Send a compact context pack to an isolated read-only reviewer subagent.
+7. Recompute fingerprints after review. If the reviewer changed any file, stop as blocked and do not fix or claim PASS.
+8. Triage findings into accepted, merged, downgraded, rejected, or deferred.
+9. Write the issue ledger and receipts when persistent state is needed.
+10. Check before automatic PASS: only pass when the full-document review passes and the coordinator independently agrees. Before agreeing, confirm the reviewer Summary states coverage of the required rubric groups for the document type; if a required group is unstated, require a re-review instead of passing.
+11. If mode is read-only and findings block under the selected strictness, stop as read-only-findings; if no blocking findings remain, stop as read-only-clean. Never report pass for read-only or no-state flows.
+12. Acquire the target lock before any target modification.
+13. Run the pre-fix guard: confirm the current target fingerprint matches the lock and manifest state.
+14. Fix accepted issues directly by default, or with one bounded serial fixer subagent.
+15. Review the diff. Confirm fixes map to accepted issue IDs and introduce no unrelated scope. For every fix round, record the verification command or inspection method used, its result, and the residual risk when no suitable verification can run.
+16. Run a full re-review of the whole target context through a fresh isolated read-only reviewer. Never claim PASS from a read-only, advisory-only, diff-review-only, or otherwise unverified path.
+17. Repeat triage, fix, diff review, and full re-review until a terminal or pause state.
+
+Rule file strictness:
+- Unknown Markdown rule files are a warning in normal mode.
+- Unknown Markdown rule files block before target state is written in strict mode.
+
+V2 workflow command loop:
+- start, context, record-review, record-triage, begin-fix, refresh-lock, end-fix, record-diff-review, full re-review, finalize.
+- Run abort-fix if a fix phase stops before a valid fix report because of interruption, blocker, checkpoint, context pressure, or user stop.
+- Keep semantic review, semantic triage, target editing, diff judgment, and final agreement in the coordinator/reviewer/fixer roles; the CLI only validates deterministic contracts.
+
+Terminal and pause states:
+- pass
+- read-only-clean
+- stopped-with-deferrals
+- stopped-no-progress
+- read-only-findings
+- blocked
+- unsupported
+- externally-changed
+- possible-target-replacement
+- user stop
+- checkpoint
+
+Ledger and receipts:
+- Maintain stable issue IDs.
+- Store accepted, fixed, merged, rejected, deferred, and reopened statuses.
+- Write receipts for auditable trails, round 2+, interruption, context pressure, or blockers.
+- Keep continuity compact and target-local.
+- For blockers, distinguish `rollback-unavailable` as a missing clean rollback anchor, `target-only-guard-unavailable` as unavailable target-only guard proof, and `unexpected-worktree-change` as unsafe non-target worktree changes.
+
+Triage and PASS rules:
+- Triage decisions are `accepted`, `merged`, `downgraded`, `rejected`, and `deferred`.
+- Accepted high/medium findings block PASS until fixed, merged into fixed issues, downgraded with rationale, or rejected with rationale.
+- Deferred high/medium findings produce `stopped-with-deferrals`, not PASS.
+- Low findings block only in strict mode unless accepted non-blocking and included in the next reviewer context.
+
+Convergence:
+- The workflow enforces a deterministic fix-attempt cap (default 5 fixes per target); the 6th begin-fix is refused as stopped-no-progress.
+- Additionally, if a high or medium finding that was marked fixed in an earlier round is raised again by a later full re-review at the same location/category, treat the loop as not converging: stop as stopped-no-progress with the recurring findings (redacted IDs/locations) and a next action, instead of attempting another fix.
+- stopped-no-progress is a pause state, not PASS; unresolved high/medium findings remain.
+
+Reference conformance triage:
+- Reclassify a reviewer false blocker when the finding only complains about a missing coverage table, missing stable ID, missing Design Coverage Import, or missing upstream mapping.
+- Treat those findings as low severity unless the target document makes a complete coverage claim, custom rules require the structure, or the missing structure makes the document unverifiable for its stated purpose.
+- Keep high or medium severity for real reference conflicts, unsupported new requirements, hidden scope expansion, or execution steps that would violate a provided reference.
+- Do not rewrite the target into a reference-specific workflow template unless an accepted issue requires that exact structure.
+
+Triage report:
+Triage:
+- reviewer_id: R001
+  issue_id: ISSUE-001
+  decision: accepted | reopened | merged | downgraded | rejected | deferred
+  severity: high | medium | low
+  original_severity: high | medium | low | none
+  rationale: <required except plain accepted with non_blocking=false>
+  merged_into: ISSUE-### | none
+  deferred_owner: <owner or none>
+  deferred_next_action: <next action or none>
+  non_blocking: true | false
+
+Diff review:
+- Before full re-review, check issue mapping, unrelated scope, terminology, placeholders, readability, structural coherence, and that each claimed fix actually resolves the original finding's why_it_matters (not just that an edit was made at the location).
+- A claimed fix that does not resolve its finding is a DIFF-FAIL: report it with the existing issue_id/problem/required_action fields (problem = why it does not resolve the finding). Do not add new fields.
+- Diff review is not sufficient for PASS; it only gates the next full-document re-review.
+- Output `DIFF-OK` with `Summary:` or `DIFF-FAIL` with findings containing `issue_id`, `problem`, and `required_action`.
+
+Redaction:
+- Redact sensitive values as [REDACTED:<kind>] in findings, ledgers, receipts, fixer reports, and final responses.
+- Use location anchors instead of raw secrets, partial values, hashes, raw logs, cookies, tokens, credentials, or private keys.
+
+Final response:
+- Submit an internal workflow final-response payload to `drfx workflow finalize ... --final-response-stdin`; this machine payload is required for workflow validation and audit, not for default user-visible output.
+- The internal payload records final status.
+- The internal payload records changes made and fixed issue IDs when available.
+- The internal payload records files changed.
+- The internal payload records verification performed.
+- The internal payload records not fixed items, deferrals with issue IDs, reason, owner, and next action, blockers, or unsupported items.
+- The internal payload records residual risk, or none identified.
+- Internal workflow final-response payload machine block fields are `Final status:`, `Assurance:`, `Runtime platform:`, `Mode:`, `Target:`, `Files changed:`, `Fixed issue IDs:`, `Verification performed:`, `Deferrals or blockers:`, `Blocking reason:`, `Status reason:`, `Residual risk:`, `Redaction statement:`, and `Coordinator agreement:`.
+- Default user output uses concise Route Output after workflow finalization. It must not print the 14-line machine block or internal issue IDs.
+- Debug output may print the redacted final-response machine block and redacted audit details after validation.
+- Read-only/no-state clean status is `read-only-clean`, not `pass`.
+```
