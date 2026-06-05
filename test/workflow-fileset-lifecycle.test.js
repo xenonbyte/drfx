@@ -1534,6 +1534,60 @@ test('PR file-set finalize archives the state dir on pass', async (t) => {
   assert.equal(fs.existsSync(path.join(final.archivedStatePath, 'MANIFEST.md')), true);
 });
 
+test('PR file-set finalize archive failure reports repair action in result and summary', async (t) => {
+  const root = makePrRepo(t);
+  const start = await reachFileSetFixStage(root, practicalArgs(['review-fix-pr', 'base=main']));
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+
+  await runWorkflowCommand('record-diff-review', [
+    start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], { cwd: root, stdin: DIFF_OK });
+
+  await runWorkflowCommand('context', [
+    ...practicalArgs(['review-fix-pr', 'base=main']),
+    '--phase', 'full-re-review'
+  ], { cwd: root });
+  const fullReview = await runWorkflowCommand('record-review', [
+    ...practicalArgs(['review-fix-pr', 'base=main']),
+    '--phase', 'full-re-review',
+    '--result-stdin'
+  ], { cwd: root, stdin: REVIEW_PASS });
+  assert.equal(fullReview.ok, true, JSON.stringify(fullReview));
+
+  fs.writeFileSync(path.join(root, '.drfx', 'archived'), 'not a dir');
+
+  const final = await runWorkflowCommand('finalize', [
+    start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], { cwd: root, stdin: finalPass('src/a.js') });
+
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'pass');
+  assert.equal(final.archivedStatePath, undefined);
+  assert.ok(final.archiveWarning, 'archive failure is surfaced as a warning');
+  assert.match(final.nextAction, /delete or reset.*file-set state directory.*retry/i);
+  assert.equal(fs.existsSync(start.targetStateDir), true);
+
+  const summary = fs.readFileSync(path.join(start.targetStateDir, 'SUMMARY.md'), 'utf8');
+  assert.match(summary, /Status: pass/);
+  assert.match(summary, /Next action: delete or reset the leftover terminal file-set state directory, then retry/);
+});
+
 test('PR file-set resume archives a live passed state and starts a fresh review', async (t) => {
   const root = makePrRepo(t);
   // Start to get a real manifest with correct PR identity (base, head, merge-base, fingerprint).
@@ -1558,6 +1612,37 @@ test('PR file-set resume archives a live passed state and starts a fresh review'
   const freshManifest = parseManifestV2(fs.readFileSync(manifestPath, 'utf8'));
   assert.equal(freshManifest.status, 'review');
   assert.equal(freshManifest.currentPhase, 'review');
+});
+
+test('CODE file-set resume preserves archivedStatePath when fresh start fails after archiving a live passed state', async (t) => {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-fs-no-git-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 1;\n');
+
+  const start = await runWorkflowCommand('start', practicalArgs([
+    'review-fix-code',
+    'scope=src',
+    'guard=snapshot'
+  ]), { cwd: root });
+  assert.equal(start.ok, true, JSON.stringify(start));
+
+  const before = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  fs.writeFileSync(start.manifestPath, formatManifestV2({ ...before, status: 'pass', currentPhase: 'final' }));
+
+  const result = await runWorkflowCommand('start', practicalArgs([
+    'review-fix-code',
+    'scope=src',
+    'resume'
+  ]), { cwd: root });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'unsupported');
+  assert.equal(result.statusReason, 'git-guard-unavailable');
+  assert.match(result.archivedStatePath, /\.drfx\/archived\/.+/);
+  assert.equal(fs.existsSync(result.archivedStatePath), true);
+  assert.equal(fs.existsSync(path.join(result.archivedStatePath, 'MANIFEST.md')), true);
+  assert.equal(fs.existsSync(start.targetStateDir), false, 'old passed file-set state was moved before fresh start failed');
 });
 
 test('PR file-set resume archive failure blocks without fresh-starting', async (t) => {

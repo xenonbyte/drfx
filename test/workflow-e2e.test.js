@@ -208,6 +208,62 @@ function assertFileExists(filePath) {
   assert.equal(fs.existsSync(filePath), true, filePath);
 }
 
+async function reachPersistentPassReady(fixture) {
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex');
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  assert.equal(start.ok, true, JSON.stringify(start));
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [
+    ...startArgs,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [
+    ...startArgs,
+    '--triage-stdin'
+  ], workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], workflowOptions(fixture, {
+    now: new Date('2026-05-21T00:00:00.000Z')
+  }));
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+  fs.writeFileSync(
+    fixture.target,
+    [
+      '# Practical Workflow Target',
+      '',
+      'The document now states the expected behavior directly for implementers.',
+      '',
+      '## Acceptance',
+      '',
+      '- The final wording names the expected behavior.',
+      ''
+    ].join('\n')
+  );
+  await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], workflowOptions(fixture, { stdin: FIX_REPORT }));
+  await runWorkflowCommand('record-diff-review', [
+    start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], workflowOptions(fixture, { stdin: DIFF_OK }));
+  await runWorkflowCommand('context', [
+    ...startArgs,
+    '--phase',
+    'full-re-review'
+  ], workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [
+    ...startArgs,
+    '--phase',
+    'full-re-review',
+    '--result-stdin'
+  ], workflowOptions(fixture, { stdin: REVIEW_PASS }));
+  return start;
+}
+
 test('deterministic practical workflow reaches pass with target-only diff', async (t) => {
   const fixture = makeWorkflowRepo(t);
   const start = await runWorkflowCommand('start', workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex'), workflowOptions(fixture));
@@ -339,6 +395,32 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
   assert.deepEqual(git(fixture.root, ['diff', '--name-only']).trim().split('\n').filter(Boolean), [
     'docs/practical-target.md'
   ]);
+});
+
+test('persistent finalize refuses a symlinked archive root and reports repair action', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const start = await reachPersistentPassReady(fixture);
+  const archiveSink = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-archive-sink-'));
+  t.after(() => fs.rmSync(archiveSink, { recursive: true, force: true }));
+  fs.symlinkSync(archiveSink, path.join(fixture.root, '.drfx', 'archived'), 'dir');
+
+  const final = await runWorkflowCommand('finalize', [
+    start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], workflowOptions(fixture, { stdin: FINAL_PASS }));
+
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'pass');
+  assert.equal(final.archivedStatePath, undefined);
+  assert.match(final.archiveWarning, /archive root directory.*symlink/i);
+  assert.match(final.nextAction, /delete or reset.*retry/i);
+  assert.equal(fs.existsSync(start.targetStateDir), true);
+  assert.deepEqual(fs.readdirSync(archiveSink), []);
+
+  const summary = fs.readFileSync(path.join(start.targetStateDir, 'SUMMARY.md'), 'utf8');
+  assert.match(summary, /Status: pass/);
+  assert.match(summary, /Next action: delete or reset the leftover terminal state directory, then retry/);
 });
 
 test('persistent start rejects stale project RULE.md before writing target state', async (t) => {

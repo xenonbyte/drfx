@@ -416,7 +416,7 @@ Project-local layout:
   archived/
 ```
 
-`rules/` 是 shared project configuration。`index.md` 存在时是 project-level index material。`targets/<target-key>/` 是 single-target workflow state。`archived/` 仅由 `reset` 创建——它把旧的 target state 移到这里（绝不删除）。
+`rules/` 是 shared project configuration。`index.md` 存在时是 project-level index material。`targets/<target-key>/` 是 single-target workflow state。`archived/` 由 `reset` 和成功的 `pass` / `read-only-clean` finalization 创建。`reset` 把旧的 target state 移到这里（绝不删除）；terminal finalization 会归档已完成 state，让下一次运行无需 `reset` 即可 fresh start。如果 terminal archiving 失败，finalization 会报告 `archiveWarning` 和明确的 delete/reset/retry next action，并把 state directory 留在原处。
 
 Default target state layout:
 

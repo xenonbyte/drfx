@@ -416,7 +416,7 @@ Project-local layout:
   archived/
 ```
 
-`rules/` is shared project configuration. `index.md` is project-level index material when present. `targets/<target-key>/` is single-target workflow state. `archived/` is created only by `reset`, which moves prior target state there (never deletes it).
+`rules/` is shared project configuration. `index.md` is project-level index material when present. `targets/<target-key>/` is single-target workflow state. `archived/` is created by `reset` and by successful `pass` / `read-only-clean` finalization. `reset` moves prior target state there (never deletes it); terminal finalization archives completed state so the next run starts fresh without `reset`. If terminal archiving fails, finalization reports `archiveWarning` and a concrete delete/reset/retry next action while leaving the state directory in place.
 
 Default target state layout:
 
