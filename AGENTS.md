@@ -10,16 +10,20 @@ This repository is a Node.js 20 CommonJS package for installing document and cod
 - `skills/` stores source skill descriptors.
 - `shared/` stores reusable workflow text, prompts, rubrics, and long-task protocol content.
 - `templates/` contains generated route templates for supported platforms.
+- `scripts/` contains development utility scripts such as `syntaxcheck.js`.
 - `test/` contains Node test files and fixtures.
 
 ## Build, Test, and Development Commands
 
 - `npm test` runs the full `node --test` suite.
+- `npm run syntaxcheck` parse-checks (`node --check`) every `.js` file under `bin/`, `lib/`, and `test/` without executing it.
 - `node bin/drfx.js doctor` runs local capability checks and validates advisory/pass capability reporting.
 - `node bin/drfx.js status` reports which generated routes are installed per platform.
 - `node bin/drfx.js install [--platform claude,codex,gemini]` installs generated routes for local manual testing (`--platform` is optional; omit it for all platforms).
 - `node bin/drfx.js uninstall [--platform claude,codex,gemini]` removes manifest-owned generated routes.
 - `npm pack --dry-run` verifies package contents before publishing or release checks.
+
+CI (`.github/workflows/ci.yml`) runs `npm run syntaxcheck` and `npm test` on Node 20, 22, and 24 for pushes to `main` and pull requests.
 
 ## Coding Style & Naming Conventions
 
