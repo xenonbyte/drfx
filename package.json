@@ -1,6 +1,6 @@
 {
   "name": "@xenonbyte/drfx",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Install document and code review-fix routes into Claude Code, Codex, and Gemini.",
   "type": "commonjs",
   "bin": {

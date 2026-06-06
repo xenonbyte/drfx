@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.3 - 2026-06-06
+
+Development tooling housekeeping: honest naming for the syntax check script and CI coverage for the current Node LTS line.
+
+### Changed
+
+- The `typecheck` npm script is renamed to `syntaxcheck` (`scripts/syntaxcheck.js`): it runs per-file `node --check`, so the name now says what it does. Published package contents are unaffected.
+- CI now also tests on Node 24 — the current LTS line users install on — alongside Node 20 and 22. Node 20 stays in the matrix while `engines` still declares `>=20`.
+
 ## 0.6.2 - 2026-06-06
 
 Template/prompt consistency for the PR/CODE file-set routes, reason-aware blocker next actions, and a minimal CI workflow.
