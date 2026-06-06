@@ -7,7 +7,7 @@
     "drfx": "bin/drfx.js"
   },
   "scripts": {
-    "typecheck": "node scripts/typecheck.js",
+    "syntaxcheck": "node scripts/syntaxcheck.js",
     "test": "node --test"
   },
   "engines": {

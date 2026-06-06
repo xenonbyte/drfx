@@ -38,8 +38,8 @@ for (const filePath of files) {
 }
 
 if (failures > 0) {
-  process.stderr.write(`typecheck failed: ${failures}/${files.length} files failed\n`);
+  process.stderr.write(`syntax check failed: ${failures}/${files.length} files failed\n`);
   process.exitCode = 1;
 } else {
-  process.stdout.write(`typecheck passed: ${files.length} files checked\n`);
+  process.stdout.write(`syntax check passed: ${files.length} files checked\n`);
 }
