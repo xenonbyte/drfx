@@ -6,7 +6,7 @@ Route name: review-fix-pr
 Review target: PR diff (base..HEAD file set)
 Package version: 0.0.0-snapshot
 
-Use this Claude Code command with required `base=<branch>`, optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`.
+Use this Claude Code command with required `base=<branch>`, optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume` or `reset`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`.
 When a valid base=<branch> is present and mode is omitted, Claude Code selects `review-and-fix`.
 This code route exposes no `assurance=` token; for `review-and-fix` it internally materializes `practical` assurance, so auto-fix is not rejected as `advisory-review-and-fix-unsupported`.
 It does not accept `target=`, `ref=`, `strict`, `normal`, `assurance=`, or `ledger=`.
@@ -30,12 +30,12 @@ Help-style or invalid invocations explain usage without reading files, running p
 Invocation syntax:
 
 ```text
-review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<project-root>] [debug]
+review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<project-root>] [debug]
 ```
 
 Full form: `review-fix-pr base=<branch> ...`. `base=<branch>` is required and names the merge base for the diff; `HEAD` is the other end. There is no bare-path or `target=` form for this route.
 
-This route accepts only `base=<branch>`, optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`. It does not accept `ref=`, `strict`, `normal`, `assurance=`, or `ledger=`.
+This route accepts only `base=<branch>`, optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume` or `reset`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`. `resume` and `reset` are mutually exclusive. It does not accept `ref=`, `strict`, `normal`, `assurance=`, or `ledger=`.
 
 If a valid `base=<branch>` invocation omits mode, missing mode selects `review-and-fix`. This is a code route: there is no user-facing `assurance=` token. For `review-and-fix`, the route internally materializes `practical` assurance (or `strict-verified` only via the same-flow strict proof path); it never runs `review-and-fix` with advisory assurance, so code auto-fix is not rejected as `advisory-review-and-fix-unsupported`.
 
@@ -176,10 +176,10 @@ Only explicit `assurance=strict-verified` requests strict verified mode. In the 
 drfx doctor --platform claude --json
 ```
 
-Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.claude.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Pass those current-run values to workflow start:
+Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.claude.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Materialize `<stateControlToken>` as `reset` only when the current invocation includes `reset`; otherwise omit it. Pass those current-run values to workflow start:
 
 ```text
-drfx workflow start review-fix-pr base=<branch> <selectedMode> rounds=<roundLimit> guard=<selectedGuard> --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
+drfx workflow start review-fix-pr base=<branch> <selectedMode> <stateControlToken> rounds=<roundLimit> guard=<selectedGuard> --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
 ```
 
 For `review-and-fix assurance=strict-verified`, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
@@ -191,10 +191,10 @@ Do not scrape human-readable `drfx doctor` output. Do not reuse a cached descrip
 For `assurance=practical`, after successful probes, start persistent state:
 
 ```text
-drfx workflow start review-fix-pr base=<branch> review-and-fix rounds=<roundLimit> guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
+drfx workflow start review-fix-pr base=<branch> review-and-fix <stateControlToken> rounds=<roundLimit> guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
 ```
 
-This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, and `<selectedGuard>` is explicit guard or default `git`. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
+This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, `<selectedGuard>` is explicit guard or default `git`, and `<stateControlToken>` is `reset` only for explicit reset starts. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
 
 Then coordinate this loop:
 
@@ -217,7 +217,7 @@ Automatic file-set writes require `review-and-fix` and a selected guard mode: us
 
 ## No-State Read-Only Flow
 
-For one-shot `read-only` without `ledger=` and without `resume`, keep `reviewGuard` and `stateToken` in coordinator memory only. Never write tokens to the filesystem and never hand-edit them.
+For one-shot `read-only` without `ledger=`, without `resume`, and without `reset`, keep `reviewGuard` and `stateToken` in coordinator memory only. Never write tokens to the filesystem and never hand-edit them.
 
 Preflight terminal paths must run before reading target/reference bodies, before semantic payload generation, and before any state token exists. They must use `workflow preflight --no-state`, must not call `workflow context`, and must not pass semantic stdin flags.
 

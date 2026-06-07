@@ -225,7 +225,7 @@ Default user output uses concise Route Output after workflow finalization. It mu
 
 In `read-only` mode, review and triage only. Do not modify the target document, resolved file set, or reference documents. If blocking findings remain, stop as `read-only-findings`. Codex and Claude Code routes may tell users to rerun the same route with `review-and-fix`; Gemini routes must tell users to apply fixes manually or rerun with a Codex/Claude Code review-and-fix route.
 
-One-shot `read-only` without `ledger=` and without `resume` must not create `.drfx`, `MANIFEST.md`, `ISSUES.md`, `CONTINUITY.md`, `SUMMARY.md`, or `rounds/`. Keep fingerprints in memory unless a guard failure must be reported.
+One-shot `read-only` without `ledger=`, without `resume`, and without `reset` must not create `.drfx`, `MANIFEST.md`, `ISSUES.md`, `CONTINUITY.md`, `SUMMARY.md`, or `rounds/`. Keep fingerprints in memory unless a guard failure must be reported.
 
 No-state read-only flow keeps `reviewGuard` and `stateToken` in coordinator memory only. Do not write tokens to disk, do not hand-edit tokens, and repeat the same runtime platform, assurance, subagent probe, stdin handoff, and downgrade fields on no-state `record-review`, `record-triage`, and `finalize`. A no-state finalizer that consumes `--final-response-stdin` must pass `--runtime-stdin-handoff ready`.
 

@@ -229,7 +229,7 @@ Default user output uses concise Route Output after workflow finalization. It mu
 
 In `read-only` mode, review and triage only. Do not modify the target document, resolved file set, or reference documents. If blocking findings remain, stop as `read-only-findings`. Codex and Claude Code routes may tell users to rerun the same route with `review-and-fix`; Gemini routes must tell users to apply fixes manually or rerun with a Codex/Claude Code review-and-fix route.
 
-One-shot `read-only` without `ledger=` and without `resume` must not create `.drfx`, `MANIFEST.md`, `ISSUES.md`, `CONTINUITY.md`, `SUMMARY.md`, or `rounds/`. Keep fingerprints in memory unless a guard failure must be reported.
+One-shot `read-only` without `ledger=`, without `resume`, and without `reset` must not create `.drfx`, `MANIFEST.md`, `ISSUES.md`, `CONTINUITY.md`, `SUMMARY.md`, or `rounds/`. Keep fingerprints in memory unless a guard failure must be reported.
 
 No-state read-only flow keeps `reviewGuard` and `stateToken` in coordinator memory only. Do not write tokens to disk, do not hand-edit tokens, and repeat the same runtime platform, assurance, subagent probe, stdin handoff, and downgrade fields on no-state `record-review`, `record-triage`, and `finalize`. A no-state finalizer that consumes `--final-response-stdin` must pass `--runtime-stdin-handoff ready`.
 
@@ -245,7 +245,7 @@ The workflow must not depend on runtime objective/session/platform memory. Durab
 
 Long tasks must be resumable from project files, not from chat history or runtime memory. Create target-local state only when persistent state is needed: long or multi-round work, `resume`, `ledger=`, an auditable trail, context pressure, interruption, or a blocker.
 
-One-shot `read-only` without `ledger=` and without `resume` is no-state: do not create `.drfx`, target directories, manifests, ledgers, continuity files, summaries, receipts, or locks.
+One-shot `read-only` without `ledger=`, without `resume`, and without `reset` is no-state: do not create `.drfx`, target directories, manifests, ledgers, continuity files, summaries, receipts, or locks.
 
 No-state read-only uses command-generated `reviewGuard` and `stateToken` values kept only in coordinator memory. These tokens are redacted normalized state, not document content. Do not write them to disk, do not edit them, and never finalize no-state as `pass`; clean read-only status is `read-only-clean`.
 

@@ -12,7 +12,7 @@ Users must not pass `target=`, `type`, `ref=`, `assurance=`, `strict`, `normal`,
 Invocation syntax:
 
 ```text
-review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<project-root>] [debug]
+review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<project-root>] [debug]
 ```
 
 `base=<branch>` is required and names the merge base for the diff; `HEAD` is the other end. There is no bare-path or `target=` form.
@@ -23,6 +23,8 @@ Code review is actionable-only: pure style preferences, no-risk refactors, and o
 
 `rounds=<n>` sets the maximum repair-loop count for review-and-fix; it is unsupported with `read-only`.
 
+`resume` continues target-local state. `reset` archives existing target-local state and starts fresh. `resume` and `reset` are mutually exclusive.
+
 Pass `debug` to print redacted workflow audit details. Default output is concise and must not expose raw workflow JSON, prompt text, subagent transcripts, or internal issue IDs in `Issues:`, `Fixed:`, or `Unfixed:` lists.
 
 Do not call, wrap, or delegate to a platform-native code-review command; this route runs the deterministic `drfx workflow` protocol itself.
@@ -31,7 +33,7 @@ Practical Mode requires a live reviewer subagent probe that returns exactly `DRF
 
 Automatic writes require `review-and-fix` plus a selected guard mode: use `guard=git` with a clean HEAD-backed git worktree, or `guard=snapshot` with a valid snapshot rollback anchor. File-set guard checks and lock refresh must still pass.
 
-Persistent state lives under `.drfx/targets/<target-key>/`. One-shot read-only without `resume` is no-state and keeps tokens in memory only.
+Persistent state lives under `.drfx/targets/<target-key>/`. One-shot read-only without `resume` or `reset` is no-state and keeps tokens in memory only.
 
 Use the shared sources:
 

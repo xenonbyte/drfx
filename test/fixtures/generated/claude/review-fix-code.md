@@ -6,7 +6,7 @@ Route name: review-fix-code
 Review target: source scope file set
 Package version: 0.0.0-snapshot
 
-Use this Claude Code command with optional `scope=<path>` tokens (repeat `scope=<path>` for multiple roots; omit scope to review the project root), optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`.
+Use this Claude Code command with optional `scope=<path>` tokens (repeat `scope=<path>` for multiple roots; omit scope to review the project root), optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume` or `reset`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`.
 Whole-root CODE review is capped at 300 files or 1,500,000 bytes (counted after all exclusions); larger whole-root file sets block as `file-set-too-large` and require a narrower `scope=<path>` or ignore rules that shrink the file set. Version-control-ignored files are excluded automatically via local read-only git queries (tracked files are never ignored; non-git roots skip this source). A project-root `.drfxignore` file adds user exclusions with `.gitignore` syntax (globs, `!` negation, `/` anchoring, trailing-`/` directory-only patterns). An explicit `scope=` always wins: a scoped directory or file is reviewed even when an ignore source covers it.
 When mode is omitted, Claude Code selects `review-and-fix`.
 This code route exposes no `assurance=` token; for `review-and-fix` it internally materializes `practical` assurance, so auto-fix is not rejected as `advisory-review-and-fix-unsupported`.
@@ -31,12 +31,12 @@ Help-style or invalid invocations explain usage without reading files, running p
 Invocation syntax:
 
 ```text
-review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume] [rounds=<n>] [root=<project-root>] [debug]
+review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<project-root>] [debug]
 ```
 
 Full form: `review-fix-code [scope=<path>...] ...`. `scope=<path>` names a source root to review; repeat `scope=<path>` for multiple roots. Omit `scope=` to review the whole project root, capped at 300 files or 1,500,000 bytes. Larger whole-root file sets block as `file-set-too-large` and require a narrower `scope=<path>` or ignore rules that shrink the file set. Version-control-ignored files are excluded automatically (local read-only git queries; tracked files are never ignored; non-git roots skip this source). A project-root `.drfxignore` file adds user exclusions with `.gitignore` syntax (globs, `!` negation, `/` anchoring, trailing-`/` directory-only patterns). `scope=<path>` may name a directory or a single file, and an explicit `scope=` always wins over every ignore source. There is no bare-path or `target=` form for this route. Before workflow commands, materialize `<scopeTokens>` as the repeated `scope=<path>` tokens exactly as requested, or as an empty string when scope is omitted.
 
-This route accepts only `scope=<path>` (repeatable), optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`. It does not accept `ref=`, `base=`, `strict`, `normal`, `assurance=`, or `ledger=`.
+This route accepts only `scope=<path>` (repeatable), optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume` or `reset`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`. `resume` and `reset` are mutually exclusive. It does not accept `ref=`, `base=`, `strict`, `normal`, `assurance=`, or `ledger=`.
 
 If a valid CODE invocation omits mode, including an omitted `scope=` that reviews the whole project root, missing mode selects `review-and-fix`. This is a code route: there is no user-facing `assurance=` token. For `review-and-fix`, the route internally materializes `practical` assurance (or `strict-verified` only via the same-flow strict proof path); it never runs `review-and-fix` with advisory assurance, so code auto-fix is not rejected as `advisory-review-and-fix-unsupported`.
 
@@ -177,10 +177,10 @@ Only explicit `assurance=strict-verified` requests strict verified mode. In the 
 drfx doctor --platform claude --json
 ```
 
-Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.claude.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Pass those current-run values to workflow start:
+Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.claude.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Materialize `<stateControlToken>` as `reset` only when the current invocation includes `reset`; otherwise omit it. Pass those current-run values to workflow start:
 
 ```text
-drfx workflow start review-fix-code <scopeTokens> <selectedMode> rounds=<roundLimit> guard=<selectedGuard> --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
+drfx workflow start review-fix-code <scopeTokens> <selectedMode> <stateControlToken> rounds=<roundLimit> guard=<selectedGuard> --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
 ```
 
 For `review-and-fix assurance=strict-verified`, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
@@ -192,10 +192,10 @@ Do not scrape human-readable `drfx doctor` output. Do not reuse a cached descrip
 For `assurance=practical`, after successful probes, start persistent state:
 
 ```text
-drfx workflow start review-fix-code <scopeTokens> review-and-fix rounds=<roundLimit> guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
+drfx workflow start review-fix-code <scopeTokens> review-and-fix <stateControlToken> rounds=<roundLimit> guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
 ```
 
-This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, and `<selectedGuard>` is explicit guard or default `git`. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
+This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, `<selectedGuard>` is explicit guard or default `git`, and `<stateControlToken>` is `reset` only for explicit reset starts. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
 
 Then coordinate this loop:
 
@@ -218,7 +218,7 @@ Automatic file-set writes require `review-and-fix` and a selected guard mode: us
 
 ## No-State Read-Only Flow
 
-For one-shot `read-only` without `ledger=` and without `resume`, keep `reviewGuard` and `stateToken` in coordinator memory only. Never write tokens to the filesystem and never hand-edit them.
+For one-shot `read-only` without `ledger=`, without `resume`, and without `reset`, keep `reviewGuard` and `stateToken` in coordinator memory only. Never write tokens to the filesystem and never hand-edit them.
 
 Preflight terminal paths must run before reading target/reference bodies, before semantic payload generation, and before any state token exists. They must use `workflow preflight --no-state`, must not call `workflow context`, and must not pass semantic stdin flags.
 

@@ -6,7 +6,7 @@
 - Code review is actionable-only: pure style preferences, no-risk refactors, and over-abstraction are not blocking.
 - Public CLI commands are drfx doctor, drfx install, and drfx uninstall; drfx workflow is the internal deterministic interface used by this generated route.
 - The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, diff judgment, and final coordinator agreement are LLM work.
-- For resume, read .drfx/targets/<target-key>/.
+- Gemini routes are no-state advisory routes; do not read or reuse .drfx/targets/<target-key>/ for resume/reset.
 - Gemini is advisory-only.
 - Gemini v1 code review is advisory-only and produces read-only findings.
 - review-and-fix is unsupported on Gemini; automatic fixing is unavailable in Gemini v1.

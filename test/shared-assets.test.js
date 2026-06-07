@@ -77,7 +77,7 @@ test('code-route generated shells equal golden snapshots byte-for-byte', () => {
   }
 });
 
-test('Claude and Codex generated starts preserve materialized rounds token', () => {
+test('Claude and Codex generated starts preserve materialized rounds and state-control tokens', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
   for (const platform of ['claude', 'codex']) {
@@ -86,12 +86,12 @@ test('Claude and Codex generated starts preserve materialized rounds token', () 
       const startLines = rendered.split('\n').filter((line) => line.startsWith('drfx workflow start '));
 
       assert.ok(
-        startLines.some((line) => line.includes('<selectedMode> rounds=<roundLimit> guard=<selectedGuard>')),
-        `${platform}:${route.routeName} strict start must carry the materialized rounds token`
+        startLines.some((line) => line.includes('<selectedMode> <stateControlToken> rounds=<roundLimit> guard=<selectedGuard>')),
+        `${platform}:${route.routeName} strict start must carry the materialized rounds and state-control tokens`
       );
       assert.ok(
-        startLines.some((line) => line.includes('review-and-fix rounds=<roundLimit> guard=<selectedGuard>')),
-        `${platform}:${route.routeName} practical start must carry the materialized rounds token`
+        startLines.some((line) => line.includes('review-and-fix <stateControlToken> rounds=<roundLimit> guard=<selectedGuard>')),
+        `${platform}:${route.routeName} practical start must carry the materialized rounds and state-control tokens`
       );
     }
   }

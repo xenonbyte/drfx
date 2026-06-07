@@ -2,7 +2,7 @@
 
 Long tasks must be resumable from project files, not from chat history or runtime memory. Create target-local state only when persistent state is needed: long or multi-round work, `resume`, `ledger=`, an auditable trail, context pressure, interruption, or a blocker.
 
-One-shot `read-only` without `ledger=` and without `resume` is no-state: do not create `.drfx`, target directories, manifests, ledgers, continuity files, summaries, receipts, or locks.
+One-shot `read-only` without `ledger=`, without `resume`, and without `reset` is no-state: do not create `.drfx`, target directories, manifests, ledgers, continuity files, summaries, receipts, or locks.
 
 No-state read-only uses command-generated `reviewGuard` and `stateToken` values kept only in coordinator memory. These tokens are redacted normalized state, not document content. Do not write them to disk, do not edit them, and never finalize no-state as `pass`; clean read-only status is `read-only-clean`.
 

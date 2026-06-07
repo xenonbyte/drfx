@@ -157,10 +157,10 @@ Only explicit `assurance=strict-verified` requests strict verified mode. In the 
 drfx doctor --platform codex --json
 ```
 
-Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.codex.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Pass those current-run values to workflow start:
+Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.codex.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Materialize `<stateControlToken>` as `reset` only when the current invocation includes `reset`; otherwise omit it. Pass those current-run values to workflow start:
 
 ```text
-drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} <selectedMode>{{ROUNDS_TOKEN}} guard=<selectedGuard> --assurance strict-verified --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
+drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} <selectedMode>{{STATE_CONTROL_TOKEN}}{{ROUNDS_TOKEN}} guard=<selectedGuard> --assurance strict-verified --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
 ```
 
 For `review-and-fix assurance=strict-verified`, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
@@ -172,10 +172,10 @@ Do not scrape human-readable `drfx doctor` output. Do not reuse a cached descrip
 For `assurance=practical`, after successful probes, start persistent state:
 
 ```text
-drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix{{ROUNDS_TOKEN}} guard=<selectedGuard> --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
+drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix{{STATE_CONTROL_TOKEN}}{{ROUNDS_TOKEN}} guard=<selectedGuard> --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
 ```
 
-This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, and `<selectedGuard>` is explicit guard or default `git`. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
+This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, `<selectedGuard>` is explicit guard or default `git`, and `<stateControlToken>` is `reset` only for explicit reset starts. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
 
 Then coordinate this loop:
 
@@ -198,7 +198,7 @@ Then coordinate this loop:
 
 ## No-State Read-Only Flow
 
-For one-shot `read-only` without `ledger=` and without `resume`, keep `reviewGuard` and `stateToken` in coordinator memory only. Never write tokens to the filesystem and never hand-edit them.
+For one-shot `read-only` without `ledger=`, without `resume`, and without `reset`, keep `reviewGuard` and `stateToken` in coordinator memory only. Never write tokens to the filesystem and never hand-edit them.
 
 Preflight terminal paths must run before reading target/reference bodies, before semantic payload generation, and before any state token exists. They must use `workflow preflight --no-state`, must not call `workflow context`, and must not pass semantic stdin flags.
 

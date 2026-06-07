@@ -8,7 +8,7 @@ Package version: 0.0.0-snapshot
 
 Use this Claude Code command with a bare `<path>` target as the recommended form, or full `target=<path>`, optional repeated `ref=<path>`, `strict` or `normal`,
 optional `read-only` or `review-and-fix`, optional `assurance=practical|strict-verified|advisory`,
-optional `guard=git|snapshot`, optional `resume`, optional `ledger=<target-local path>`, optional `root=<project-root>`, and optional `debug`.
+optional `guard=git|snapshot`, optional `resume` or `reset`, optional `ledger=<target-local path>`, optional `root=<project-root>`, and optional `debug`.
 When a valid target is present and mode plus assurance are omitted, Claude Code selects `review-and-fix` and `practical`.
 Explicit `assurance=advisory` without mode selects `read-only`; advisory assurance cannot write targets.
 The generated route must materialize effective mode, assurance, and guard before workflow calls; never pass omitted values through to `drfx workflow`.
@@ -35,7 +35,7 @@ Help-style or invalid invocations explain usage without reading files, running p
 Invocation syntax:
 
 ```text
-review-fix-doc <path> [ref=<path>...] [read-only|review-and-fix] [strict|normal] [assurance=practical|strict-verified|advisory] [guard=git|snapshot] [resume] [rounds=<n>] [ledger=<target-local path>] [root=<project-root>] [debug]
+review-fix-doc <path> [ref=<path>...] [read-only|review-and-fix] [strict|normal] [assurance=practical|strict-verified|advisory] [guard=git|snapshot] [resume|reset] [rounds=<n>] [ledger=<target-local path>] [root=<project-root>] [debug]
 ```
 
 Full form: `review-fix-doc target=<path> ...`. A bare path is shorthand for `target=<path>`. When `target=` is used, unlabeled paths are rejected.
@@ -185,10 +185,10 @@ Only explicit `assurance=strict-verified` requests strict verified mode. In the 
 drfx doctor --platform claude --json
 ```
 
-Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.claude.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Pass those current-run values to workflow start:
+Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.claude.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Materialize `<stateControlToken>` as `reset` only when the current invocation includes `reset`; otherwise omit it. Pass those current-run values to workflow start:
 
 ```text
-drfx workflow start review-fix-doc target=<path> <selectedMode> rounds=<roundLimit> guard=<selectedGuard> --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
+drfx workflow start review-fix-doc target=<path> <selectedMode> <stateControlToken> rounds=<roundLimit> guard=<selectedGuard> --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
 ```
 
 For `review-and-fix assurance=strict-verified`, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
@@ -200,10 +200,10 @@ Do not scrape human-readable `drfx doctor` output. Do not reuse a cached descrip
 For `assurance=practical`, after successful probes, start persistent state:
 
 ```text
-drfx workflow start review-fix-doc target=<path> review-and-fix rounds=<roundLimit> guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
+drfx workflow start review-fix-doc target=<path> review-and-fix <stateControlToken> rounds=<roundLimit> guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
 ```
 
-This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, and `<selectedGuard>` is explicit guard or default `git`. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
+This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, `<selectedGuard>` is explicit guard or default `git`, and `<stateControlToken>` is `reset` only for explicit reset starts. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
 
 Then coordinate this loop:
 
@@ -226,7 +226,7 @@ Automatic target writes require `review-and-fix` and a selected guard mode: use 
 
 ## No-State Read-Only Flow
 
-For one-shot `read-only` without `ledger=` and without `resume`, keep `reviewGuard` and `stateToken` in coordinator memory only. Never write tokens to the filesystem and never hand-edit them.
+For one-shot `read-only` without `ledger=`, without `resume`, and without `reset`, keep `reviewGuard` and `stateToken` in coordinator memory only. Never write tokens to the filesystem and never hand-edit them.
 
 Preflight terminal paths must run before reading target/reference bodies, before semantic payload generation, and before any state token exists. They must use `workflow preflight --no-state`, must not call `workflow context`, and must not pass semantic stdin flags.
 

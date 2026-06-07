@@ -1,6 +1,6 @@
 Full form: `{{ROUTE_NAME}} base=<branch> ...`. `base=<branch>` is required and names the merge base for the diff; `HEAD` is the other end. There is no bare-path or `target=` form for this route.
 
-This route accepts only `base=<branch>`, optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`. It does not accept `ref=`, `strict`, `normal`, `assurance=`, or `ledger=`.
+This route accepts only `base=<branch>`, optional `read-only` or `review-and-fix`, optional `guard=git|snapshot`, optional `resume` or `reset`, optional `rounds=<n>`, optional `root=<project-root>`, and optional `debug`. `resume` and `reset` are mutually exclusive. It does not accept `ref=`, `strict`, `normal`, `assurance=`, or `ledger=`.
 
 If a valid `base=<branch>` invocation omits mode, missing mode selects `review-and-fix`. This is a code route: there is no user-facing `assurance=` token. For `review-and-fix`, the route internally materializes `practical` assurance (or `strict-verified` only via the same-flow strict proof path); it never runs `review-and-fix` with advisory assurance, so code auto-fix is not rejected as `advisory-review-and-fix-unsupported`.
 

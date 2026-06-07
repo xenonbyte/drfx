@@ -162,6 +162,7 @@ Supported tokens:
 - `assurance=strict-verified` requires same-flow `drfx doctor --platform <platform> --json` proof.
 - `assurance=advisory` allows read-only advisory review only.
 - `resume` continues from target-local state.
+- `reset` archives the existing target state (moved to `.drfx/archived/`, never deleted) and starts a fresh review. `resume` and `reset` are mutually exclusive.
 - `rounds=<n>` sets the maximum repair-loop count (positive integer). Unsupported with `read-only`.
 - `debug` prints redacted workflow audit details. Default output is concise.
 - `root=<path>` sets the project root used for containment and state layout.

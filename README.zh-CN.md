@@ -162,6 +162,7 @@ Supported tokens:
 - `assurance=strict-verified` 要求 same-flow `drfx doctor --platform <platform> --json` proof。
 - `assurance=advisory` 仅允许 read-only advisory review。
 - `resume` 从 target-local state 继续。
+- `reset` 归档现有 target state（移到 `.drfx/archived/`，绝不删除）并全新开始 review。`resume` 与 `reset` 互斥。
 - `rounds=<n>` 设置最大修复循环次数（正整数）。与 `read-only` 不兼容。
 - `debug` 打印 redacted workflow audit details。默认输出保持 concise。
 - `root=<path>` 设置用于 containment 和 state layout 的 project root。
