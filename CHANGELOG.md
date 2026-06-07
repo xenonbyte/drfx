@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.4 - 2026-06-08
+
+The `reset` token (shipped in v0.4.1) is now visible at every route surface: invocation grammars, source skills, generated workflow start commands, and the shared no-state rules — and Gemini route contracts stop pointing at persistent state they never support.
+
+### Fixed
+
+- Generated Claude/Codex routes now advertise `[resume|reset]` in the invocation grammar and prose, state that `resume` and `reset` are mutually exclusive, and thread a `<stateControlToken>` placeholder through the strict-verified and practical `drfx workflow start` command lines — materialized as `reset` only when the invocation includes `reset`. The workflow CLI has accepted the token since v0.4.1, but no generated route ever showed it, so coordinators had no documented way to issue a reset start.
+- No-state review-backed workflow commands now reject `reset` explicitly (`ERR_NO_STATE_RESET`), matching the existing `resume` rejection instead of silently dropping the token.
+- Gemini route contracts no longer say "For resume, read `.drfx/targets/<target-key>/`" — Gemini routes are no-state advisory and support neither `resume` nor `reset`.
+
+### Changed
+
+- `shared/core.md`, `shared/long-task.md`, both READMEs, and the six source skills now define one-shot no-state read-only as running without `ledger=`, without `resume`, and without `reset`.
+
 ## 0.6.3 - 2026-06-06
 
 Development tooling housekeeping: honest naming for the syntax check script and CI coverage for the current Node LTS line.
