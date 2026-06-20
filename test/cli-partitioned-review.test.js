@@ -129,6 +129,21 @@ const REVIEWER_FAIL_HIGH = [
   '  sensitive: false'
 ].join('\n');
 
+function reviewerFailHighWithId(id, location) {
+  return [
+    'FAIL',
+    'Findings:',
+    `- id: ${id}`,
+    '  severity: high',
+    `  location: ${location}`,
+    '  issue: The partitioned review found a blocking defect.',
+    '  why_it_matters: Aggregate FAIL must enter the normal triage and fix workflow.',
+    '  suggested_fix: Fix the blocking defect before finalizing.',
+    '  confidence: confirmed',
+    '  sensitive: false'
+  ].join('\n');
+}
+
 const TRIAGE_ACCEPT_PARTITIONED = [
   'Triage:',
   '- reviewer_id: R901',
@@ -170,6 +185,13 @@ function writeReceiptTempFile(t, text) {
   const file = path.join(dir, 'receipt.txt');
   fs.writeFileSync(file, text);
   return file;
+}
+
+function readReviewerReportJson(reportPath) {
+  const text = fs.readFileSync(reportPath, 'utf8');
+  const match = text.match(/```json\n([\s\S]*?)\n```/);
+  assert.ok(match, `reviewer report ${reportPath} must contain a normalized json block`);
+  return JSON.parse(match[1]);
 }
 
 function runBin(args, { cwd, input } = {}) {
@@ -263,6 +285,40 @@ test('record-review --phase unit-review writes findings + summaries from the two
     fs.existsSync(path.join(start.targetStateDir, 'project-review', 'findings', 'unit-001.json')),
     true
   );
+});
+
+test('record-review --phase unit-review does not reuse a summary when paired findings are missing', async (t) => {
+  const root = makeOverCapRepo(t);
+  const start = await startPartitioned(root);
+  const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+  const findingsPath = path.join(start.targetStateDir, 'project-review', 'findings', 'unit-001.json');
+
+  const first = await runWorkflowCommand('record-review', [
+    ...practicalArgs(['review-fix-code']),
+    '--phase', 'unit-review',
+    '--unit', 'unit-001',
+    '--result-stdin',
+    '--payload-file', receiptFile
+  ], { cwd: root, stdin: REVIEWER_PASS });
+  assert.equal(first.ok, true, JSON.stringify(first));
+  assert.equal(fs.existsSync(findingsPath), true);
+
+  fs.rmSync(findingsPath, { force: true });
+
+  const retry = await runWorkflowCommand('record-review', [
+    ...practicalArgs(['review-fix-code']),
+    '--phase', 'unit-review',
+    '--unit', 'unit-001',
+    '--result-stdin',
+    '--payload-file', receiptFile
+  ], { cwd: root, stdin: REVIEWER_FAIL_HIGH });
+
+  assert.equal(retry.ok, true, JSON.stringify(retry));
+  assert.equal(retry.reused, false, 'summary-only partial state must not mark the unit reviewed');
+  assert.equal(fs.existsSync(findingsPath), true, 'retry must restore the missing paired findings file');
+  const findings = JSON.parse(fs.readFileSync(findingsPath, 'utf8'));
+  assert.equal(findings.result, 'FAIL');
+  assert.equal(findings.findings[0].id, 'R901');
 });
 
 test('record-review --phase unit-review forwards stdin findings + safe payload-file receipt through bin/drfx.js', async (t) => {
@@ -770,6 +826,88 @@ test('aggregate-review FAIL writes a reviewer report that can be triaged into be
   assert.equal(beginFix.status, 'begin-fix');
 });
 
+test('aggregate-review rewrites duplicate partition reviewer ids before triage report output', async (t) => {
+  const root = makeMultiUnitRepo(t);
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+  assert.ok(plan.units.length >= 2, 'multi-unit repo must partition into multiple units');
+
+  for (const [index, unit] of plan.units.entries()) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    const reviewerResult = index < 2
+      ? reviewerFailHighWithId('R001', unit.files[0].path)
+      : REVIEWER_PASS;
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: reviewerResult });
+  }
+
+  for (const backstop of plan.crosscuttingBackstops) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  const aggregate = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(aggregate.ok, true, JSON.stringify(aggregate));
+  assert.equal(aggregate.verdict, 'stopped-with-deferrals');
+  assert.ok(aggregate.reviewerReportPath, 'aggregate FAIL must surface a reviewer report path');
+
+  const persisted = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'aggregate.json'), 'utf8'
+  ));
+  assert.deepEqual(
+    persisted.findings.map((finding) => finding.id),
+    ['R001', 'R002'],
+    'aggregate.json must contain unique reviewer ids'
+  );
+
+  const report = readReviewerReportJson(aggregate.reviewerReportPath);
+  const reportIds = report.normalized.findings.map((finding) => finding.id);
+  assert.deepEqual(reportIds, ['R001', 'R002'], 'triage reviewer report must contain unique reviewer ids');
+  assert.equal(new Set(reportIds).size, reportIds.length, 'reviewer ids must be unique before triage Map lookup');
+
+  const triage = await runWorkflowCommand('record-triage', [
+    ...practicalArgs(['review-fix-code']),
+    '--triage-stdin'
+  ], {
+    cwd: root,
+    stdin: [
+      'Triage:',
+      '- reviewer_id: R001',
+      '  issue_id: ISSUE-001',
+      '  decision: accepted',
+      '  severity: high',
+      '  original_severity: high',
+      '  rationale: The first partition finding is blocking.',
+      '  merged_into: none',
+      '  deferred_owner: none',
+      '  deferred_next_action: none',
+      '  non_blocking: false',
+      '- reviewer_id: R002',
+      '  issue_id: ISSUE-002',
+      '  decision: accepted',
+      '  severity: high',
+      '  original_severity: high',
+      '  rationale: The second partition finding is blocking.',
+      '  merged_into: none',
+      '  deferred_owner: none',
+      '  deferred_next_action: none',
+      '  non_blocking: false'
+    ].join('\n')
+  });
+  assert.equal(triage.ok, true, JSON.stringify(triage));
+  assert.equal(triage.status, 'recorded-triage');
+});
+
 // ---------------------------------------------------------------------------
 // PERSISTENT-only: --no-state partitioned subcommands reject cleanly
 // ---------------------------------------------------------------------------
@@ -796,6 +934,29 @@ test('--no-state aggregate-review rejects cleanly', async (t) => {
     runWorkflowCommand('aggregate-review', [start.targetStateDir, '--no-state', '--json'], { cwd: root }),
     (error) => error.code === 'ERR_NO_STATE_COMMAND'
   );
+});
+
+test('bin no-state over-cap CODE context JSON serializes the partition plan', async (t) => {
+  const root = makeOverCapRepo(t);
+  const out = runBin(['workflow', 'context',
+    'review-fix-code', 'read-only', `root=${root}`, 'guard=snapshot',
+    '--no-state',
+    '--runtime-platform', 'codex',
+    '--runtime-subagent-probe', 'ready',
+    '--runtime-stdin-handoff', 'ready',
+    '--json'
+  ], { cwd: root });
+  assert.equal(out.code, 0, out.stderr || out.stdout);
+
+  const result = JSON.parse(out.stdout);
+  assert.equal(result.status, 'partitioned-review');
+  assert.equal(result.reviewMode, 'partitioned');
+  assert.ok(Number.isInteger(result.unitCount) && result.unitCount >= 1);
+  assert.equal(typeof result.unitByteBudget, 'number');
+  assert.ok(Array.isArray(result.units), 'CLI JSON must include bounded units to review');
+  assert.equal(result.units.length, result.unitCount);
+  assert.match(result.projectReviewFingerprint, /^[0-9a-f]{64}$/);
+  assert.equal(fs.existsSync(path.join(root, '.drfx')), false);
 });
 
 // ---------------------------------------------------------------------------
