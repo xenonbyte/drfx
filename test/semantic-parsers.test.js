@@ -10,6 +10,7 @@ const {
   parseFixReport,
   parseDiffReview,
   parseFinalResponseBlock,
+  parseUnitReviewReport,
   readSemanticPayload
 } = require('../lib/semantic-parsers');
 
@@ -292,4 +293,326 @@ test('final response accepts stopped-no-progress with no-progress-detected', () 
   const parsed = parseFinalResponseBlock(block);
   assert.equal(parsed.finalStatus, 'stopped-no-progress');
   assert.equal(parsed.statusReason, 'no-progress-detected');
+});
+
+// ---------------------------------------------------------------------------
+// parseUnitReviewReport tests (PLAN-TASK-008)
+// ---------------------------------------------------------------------------
+
+function makeUnitReviewReport(overrides = {}) {
+  const defaults = {
+    unit: 'unit-001',
+    reviewed: 'true',
+    coverageRisk: 'none',
+    reviewCacheKey: 'a'.repeat(64),
+    skippedLines: ['- none'],
+    extraReadsLines: ['- none'],
+    contractsLines: ['- none']
+  };
+  const o = Object.assign({}, defaults, overrides);
+  return [
+    `Unit: ${o.unit}`,
+    `Reviewed: ${o.reviewed}`,
+    `Coverage risk: ${o.coverageRisk}`,
+    `Review cache key: ${o.reviewCacheKey}`,
+    'Skipped:',
+    ...o.skippedLines,
+    '',
+    'Extra reads:',
+    ...o.extraReadsLines,
+    '',
+    'Contracts touched:',
+    ...o.contractsLines
+  ].join('\n');
+}
+
+test('parseUnitReviewReport: valid receipt with coverage_risk none and empty lists', () => {
+  const parsed = parseUnitReviewReport(makeUnitReviewReport());
+  assert.equal(parsed.unitId, 'unit-001');
+  assert.equal(parsed.reviewed, true);
+  assert.equal(parsed.coverageRisk, 'none');
+  assert.equal(parsed.reviewCacheKey, 'a'.repeat(64));
+  assert.deepEqual(parsed.skipped, []);
+  assert.deepEqual(parsed.extraReads, []);
+  assert.deepEqual(parsed.contractsTouched, []);
+  assert.deepEqual(parsed.warnings, []);
+});
+
+test('parseUnitReviewReport: valid receipt with coverage_risk high and reviewed false', () => {
+  const parsed = parseUnitReviewReport(makeUnitReviewReport({
+    coverageRisk: 'high',
+    reviewed: 'false',
+    reviewCacheKey: 'none'
+  }));
+  assert.equal(parsed.coverageRisk, 'high');
+  assert.equal(parsed.reviewed, false);
+  assert.equal(parsed.reviewCacheKey, 'none');
+});
+
+test('parseUnitReviewReport: valid receipt with populated skipped, extraReads, contractsTouched', () => {
+  const parsed = parseUnitReviewReport(makeUnitReviewReport({
+    skippedLines: ['- path: src/foo.js  reason: out-of-scope'],
+    extraReadsLines: ['- path: src/bar.js  contentId: abc123'],
+    contractsLines: ['- ContractA', '- ContractB']
+  }));
+  assert.equal(parsed.skipped.length, 1);
+  assert.equal(parsed.skipped[0].path, 'src/foo.js');
+  assert.equal(parsed.skipped[0].reason, 'out-of-scope');
+  assert.equal(parsed.extraReads.length, 1);
+  assert.equal(parsed.extraReads[0].path, 'src/bar.js');
+  assert.equal(parsed.extraReads[0].contentId, 'abc123');
+  assert.equal(parsed.contractsTouched.length, 2);
+  assert.equal(parsed.contractsTouched[0], 'ContractA');
+  assert.equal(parsed.contractsTouched[1], 'ContractB');
+});
+
+test('parseUnitReviewReport: rejects invalid coverage_risk values (not none or high)', () => {
+  for (const bad of ['medium', 'low', 'unknown', '', 'NONE', 'HIGH', 'partial']) {
+    assert.throws(
+      () => parseUnitReviewReport(makeUnitReviewReport({ coverageRisk: bad || 'empty' })),
+      /Coverage risk|coverage risk|empty scalar/i,
+      `expected throw for coverage_risk="${bad}"`
+    );
+  }
+});
+
+test('parseUnitReviewReport: rejects invalid coverage_risk "medium" specifically', () => {
+  assert.throws(
+    () => parseUnitReviewReport(makeUnitReviewReport({ coverageRisk: 'medium' })),
+    /Coverage risk/i
+  );
+});
+
+test('parseUnitReviewReport: rejects malformed unit_id', () => {
+  // Too few digits
+  assert.throws(() => parseUnitReviewReport(makeUnitReviewReport({ unit: 'unit-01' })), /Unit/i);
+  // Wrong prefix
+  assert.throws(() => parseUnitReviewReport(makeUnitReviewReport({ unit: 'u-001' })), /Unit/i);
+  // Uppercase
+  assert.throws(() => parseUnitReviewReport(makeUnitReviewReport({ unit: 'UNIT-001' })), /Unit/i);
+});
+
+test('parseUnitReviewReport: rejects non-hex reviewCacheKey', () => {
+  // Not 64 chars
+  assert.throws(
+    () => parseUnitReviewReport(makeUnitReviewReport({ reviewCacheKey: 'abc123' })),
+    /Review cache key/i
+  );
+  // 64 chars but contains uppercase
+  assert.throws(
+    () => parseUnitReviewReport(makeUnitReviewReport({ reviewCacheKey: 'A'.repeat(64) })),
+    /Review cache key/i
+  );
+  // 64 chars but has non-hex character
+  assert.throws(
+    () => parseUnitReviewReport(makeUnitReviewReport({ reviewCacheKey: 'g'.repeat(64) })),
+    /Review cache key/i
+  );
+});
+
+test('parseUnitReviewReport: rejects missing required fields', () => {
+  // Missing Unit
+  assert.throws(
+    () => parseUnitReviewReport([
+      'Reviewed: true',
+      'Coverage risk: none',
+      'Review cache key: none',
+      'Skipped:',
+      '- none',
+      '',
+      'Extra reads:',
+      '- none',
+      '',
+      'Contracts touched:',
+      '- none'
+    ].join('\n')),
+    /Unit/i
+  );
+  // Missing Coverage risk
+  assert.throws(
+    () => parseUnitReviewReport([
+      'Unit: unit-001',
+      'Reviewed: true',
+      'Review cache key: none',
+      'Skipped:',
+      '- none',
+      '',
+      'Extra reads:',
+      '- none',
+      '',
+      'Contracts touched:',
+      '- none'
+    ].join('\n')),
+    /Coverage risk/i
+  );
+});
+
+test('parseUnitReviewReport: rejects unknown scalar field', () => {
+  assert.throws(
+    () => parseUnitReviewReport([
+      'Unit: unit-001',
+      'Reviewed: true',
+      'Coverage risk: none',
+      'Review cache key: none',
+      'Extra flag: unexpected',
+      'Skipped:',
+      '- none',
+      '',
+      'Extra reads:',
+      '- none',
+      '',
+      'Contracts touched:',
+      '- none'
+    ].join('\n')),
+    /unknown scalar field/i
+  );
+});
+
+test('parseUnitReviewReport: rejects unknown section', () => {
+  assert.throws(
+    () => parseUnitReviewReport([
+      'Unit: unit-001',
+      'Reviewed: true',
+      'Coverage risk: none',
+      'Review cache key: none',
+      'Skipped:',
+      '- none',
+      '',
+      'Notes:',
+      '- extra',
+      '',
+      'Extra reads:',
+      '- none',
+      '',
+      'Contracts touched:',
+      '- none'
+    ].join('\n')),
+    /unknown section/i
+  );
+});
+
+test('parseUnitReviewReport: rejects duplicate section', () => {
+  assert.throws(
+    () => parseUnitReviewReport([
+      'Unit: unit-001',
+      'Reviewed: true',
+      'Coverage risk: none',
+      'Review cache key: none',
+      'Skipped:',
+      '- none',
+      '',
+      'Extra reads:',
+      '- none',
+      '',
+      'Contracts touched:',
+      '- none',
+      '',
+      'Skipped:',
+      '- none'
+    ].join('\n')),
+    /duplicate section/i
+  );
+});
+
+test('parseUnitReviewReport: rejects blank line inside list', () => {
+  assert.throws(
+    () => parseUnitReviewReport([
+      'Unit: unit-001',
+      'Reviewed: true',
+      'Coverage risk: none',
+      'Review cache key: none',
+      'Skipped:',
+      '- path: src/a.js  reason: out-of-scope',
+      '',
+      '- path: src/b.js  reason: out-of-scope',
+      '',
+      'Extra reads:',
+      '- none',
+      '',
+      'Contracts touched:',
+      '- none'
+    ].join('\n')),
+    // blank line resets currentSection, so the second "- path:" line at the top level
+    // will hit "malformed scalar field" — either message is acceptable
+    /.+/
+  );
+});
+
+test('parseUnitReviewReport: rejects missing required sections', () => {
+  assert.throws(
+    () => parseUnitReviewReport([
+      'Unit: unit-001',
+      'Reviewed: true',
+      'Coverage risk: none',
+      'Review cache key: none',
+      'Skipped:',
+      '- none'
+    ].join('\n')),
+    /Extra reads/i
+  );
+});
+
+test('parseUnitReviewReport: sanity — parseFinalResponseBlock unchanged after Task 8', () => {
+  // Verify parseFinalResponseBlock still parses a standard valid payload correctly.
+  const block = [
+    'Final status: blocked',
+    'Assurance: advisory',
+    'Runtime platform: manual',
+    'Mode: read-only',
+    'Target: docs/spec.md',
+    'Files changed: none',
+    'Fixed issue IDs: none',
+    'Verification performed: none',
+    'Deferrals or blockers: none',
+    'Blocking reason: state-validation-failed',
+    'Status reason: none',
+    'Residual risk: none',
+    'Redaction statement: none',
+    'Coordinator agreement: none'
+  ].join('\n');
+  const parsed = parseFinalResponseBlock(block);
+  assert.equal(parsed.finalStatus, 'blocked');
+  assert.equal(parsed.blockingReason, 'state-validation-failed');
+});
+
+test('parseUnitReviewReport: sanity — parseFixReport unchanged after Task 8', () => {
+  const text = [
+    'Fixed:',
+    '- ISSUE-001: Added schema validation.',
+    '',
+    'Files changed:',
+    '- docs/target.md',
+    '',
+    'Not fixed:',
+    '- none',
+    '',
+    'Residual risk:',
+    '- none identified'
+  ].join('\n');
+  const parsed = parseFixReport(text);
+  assert.deepEqual(parsed.fixed, [{ issue_id: 'ISSUE-001', summary: 'Added schema validation.' }]);
+  assert.deepEqual(parsed.filesChanged, ['docs/target.md']);
+  assert.deepEqual(parsed.notFixed, []);
+  assert.deepEqual(parsed.residualRisk, []);
+});
+
+test('coverage-incomplete is now an accepted Status reason for parseFinalResponseBlock', () => {
+  const block = [
+    'Final status: checkpoint',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Mode: review-and-fix',
+    'Target: docs/spec.md',
+    'Files changed: none',
+    'Fixed issue IDs: none',
+    'Verification performed: none',
+    'Deferrals or blockers: none',
+    'Blocking reason: none',
+    'Status reason: coverage-incomplete',
+    'Residual risk: none',
+    'Redaction statement: none',
+    'Coordinator agreement: none'
+  ].join('\n');
+  const parsed = parseFinalResponseBlock(block);
+  assert.equal(parsed.statusReason, 'coverage-incomplete');
 });
