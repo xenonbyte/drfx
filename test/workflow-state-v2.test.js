@@ -10,8 +10,10 @@ const {
   parseManifestV2,
   atomicWriteFile,
   writeReceiptOrBlock,
-  workflowJson
+  workflowJson,
+  STATUS_REASONS: STATUS_REASONS_COPY1
 } = require('../lib/workflow-state');
+const { STATUS_REASONS: STATUS_REASONS_COPY2 } = require('../lib/semantic-parsers');
 const { shouldCreatePersistentState } = require('../lib/target-state');
 const { shouldWriteRoundReceipt } = require('../lib/receipts');
 
@@ -645,5 +647,47 @@ test('code-kind manifest keeps User excludes as ORDERED sha256 pattern digests',
   assert.throws(
     () => formatManifestV2(makeCodeManifest({ userExcludes: ['*.log'] })),
     (error) => error.code === 'ERR_STATE_VALIDATION_FAILED'
+  );
+});
+
+// PLAN-TASK-009: STATUS_REASONS parity test
+//
+// There are two copies of STATUS_REASONS:
+//   copy 1 — lib/workflow-state.js   (Array, frozen)  — manifest/start-time reasons
+//   copy 2 — lib/semantic-parsers.js (Set)            — final-response-block reasons
+//
+// They are intentionally NOT strictly equal. `git-guard-unavailable` lives only in
+// copy 1 because it is emitted at START time (start.js status:'unsupported') and
+// never appears in a reviewer/coordinator final-response machine block. Adding it
+// to copy 2 would loosen parseFinalResponseBlock validation to accept a reason
+// that cannot legitimately appear there — a regression in strictness (D2 decision).
+//
+// The invariant asserted here is the honest, stricter form:
+//   1. 'coverage-incomplete' ∈ BOTH copies        (catches one-sided additions)
+//   2. copy2 ⊆ copy1                              (every final-response reason is a valid manifest reason)
+//   3. copy1 \ copy2 === exactly {'git-guard-unavailable'}  (no other undocumented divergence)
+test('STATUS_REASONS parity: coverage-incomplete in both copies; copy2 ⊆ copy1; copy1\\copy2 === {git-guard-unavailable}', () => {
+  // Normalize copy 1 (Array) and copy 2 (Set) to plain Sets for comparison.
+  const set1 = new Set(STATUS_REASONS_COPY1);
+  const set2 = STATUS_REASONS_COPY2 instanceof Set
+    ? STATUS_REASONS_COPY2
+    : new Set(STATUS_REASONS_COPY2);
+
+  // 1. 'coverage-incomplete' must be in both copies.
+  assert.ok(set1.has('coverage-incomplete'), "'coverage-incomplete' must be in copy 1 (workflow-state.js)");
+  assert.ok(set2.has('coverage-incomplete'), "'coverage-incomplete' must be in copy 2 (semantic-parsers.js)");
+
+  // 2. copy2 ⊆ copy1 — every final-response reason is also a valid manifest reason.
+  for (const reason of set2) {
+    assert.ok(set1.has(reason), `copy2 reason '${reason}' is missing from copy1 (workflow-state.js) — all final-response reasons must be valid manifest reasons`);
+  }
+
+  // 3. copy1 \ copy2 must be EXACTLY {'git-guard-unavailable'}.
+  //    Any other copy-1-exclusive reason indicates an undocumented divergence that needs a deliberate decision.
+  const onlyInCopy1 = new Set([...set1].filter((r) => !set2.has(r)));
+  assert.deepEqual(
+    onlyInCopy1,
+    new Set(['git-guard-unavailable']),
+    "copy1 \\ copy2 must be exactly {'git-guard-unavailable'} — any other copy-1-exclusive reason indicates undocumented divergence"
   );
 });
