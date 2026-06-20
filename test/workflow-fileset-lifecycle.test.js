@@ -1826,6 +1826,64 @@ test('recordUnitReview: writes summaries/<id>.json + findings/<id>.json with the
   assert.equal(findings.result, 'PASS');
 });
 
+test('recordUnitReview: rejects a coverage receipt for a different unit', async (t) => {
+  const { root, targetStateDir, plan } = await makeUnitReviewProject(t);
+  assert.ok(plan.units.length >= 2, 'multi-unit plan');
+
+  await assert.rejects(
+    recordUnitReview({
+      targetStateDir,
+      projectRoot: root,
+      unitId: plan.units[1].unit_id,
+      coverageReceipt: unitReviewPayload({ unitId: plan.units[0].unit_id }),
+      reviewerFindings: REVIEWER_PASS
+    }),
+    /does not match requested unit/
+  );
+});
+
+test('recordUnitReview: rejects unsafe extraRead paths before persistence', async (t) => {
+  const { root, targetStateDir, plan } = await makeUnitReviewProject(t);
+  const unit = plan.units[0];
+
+  await assert.rejects(
+    recordUnitReview({
+      targetStateDir,
+      projectRoot: root,
+      unitId: unit.unit_id,
+      coverageReceipt: unitReviewPayload({
+        unitId: unit.unit_id,
+        extraReads: [{ path: '../outside.js', contentId: 'a'.repeat(64) }]
+      }),
+      reviewerFindings: REVIEWER_PASS
+    }),
+    /invalid Extra reads path/
+  );
+
+  assert.equal(fs.existsSync(path.join(
+    targetStateDir, 'project-review', 'summaries', `${unit.unit_id}.json`
+  )), false);
+});
+
+test('recordUnitReview: rejects malformed extraRead contentId before persistence', async (t) => {
+  const { root, targetStateDir, plan } = await makeUnitReviewProject(t);
+  const unit = plan.units[0];
+
+  await assert.rejects(
+    recordUnitReview({
+      targetStateDir,
+      projectRoot: root,
+      unitId: unit.unit_id,
+      coverageReceipt: unitReviewPayload({
+        unitId: unit.unit_id,
+        extraReads: [{ path: 'src/b.js', contentId: 'not-a-sha256' }]
+      }),
+      reviewerFindings: REVIEWER_PASS
+    }),
+    /invalid Extra reads contentId/
+  );
+});
+
 test('recordUnitReview: an oversize unit writes the FIXED high-risk summary, never claims coverage', async (t) => {
   const { root, targetStateDir, plan } = await makeUnitReviewProject(t, { oversize: true });
   const oversizeUnit = plan.units.find((u) => u.oversize_file === true);

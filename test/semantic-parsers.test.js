@@ -350,9 +350,10 @@ test('parseUnitReviewReport: valid receipt with coverage_risk high and reviewed 
 });
 
 test('parseUnitReviewReport: valid receipt with populated skipped, extraReads, contractsTouched', () => {
+  const contentId = 'b'.repeat(64);
   const parsed = parseUnitReviewReport(makeUnitReviewReport({
     skippedLines: ['- path: src/foo.js  reason: out-of-scope'],
-    extraReadsLines: ['- path: src/bar.js  contentId: abc123'],
+    extraReadsLines: [`- path: src/bar.js  contentId: ${contentId}`],
     contractsLines: ['- ContractA', '- ContractB']
   }));
   assert.equal(parsed.skipped.length, 1);
@@ -360,7 +361,7 @@ test('parseUnitReviewReport: valid receipt with populated skipped, extraReads, c
   assert.equal(parsed.skipped[0].reason, 'out-of-scope');
   assert.equal(parsed.extraReads.length, 1);
   assert.equal(parsed.extraReads[0].path, 'src/bar.js');
-  assert.equal(parsed.extraReads[0].contentId, 'abc123');
+  assert.equal(parsed.extraReads[0].contentId, contentId);
   assert.equal(parsed.contractsTouched.length, 2);
   assert.equal(parsed.contractsTouched[0], 'ContractA');
   assert.equal(parsed.contractsTouched[1], 'ContractB');
@@ -407,6 +408,23 @@ test('parseUnitReviewReport: rejects non-hex reviewCacheKey', () => {
   assert.throws(
     () => parseUnitReviewReport(makeUnitReviewReport({ reviewCacheKey: 'g'.repeat(64) })),
     /Review cache key/i
+  );
+});
+
+test('parseUnitReviewReport: rejects unsafe extraRead paths and malformed contentIds', () => {
+  for (const badPath of ['../secret.txt', '/tmp/secret.txt', 'src/../secret.txt']) {
+    assert.throws(
+      () => parseUnitReviewReport(makeUnitReviewReport({
+        extraReadsLines: [`- path: ${badPath}  contentId: ${'b'.repeat(64)}`]
+      })),
+      /Extra reads path/i
+    );
+  }
+  assert.throws(
+    () => parseUnitReviewReport(makeUnitReviewReport({
+      extraReadsLines: ['- path: src/bar.js  contentId: abc123']
+    })),
+    /Extra reads contentId/i
   );
 });
 

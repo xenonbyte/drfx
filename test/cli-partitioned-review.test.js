@@ -547,6 +547,48 @@ test('aggregate-review never claims PASS when a backstop summary is present-but-
     'the present-but-high backstop surfaces as uncovered');
 });
 
+test('aggregate-review never claims PASS when a backstop spans only a subset of units', async (t) => {
+  const root = makeMultiUnitRepo(t);
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+  assert.ok(plan.units.length > 1, 'multi-unit plan');
+
+  for (const unit of plan.units) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  const partialBackstop = plan.crosscuttingBackstops[0];
+  const partialReceipt = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+  const recorded = await runWorkflowCommand('record-review', [
+    ...practicalArgs(['review-fix-code']),
+    '--phase', 'crosscutting', '--backstop', partialBackstop, '--unit', 'unit-001',
+    '--result-stdin', '--payload-file', partialReceipt
+  ], { cwd: root, stdin: REVIEWER_PASS });
+  assert.equal(recorded.coverageRisk, 'high', 'partial unit span cannot earn crosscutting none');
+
+  for (const backstop of plan.crosscuttingBackstops.slice(1)) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  const result = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.verdict, 'stopped-with-deferrals');
+  assert.deepEqual(result.uncoveredBackstops, [partialBackstop]);
+});
+
 test('aggregate-review reaches PASS only when every unit AND all 7 backstops report coverage_risk none', async (t) => {
   const root = makeOverCapRepo(t);
   const start = await startPartitioned(root);
@@ -565,13 +607,13 @@ test('aggregate-review reaches PASS only when every unit AND all 7 backstops rep
     ], { cwd: root, stdin: REVIEWER_PASS });
   }
 
-  // Every backstop earns none via positive cross-unit evidence (spanned unit is none,
-  // receipt confirms reviewed:true + coverage_risk:none, and a spanned unit is given).
+  // Every backstop earns none via positive cross-unit evidence: all planned units have
+  // clean summaries, and the receipt confirms reviewed:true + coverage_risk:none.
   for (const backstop of plan.crosscuttingBackstops) {
     const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
     const recorded = await runWorkflowCommand('record-review', [
       ...practicalArgs(['review-fix-code']),
-      '--phase', 'crosscutting', '--backstop', backstop, '--unit', 'unit-001',
+      '--phase', 'crosscutting', '--backstop', backstop,
       '--result-stdin', '--payload-file', receiptFile
     ], { cwd: root, stdin: REVIEWER_PASS });
     assert.equal(recorded.coverageRisk, 'none', `backstop ${backstop} must earn none`);

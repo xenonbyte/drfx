@@ -1060,6 +1060,19 @@ test('resolveCodeInventory fingerprint changes when a file changes', async (t) =
     'changing a file must change the projectReviewFingerprint');
 });
 
+test('resolveCodeInventory fingerprint changes when a path changes with identical content', async (t) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-inv-fp-rename-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'a.js'), 'same\n');
+
+  const before = await resolveCodeInventory({ cwd: dir, scopes: [] });
+  fs.renameSync(path.join(dir, 'a.js'), path.join(dir, 'b.js'));
+  const after = await resolveCodeInventory({ cwd: dir, scopes: [] });
+
+  assert.notEqual(before.projectReviewFingerprint, after.projectReviewFingerprint,
+    'renaming or moving identical bytes must change the projectReviewFingerprint');
+});
+
 test('resolveCodeInventory fingerprint is order-independent (sorted by path before hashing)', async (t) => {
   // Two dirs with same files but written in different orders on disk.
   // Because inventory is sorted by path before fingerprinting, the fingerprint
