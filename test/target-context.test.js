@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { Readable } = require('node:stream');
 const test = require('node:test');
 
 const {
@@ -931,6 +932,41 @@ test('resolveCodeInventory returns all surviving files WITHOUT cap truncation', 
   assert.ok(result && result.inventory, 'result must have an inventory array');
   assert.equal(result.inventory.length, 310, 'inventory must include ALL 310 files, not cap-truncated');
   assert.match(result.projectReviewFingerprint, /^[0-9a-f]{64}$/, 'fingerprint must be a 64-char hex string');
+});
+
+test('resolveCodeInventory limits concurrent streaming content hashing', async (t) => {
+  const fileCount = 40;
+  const dir = makeFlatFixture(t, 'drfx-inv-bounded-hash-', fileCount);
+
+  const originalCreateReadStream = fs.createReadStream;
+  let active = 0;
+  let maxActive = 0;
+  let opened = 0;
+  t.after(() => {
+    fs.createReadStream = originalCreateReadStream;
+  });
+  fs.createReadStream = function patchedCreateReadStream(filePath) {
+    opened += 1;
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    const stream = new Readable({ read() {} });
+    setImmediate(() => {
+      try {
+        stream.push(fs.readFileSync(filePath));
+        stream.push(null);
+      } catch (error) {
+        stream.destroy(error);
+      } finally {
+        active -= 1;
+      }
+    });
+    return stream;
+  };
+
+  const result = await resolveCodeInventory({ cwd: dir, scopes: [] });
+  assert.equal(result.inventory.length, fileCount);
+  assert.equal(opened, fileCount);
+  assert.ok(maxActive < fileCount, `hashing must be bounded, saw ${maxActive} concurrent streams`);
 });
 
 test('resolveCodeInventory returns rows with {path,size,ext,contentId} shape', async (t) => {

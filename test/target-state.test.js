@@ -532,6 +532,34 @@ test('whole-root over-cap persistent CODE start writes a checkpoint manifest + p
   }
 });
 
+test('whole-root over-cap persistent CODE start rejects a stale project-review symlink before writing plan files', async (t) => {
+  const root = makeOverCapRepo(t);
+  const start = await runWorkflowCommand(
+    'start',
+    persistentArgs(['review-fix-code', 'guard=snapshot']),
+    { cwd: root }
+  );
+  assert.equal(start.ok, true, JSON.stringify(start));
+
+  const escapeDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-plan-escape-')));
+  t.after(() => fs.rmSync(escapeDir, { recursive: true, force: true }));
+
+  fs.rmSync(start.manifestPath, { force: true });
+  fs.rmSync(path.join(start.targetStateDir, 'project-review'), { recursive: true, force: true });
+  fs.symlinkSync(escapeDir, path.join(start.targetStateDir, 'project-review'), 'dir');
+
+  await assert.rejects(
+    runWorkflowCommand(
+      'start',
+      persistentArgs(['review-fix-code', 'guard=snapshot']),
+      { cwd: root }
+    ),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED'
+  );
+  assert.equal(fs.existsSync(path.join(escapeDir, 'inventory.jsonl')), false);
+  assert.equal(fs.existsSync(path.join(escapeDir, 'units.json')), false);
+});
+
 test('whole-root over-cap persistent CODE start output is deterministic across two runs', async (t) => {
   const rootA = makeOverCapRepo(t);
   const rootB = makeOverCapRepo(t);
