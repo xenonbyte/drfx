@@ -56,6 +56,22 @@ function makeOverCapRepo(t) {
   return root;
 }
 
+// A repo that bin-packs into MULTIPLE units: four ~600KB files each land in their
+// own unit because two of them exceed the 1MB unit budget. Needed to exercise the
+// "strict subset of units reviewed" reconciliation, which a single-unit repo cannot.
+function makeMultiUnitRepo(t) {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-cli-multi-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  git(root, ['init', '-b', 'main']);
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 1;\n');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'init']);
+  const big = 'x'.repeat(600 * 1024) + '\n';
+  for (let i = 0; i < 4; i++) fs.writeFileSync(path.join(root, `big-${i}.js`), big);
+  return root;
+}
+
 function practicalArgs(extra) {
   return [
     ...extra,
@@ -368,6 +384,80 @@ test('aggregate-review never claims PASS when a unit summary carries coverage_ri
   assert.equal(result.verdict, 'stopped-with-deferrals');
   assert.notEqual(result.verdict, 'PASS');
   assert.equal(result.coverageProof.residualRisk, 'present');
+});
+
+test('aggregate-review never claims PASS when only a STRICT SUBSET of units is reviewed', async (t) => {
+  const root = makeMultiUnitRepo(t);
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+  assert.ok(plan.units.length >= 2, 'multi-unit repo must partition into multiple units');
+
+  // Record clean coverage_risk:none summaries for every unit EXCEPT the last one.
+  // aggregate() over the present summaries would be vacuously all-none and PASS;
+  // the workflow-layer reconciliation against units.json must block it.
+  const reviewed = plan.units.slice(0, -1);
+  const omitted = plan.units[plan.units.length - 1];
+  for (const unit of reviewed) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  const result = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.notEqual(result.verdict, 'PASS', 'a partial unit set can never earn a project PASS');
+  assert.equal(result.verdict, 'stopped-with-deferrals');
+  assert.equal(result.reason, 'coverage-incomplete');
+  assert.ok(Array.isArray(result.uncoveredUnitIds), 'must surface the uncovered unit ids');
+  assert.ok(result.uncoveredUnitIds.includes(omitted.unit_id),
+    `omitted unit ${omitted.unit_id} must surface as uncovered`);
+  assert.equal(result.coverageProof.residualRisk, 'present');
+  // The coverage proof's discovered count reflects the EXPECTED unit set, not the
+  // present-summaries count.
+  assert.equal(result.coverageProof.discovered, plan.units.length);
+
+  // The honest verdict is what gets persisted into aggregate.json.
+  const persisted = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'aggregate.json'), 'utf8'
+  ));
+  assert.equal(persisted.verdict, 'stopped-with-deferrals');
+  assert.equal(persisted.reason, 'coverage-incomplete');
+});
+
+test('aggregate-review never claims PASS over ZERO recorded summaries (empty set is not vacuous PASS)', async (t) => {
+  const root = makeOverCapRepo(t);
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+
+  // No record-review calls at all: zero summaries on disk. aggregate()'s
+  // allNoneCoverage is vacuously true over the empty array — the workflow-layer
+  // reconciliation must still refuse PASS because no planned unit is covered.
+  const result = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.notEqual(result.verdict, 'PASS', 'zero reviewed units can never earn a project PASS');
+  assert.equal(result.verdict, 'stopped-with-deferrals');
+  assert.equal(result.reason, 'coverage-incomplete');
+  assert.deepEqual(
+    result.uncoveredUnitIds.slice().sort(),
+    plan.units.map((unit) => unit.unit_id).slice().sort(),
+    'every planned unit is uncovered when nothing was reviewed'
+  );
+  assert.equal(result.coverageProof.discovered, plan.units.length);
+
+  const persisted = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'aggregate.json'), 'utf8'
+  ));
+  assert.equal(persisted.verdict, 'stopped-with-deferrals');
+  assert.equal(persisted.reason, 'coverage-incomplete');
 });
 
 // ---------------------------------------------------------------------------
