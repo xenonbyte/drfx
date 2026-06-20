@@ -24,6 +24,7 @@ const { execFileSync } = require('node:child_process');
 
 const { runWorkflowCommand } = require('../lib/workflow');
 const { readSummaryIfPresent } = require('../lib/workflow/file-set-unit-review');
+const { parseManifestV2 } = require('../lib/workflow-state');
 
 const BIN = path.join(__dirname, '..', 'bin', 'drfx.js');
 
@@ -114,6 +115,52 @@ function unitReviewReceipt({ unit, reviewed = 'true', coverageRisk = 'none', cac
 }
 
 const REVIEWER_PASS = 'PASS\nSummary: correctness, architecture, state-and-io, safety, tests, contracts, maintainability, platform.\n';
+
+const REVIEWER_FAIL_HIGH = [
+  'FAIL',
+  'Findings:',
+  '- id: R901',
+  '  severity: high',
+  '  location: oversize-0.js',
+  '  issue: The partitioned review found a blocking defect.',
+  '  why_it_matters: Aggregate FAIL must enter the normal triage and fix workflow.',
+  '  suggested_fix: Fix the blocking defect before finalizing.',
+  '  confidence: confirmed',
+  '  sensitive: false'
+].join('\n');
+
+const TRIAGE_ACCEPT_PARTITIONED = [
+  'Triage:',
+  '- reviewer_id: R901',
+  '  issue_id: ISSUE-001',
+  '  decision: accepted',
+  '  severity: high',
+  '  original_severity: high',
+  '  rationale: The aggregate reviewer finding blocks PASS.',
+  '  merged_into: none',
+  '  deferred_owner: none',
+  '  deferred_next_action: none',
+  '  non_blocking: false'
+].join('\n');
+
+function finalPassWithoutFixes() {
+  return [
+    'Final status: pass',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Mode: review-and-fix',
+    'Target: none',
+    'Files changed: none',
+    'Fixed issue IDs: none',
+    'Verification performed: partitioned aggregate project review',
+    'Deferrals or blockers: none',
+    'Blocking reason: none',
+    'Status reason: none',
+    'Residual risk: none identified',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: approved after aggregate coverage gate'
+  ].join('\n');
+}
 
 // Write the coverage receipt to a safe OS-temp file (outside project root, no
 // symlink) — the contract the record-review --payload-file expects.
@@ -460,6 +507,26 @@ test('aggregate-review never claims PASS over ZERO recorded summaries (empty set
   assert.equal(persisted.reason, 'coverage-incomplete');
 });
 
+test('aggregate-review blocks (stale) when the project tree drifts after the partition plan', async (t) => {
+  const root = makeOverCapRepo(t);
+  const start = await startPartitioned(root);
+
+  // Drift: change a source file's content after the plan's projectReviewFingerprint was
+  // written. The fail-fast freshness gate must refuse to aggregate stale summaries rather
+  // than record a (potentially stale) verdict.
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 2;\n');
+
+  const result = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(result.ok, false, JSON.stringify(result));
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.statusReason, 'stale-fingerprint-mismatch');
+  assert.notEqual(result.verdict, 'PASS');
+  // No reviewer report / full-re-review transition is recorded on the stale path.
+  assert.equal(result.reviewerReportPath, undefined);
+  // No aggregate.json is persisted for a stale, un-aggregated run.
+  assert.equal(fs.existsSync(path.join(start.targetStateDir, 'project-review', 'aggregate.json')), false);
+});
+
 test('aggregate-review never claims PASS when every unit is none but backstop summaries are MISSING', async (t) => {
   const root = makeOverCapRepo(t);
   const start = await startPartitioned(root);
@@ -624,11 +691,83 @@ test('aggregate-review reaches PASS only when every unit AND all 7 backstops rep
   // Full unit AND full backstop coverage, no open high/medium findings → PASS reachable.
   assert.equal(result.verdict, 'PASS', JSON.stringify(result));
   assert.equal(result.coverageProof.residualRisk, 'none');
+  assert.equal(result.nextAction, 'verdict PASS earned; proceed to finalize');
 
   const persisted = JSON.parse(fs.readFileSync(
     path.join(start.targetStateDir, 'project-review', 'aggregate.json'), 'utf8'
   ));
   assert.equal(persisted.verdict, 'PASS');
+
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'full-re-review');
+  assert.equal(manifest.currentPhase, 'full-re-review');
+  assert.match(manifest.lastReviewerReportPath, /^reports\/full-review-round-001/);
+
+  const final = await runWorkflowCommand('finalize', [
+    start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], { cwd: root, stdin: finalPassWithoutFixes() });
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'pass');
+});
+
+test('aggregate-review FAIL writes a reviewer report that can be triaged into begin-fix', async (t) => {
+  const root = makeOverCapRepo(t);
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+
+  let first = true;
+  for (const unit of plan.units) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: first ? REVIEWER_FAIL_HIGH : REVIEWER_PASS });
+    first = false;
+  }
+
+  for (const backstop of plan.crosscuttingBackstops) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  const aggregate = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(aggregate.ok, true, JSON.stringify(aggregate));
+  assert.equal(aggregate.verdict, 'stopped-with-deferrals');
+  assert.ok(aggregate.reviewerReportPath, 'aggregate FAIL must surface a reviewer report path');
+  assert.equal(fs.existsSync(aggregate.reviewerReportPath), true);
+
+  let manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'triage');
+  assert.equal(manifest.currentPhase, 'triage');
+  assert.match(manifest.lastReviewerReportPath, /^reports\/aggregate-review-round-001/);
+
+  const triage = await runWorkflowCommand('record-triage', [
+    ...practicalArgs(['review-fix-code']),
+    '--triage-stdin'
+  ], { cwd: root, stdin: TRIAGE_ACCEPT_PARTITIONED });
+  assert.equal(triage.ok, true, JSON.stringify(triage));
+  assert.equal(triage.status, 'recorded-triage');
+
+  manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'fix');
+  assert.equal(manifest.currentPhase, 'fix');
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-20T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+  assert.equal(beginFix.status, 'begin-fix');
 });
 
 // ---------------------------------------------------------------------------
