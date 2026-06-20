@@ -258,6 +258,56 @@ test('deferred issue metadata and final response next action are both documented
   assert.match(readme, /deferrals?[^\n]*reason[^\n]*owner[^\n]*next action/i);
 });
 
+// PLAN-TASK-010: coverage-incomplete is the partitioned-review aggregate deferral
+// outcome. It must be documented consistently across shared/core.md's status-reason
+// enum, the rendered generated CODE route per platform, the embedded CODE skill
+// text per platform, and the committed fixtures.
+test('coverage-incomplete is consistent across core.md, generated/embedded CODE routes, and fixtures', () => {
+  const SNAPSHOT_VERSION = '0.0.0-snapshot';
+  const core = read('shared/core.md');
+
+  // shared/core.md status-reason enum carries coverage-incomplete.
+  assert.match(
+    core,
+    /Status reasons include[^\n]*`deferred-findings`,\s*`coverage-incomplete`/,
+    'shared/core.md status-reason enum must include coverage-incomplete'
+  );
+
+  for (const platform of ['claude', 'codex', 'gemini']) {
+    const rendered = renderPlatformRoute(platform, 'review-fix-code', { packageVersion: SNAPSHOT_VERSION });
+
+    // Rendered CODE route carries coverage-incomplete in both the embedded core.md
+    // enum and the route-contract note.
+    assert.match(rendered, /coverage-incomplete/, `${platform} rendered review-fix-code must mention coverage-incomplete`);
+
+    // Route-contract note (the generated shell, embedded content masked out).
+    const shell = maskEmbeddedSharedContent(platform, rendered);
+    assert.match(
+      shell,
+      /coverage-incomplete[^\n]*(never claims PASS|advisory-only and never claims PASS)/,
+      `${platform} generated review-fix-code shell must carry the coverage-incomplete finalize note`
+    );
+
+    // Embedded CODE skill text (the core.md expansion).
+    const embedded = extractEmbeddedSharedContent(platform, rendered);
+    assert.match(embedded, /coverage-incomplete/, `${platform} embedded review-fix-code core must mention coverage-incomplete`);
+
+    // Committed fixtures match the rendered output.
+    assert.equal(
+      shell,
+      readSnapshot(platform, 'review-fix-code'),
+      `${platform} review-fix-code generated fixture must carry coverage-incomplete`
+    );
+    assert.equal(
+      embedded,
+      readEmbeddedSnapshot(platform, 'review-fix-code'),
+      `${platform} review-fix-code embedded fixture must carry coverage-incomplete`
+    );
+    assert.match(readSnapshot(platform, 'review-fix-code'), /coverage-incomplete/);
+    assert.match(readEmbeddedSnapshot(platform, 'review-fix-code'), /coverage-incomplete/);
+  }
+});
+
 test('manifest records reference paths without per-reference read-only flags', () => {
   const longTask = read('shared/long-task.md');
 

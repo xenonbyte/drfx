@@ -1976,3 +1976,172 @@ test('final response validation rejects stopped-no-progress for deferred-only fi
     /stopped-with-deferrals|unresolved/i
   );
 });
+
+// PLAN-TASK-010: coverage-incomplete is a VALID stopped-with-deferrals finalize
+// outcome (Task 7 aggregate-review emits it when units are uncovered). It carries
+// NO deferred reviewer issue ids; instead it is gated on a real `Deferrals or
+// blockers` coverage-deferral owner + next action. A pass carrying that reason is
+// still rejected by validatePass (statusReason must be none).
+
+test('document finalize accepts stopped-with-deferrals + coverage-incomplete with empty deferred ids and a coverage-deferral entry', () => {
+  const state = {
+    persistent: true,
+    target: 'docs/spec.md',
+    mode: 'review-and-fix',
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    filesChanged: 'none',
+    deferredBlockingIssueIds: []
+  };
+  const finalResponse = {
+    ...baseBlock,
+    finalStatus: 'stopped-with-deferrals',
+    filesChanged: 'none',
+    fixedIssueIds: 'none',
+    deferralsOrBlockers: 'units U003,U007 left uncovered; owner: project-lead; next action: rerun review with narrower scope',
+    statusReason: 'coverage-incomplete',
+    coordinatorAgreement: 'none'
+  };
+
+  const result = validateFinalResponse({ finalResponse, state });
+  assert.equal(result.status, 'stopped-with-deferrals');
+});
+
+test('document finalize rejects coverage-incomplete without a coverage-deferral entry', () => {
+  const state = {
+    persistent: true,
+    target: 'docs/spec.md',
+    mode: 'review-and-fix',
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    filesChanged: 'none',
+    deferredBlockingIssueIds: []
+  };
+  const finalResponse = {
+    ...baseBlock,
+    finalStatus: 'stopped-with-deferrals',
+    filesChanged: 'none',
+    fixedIssueIds: 'none',
+    deferralsOrBlockers: 'none',
+    statusReason: 'coverage-incomplete',
+    coordinatorAgreement: 'none'
+  };
+
+  assert.throws(
+    () => validateFinalResponse({ finalResponse, state }),
+    (error) => {
+      assert.equal(error.code, 'ERR_FINAL_COVERAGE_DEFERRAL_MISSING');
+      assert.match(error.message, /coverage-incomplete.*Deferrals or blockers/i);
+      return true;
+    }
+  );
+});
+
+test('file-set finalize accepts stopped-with-deferrals + coverage-incomplete through the shared validator', () => {
+  // Mirrors buildFileSetFinalValidationState: persistent file-set state, empty
+  // deferred reviewer ids, gated on the coverage-deferral entry only.
+  const state = {
+    persistent: true,
+    fileSet: true,
+    target: 'none',
+    routeKind: 'code',
+    mode: 'review-and-fix',
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    filesChanged: 'none',
+    deferredBlockingIssueIds: []
+  };
+  const finalResponse = {
+    ...baseBlock,
+    finalStatus: 'stopped-with-deferrals',
+    target: 'none',
+    filesChanged: 'none',
+    fixedIssueIds: 'none',
+    deferralsOrBlockers: 'uncovered units remain; owner: maintainer; next action: re-run with scope= per unit',
+    statusReason: 'coverage-incomplete',
+    coordinatorAgreement: 'none'
+  };
+
+  const result = validateFinalResponse({ finalResponse, state });
+  assert.equal(result.status, 'stopped-with-deferrals');
+});
+
+test('file-set finalize rejects coverage-incomplete without a coverage-deferral entry', () => {
+  const state = {
+    persistent: true,
+    fileSet: true,
+    target: 'none',
+    routeKind: 'code',
+    mode: 'review-and-fix',
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    filesChanged: 'none',
+    deferredBlockingIssueIds: []
+  };
+  const finalResponse = {
+    ...baseBlock,
+    finalStatus: 'stopped-with-deferrals',
+    target: 'none',
+    filesChanged: 'none',
+    fixedIssueIds: 'none',
+    deferralsOrBlockers: 'none',
+    statusReason: 'coverage-incomplete',
+    coordinatorAgreement: 'none'
+  };
+
+  assert.throws(
+    () => validateFinalResponse({ finalResponse, state }),
+    (error) => error.code === 'ERR_FINAL_COVERAGE_DEFERRAL_MISSING'
+  );
+});
+
+test('pass carrying coverage-incomplete is rejected (PASS is earned, never assumed)', () => {
+  assert.throws(
+    () => validateFinalResponse({
+      finalResponse: { ...baseBlock, statusReason: 'coverage-incomplete' },
+      state: {
+        persistent: true,
+        mode: 'review-and-fix',
+        assurance: 'practical',
+        requiredDiffReviewComplete: true,
+        requiredFullReReviewComplete: true,
+        unresolvedBlockingIssues: [],
+        strictAcceptedLowIncludedInLatestFullReview: true
+      }
+    }),
+    /Status reason: none|pass requires/i
+  );
+});
+
+test('coverage-incomplete does not relax deferred-findings or round-limit deferred-id requirement', () => {
+  const baseState = {
+    persistent: true,
+    target: 'docs/spec.md',
+    mode: 'review-and-fix',
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    filesChanged: 'none',
+    deferredBlockingIssueIds: []
+  };
+  for (const statusReason of ['deferred-findings', 'round-limit']) {
+    assert.throws(
+      () => validateFinalResponse({
+        finalResponse: {
+          ...baseBlock,
+          finalStatus: 'stopped-with-deferrals',
+          filesChanged: 'none',
+          fixedIssueIds: 'none',
+          deferralsOrBlockers: 'owner: x; next action: y',
+          statusReason,
+          coordinatorAgreement: 'none'
+        },
+        state: baseState
+      }),
+      (error) => {
+        assert.equal(error.code, 'ERR_FINAL_DEFERRED_FINDINGS_EMPTY');
+        return true;
+      },
+      `${statusReason} must still require deferred reviewer ids`
+    );
+  }
+});

@@ -8,4 +8,5 @@
 - Do not call, wrap, or delegate to a platform-native code-review command; this route runs the deterministic `drfx workflow` protocol itself.
 - When the whole-root source file set exceeds the single-pass budget, the route runs as **partitioned project review** across three **independently-mergeable / independently-usable phases**: (1) a deterministic partition plan; (2) bounded read-only per-unit review with coverage receipts; (3) aggregate review + fix + earned PASS. Each phase leaves a usable result even if the next never runs.
 - A partitioned run **never claims a single-shot full-project PASS**; project PASS is earned only through the aggregate coverage gate.
+- When the aggregate coverage gate cannot fully cover every partitioned unit, the run finalizes as `stopped-with-deferrals` with Status reason `coverage-incomplete`, recording the uncovered units in `Deferrals or blockers` with a coverage-deferral owner and next action; it never claims PASS.
 - This skill includes copied shared references under this skill directory; it does not need a home-level shared asset directory at runtime.
