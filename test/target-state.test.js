@@ -360,3 +360,290 @@ test('keeps one-shot read-only mode non-persistent without ledger, resume, round
   assert.equal(shouldCreatePersistentState({ mode: 'read-only', ledger: null, resume: false, round: 1, auditTrail: false, checkpointReason: 'context-pressure' }), true);
   assert.equal(shouldCreatePersistentState({ mode: 'review-and-fix', ledger: null, resume: false, round: 1, auditTrail: false, checkpointReason: null }), true);
 });
+
+// ---------------------------------------------------------------------------
+// PLAN-TASK-003: over-cap whole-root review-fix-code → partitioned-review entry
+// + checkpoint state. A whole-root review that exceeds MAX_WHOLE_ROOT_*
+// stops returning the hard file-set-too-large block and instead enters
+// reviewMode:'partitioned'. Persistent (review-and-fix) runs write a
+// Status: checkpoint manifest + project-review/ plan files and return
+// partitioned-review; one-shot read-only --no-state runs return a no-state
+// plan and write NOTHING under .drfx/targets/. Under-cap and explicit-scope
+// runs are unchanged (covered in workflow-fileset-start.test.js).
+// ---------------------------------------------------------------------------
+
+const { execFileSync } = require('node:child_process');
+const { formatManifestV2, parseManifestV2 } = require('../lib/workflow-state');
+const { runWorkflowCommand } = require('../lib/workflow');
+const {
+  CROSSCUTTING_BACKSTOPS,
+  MAX_UNIT_BYTES
+} = require('../lib/project-review');
+
+function gitInit(cwd) {
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'Test',
+    GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test',
+    GIT_COMMITTER_EMAIL: 'test@example.com'
+  };
+  execFileSync('git', ['init', '-b', 'main'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  execFileSync('git', ['add', '.'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  execFileSync('git', ['commit', '-m', 'init'], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+// Build an over-cap whole-root project (> MAX_WHOLE_ROOT_FILES files). Each
+// file carries a require() of a sibling so suggestedRefs is non-trivially
+// fillable, plus one oversize file (> MAX_UNIT_BYTES) to exercise the
+// oversize-unit path (empty suggestedRefs, body never read).
+function makeOverCapRepo(t, { git = true } = {}) {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-overcap-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  for (let i = 0; i < 320; i += 1) {
+    fs.writeFileSync(
+      path.join(root, 'src', `mod-${i}.js`),
+      `'use strict';\nconst dep = require('./mod-${(i + 1) % 320}.js');\nmodule.exports = ${i};\n`
+    );
+  }
+  // One oversize file (> MAX_UNIT_BYTES) becomes its own oversize unit.
+  fs.writeFileSync(path.join(root, 'src', 'big.bin'), Buffer.alloc(MAX_UNIT_BYTES + 10, 0x61));
+  if (git) gitInit(root);
+  return root;
+}
+
+function persistentArgs(extra) {
+  return [
+    ...extra,
+    'review-and-fix',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--json'
+  ];
+}
+
+function noStateContextArgs(extra) {
+  return [
+    ...extra,
+    'read-only',
+    '--no-state',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--json'
+  ];
+}
+
+test('whole-root over-cap persistent CODE start enters partitioned-review with the right JSON shape', async (t) => {
+  const root = makeOverCapRepo(t);
+  const result = await runWorkflowCommand(
+    'start',
+    persistentArgs(['review-fix-code', 'guard=snapshot']),
+    { cwd: root }
+  );
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.status, 'partitioned-review');
+  assert.equal(result.reviewMode, 'partitioned');
+  assert.equal(result.currentPhase, 'review');
+  assert.equal(result.reviewPlanPath, 'project-review/units.json');
+  assert.ok(Number.isInteger(result.unitCount) && result.unitCount >= 1);
+  assert.ok(typeof result.nextAction === 'string' && result.nextAction.length > 0);
+  // A partitioned-review entry is a PLAN, never a PASS.
+  assert.notEqual(result.status, 'pass');
+  // Persistent run carries a real target state dir.
+  assert.ok(result.targetStateDir && result.targetStateDir.includes('.drfx'));
+  assert.equal(fs.existsSync(result.manifestPath), true);
+});
+
+test('whole-root over-cap persistent CODE start writes a checkpoint manifest + project-review plan files', async (t) => {
+  const root = makeOverCapRepo(t);
+  const result = await runWorkflowCommand(
+    'start',
+    persistentArgs(['review-fix-code', 'guard=snapshot']),
+    { cwd: root }
+  );
+  assert.equal(result.ok, true, JSON.stringify(result));
+
+  // 1) Checkpoint manifest round-trips through parseManifestV2.
+  const manifest = parseManifestV2(fs.readFileSync(result.manifestPath, 'utf8'));
+  assert.equal(manifest.targetContextKind, 'code');
+  assert.equal(manifest.status, 'checkpoint');
+  assert.equal(manifest.statusReason, 'checkpoint-requested');
+  assert.equal(manifest.currentPhase, 'review');
+  assert.equal(manifest.blockingReason, 'none');
+  assert.match(manifest.fileSetFingerprint, /^[0-9a-f]{64}$/);
+
+  // 2) project-review/ plan files exist and are well-formed.
+  const planDir = path.join(result.targetStateDir, 'project-review');
+  const unitsPath = path.join(planDir, 'units.json');
+  const inventoryPath = path.join(planDir, 'inventory.jsonl');
+  assert.equal(fs.existsSync(unitsPath), true);
+  assert.equal(fs.existsSync(inventoryPath), true);
+
+  const units = JSON.parse(fs.readFileSync(unitsPath, 'utf8'));
+  assert.equal(units.reviewMode, 'partitioned');
+  assert.equal(units.unitByteBudget, MAX_UNIT_BYTES);
+  // D-C: units.json carries the contentId projectReviewFingerprint VERBATIM,
+  // which is exactly the manifest fileSetFingerprint for the checkpoint.
+  assert.equal(units.projectReviewFingerprint, manifest.fileSetFingerprint);
+  assert.deepEqual(units.crosscuttingBackstops, CROSSCUTTING_BACKSTOPS);
+  assert.equal(units.crosscuttingBackstops.length, 7);
+  assert.equal(units.units.length, result.unitCount);
+
+  // suggestedRefs filled for non-oversize units; oversize units stay empty.
+  const oversizeUnits = units.units.filter((u) => u.oversize_file === true);
+  assert.ok(oversizeUnits.length >= 1, 'expected at least one oversize unit (big.bin)');
+  for (const u of oversizeUnits) {
+    assert.deepEqual(u.suggestedRefs, []);
+  }
+  const filledRefs = units.units.some(
+    (u) => u.oversize_file !== true && Array.isArray(u.suggestedRefs) && u.suggestedRefs.length > 0
+  );
+  assert.equal(filledRefs, true, 'expected at least one non-oversize unit with filled suggestedRefs');
+  for (const u of units.units) {
+    for (const ref of u.suggestedRefs) {
+      assert.ok(typeof ref.path === 'string' && /^[0-9a-f]{64}$/.test(ref.contentId));
+    }
+  }
+
+  // inventory.jsonl: one JSON object per line, each {path,size,ext,contentId,unit_id}.
+  const lines = fs.readFileSync(inventoryPath, 'utf8').split('\n').filter(Boolean);
+  assert.ok(lines.length >= 1);
+  const unitIds = new Set(units.units.map((u) => u.unit_id));
+  let previousPath = '';
+  for (const line of lines) {
+    const row = JSON.parse(line);
+    assert.deepEqual(Object.keys(row).sort(), ['contentId', 'ext', 'path', 'size', 'unit_id']);
+    assert.ok(unitIds.has(row.unit_id));
+    // deterministic ordering: rows are sorted by path
+    assert.ok(row.path >= previousPath, `inventory.jsonl rows must be path-sorted: ${row.path} < ${previousPath}`);
+    previousPath = row.path;
+  }
+});
+
+test('whole-root over-cap persistent CODE start output is deterministic across two runs', async (t) => {
+  const rootA = makeOverCapRepo(t);
+  const rootB = makeOverCapRepo(t);
+  const a = await runWorkflowCommand('start', persistentArgs(['review-fix-code', 'guard=snapshot']), { cwd: rootA });
+  const b = await runWorkflowCommand('start', persistentArgs(['review-fix-code', 'guard=snapshot']), { cwd: rootB });
+  assert.equal(a.ok, true);
+  assert.equal(b.ok, true);
+  const unitsA = fs.readFileSync(path.join(a.targetStateDir, 'project-review', 'units.json'), 'utf8');
+  const unitsB = fs.readFileSync(path.join(b.targetStateDir, 'project-review', 'units.json'), 'utf8');
+  const invA = fs.readFileSync(path.join(a.targetStateDir, 'project-review', 'inventory.jsonl'), 'utf8');
+  const invB = fs.readFileSync(path.join(b.targetStateDir, 'project-review', 'inventory.jsonl'), 'utf8');
+  assert.equal(unitsA, unitsB, 'identical trees ⇒ byte-identical units.json');
+  assert.equal(invA, invB, 'identical trees ⇒ byte-identical inventory.jsonl');
+});
+
+test('reset archives a checkpoint manifest and starts fresh', async (t) => {
+  const root = makeOverCapRepo(t);
+  const start = await runWorkflowCommand('start', persistentArgs(['review-fix-code', 'guard=snapshot']), { cwd: root });
+  assert.equal(start.ok, true);
+  assert.equal(start.status, 'partitioned-review');
+
+  // A plain fresh start over the checkpoint state is refused (no silent reuse).
+  await assert.rejects(
+    runWorkflowCommand('start', persistentArgs(['review-fix-code', 'guard=snapshot']), { cwd: root }),
+    (error) => error.code === 'ERR_STATE_EXISTS'
+  );
+
+  // reset ARCHIVES the checkpoint state (never deletes) and starts fresh.
+  const reset = await runWorkflowCommand('start', persistentArgs(['review-fix-code', 'guard=snapshot', 'reset']), { cwd: root });
+  assert.equal(reset.ok, true);
+  assert.equal(reset.status, 'partitioned-review');
+  assert.match(reset.archivedStatePath, /[\\/]\.drfx[\\/]archived[\\/]code-/);
+  assert.equal(fs.existsSync(path.join(reset.archivedStatePath, 'MANIFEST.md')), true);
+  // The archived manifest is the prior checkpoint.
+  const archivedManifest = parseManifestV2(fs.readFileSync(path.join(reset.archivedStatePath, 'MANIFEST.md'), 'utf8'));
+  assert.equal(archivedManifest.status, 'checkpoint');
+  // The fresh checkpoint is rewritten under the same key.
+  assert.equal(parseManifestV2(fs.readFileSync(reset.manifestPath, 'utf8')).status, 'checkpoint');
+});
+
+test('one-shot read-only --no-state over-cap CODE context returns a no-state partition plan and writes nothing', async (t) => {
+  const root = makeOverCapRepo(t);
+  const result = await runWorkflowCommand(
+    'context',
+    noStateContextArgs(['review-fix-code']),
+    { cwd: root }
+  );
+
+  assert.equal(result.status, 'partitioned-review');
+  assert.equal(result.reviewMode, 'partitioned');
+  assert.equal(result.mode, 'read-only');
+  assert.equal(result.targetStateDir, null);
+  assert.ok(Number.isInteger(result.unitCount) && result.unitCount >= 1);
+  assert.ok(typeof result.nextAction === 'string' && result.nextAction.length > 0);
+  // No-state partitioned review is plan/advisory only — never a PASS.
+  assert.notEqual(result.status, 'pass');
+  // CRITICAL: it must NOT create any persistent state under .drfx/targets/.
+  assert.equal(fs.existsSync(path.join(root, '.drfx', 'targets')), false);
+  assert.equal(fs.existsSync(path.join(root, '.drfx')), false);
+});
+
+test('checkpoint manifest with Current phase review round-trips through formatManifestV2/parseManifestV2', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-checkpoint-'));
+  const manifest = {
+    manifestSchema: 2,
+    targetContextKind: 'code',
+    target: 'none',
+    normalizedTarget: 'none',
+    documentType: 'none',
+    strictness: 'normal',
+    mode: 'review-and-fix',
+    guardMode: 'snapshot',
+    targetKey: 'code-0123456789ab',
+    ledgerPath: '.drfx/targets/code-0123456789ab/ISSUES.md',
+    status: 'checkpoint',
+    currentPhase: 'review',
+    currentRound: 1,
+    fixAttemptCount: 0,
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    descriptorPlatform: 'none',
+    assuranceProof: 'none',
+    runtimeSubagentProbe: 'ready',
+    runtimeSubagentProbeEvidence: 'route-asserted-ready',
+    runtimeFingerprintGuard: 'not-run',
+    runtimeStdinHandoff: 'ready',
+    runtimeStdinHandoffEvidence: 'route-asserted-ready',
+    runtimeDowngradeReason: 'none',
+    blockingReason: 'none',
+    statusReason: 'checkpoint-requested',
+    currentReportPath: 'none',
+    lastReviewerReportPath: 'none',
+    lastTriageReportPath: 'none',
+    lastFixReportPath: 'none',
+    lastDiffReviewReportPath: 'none',
+    fileSetFingerprint: 'a'.repeat(64),
+    lastModifiedAt: '2026-06-20T00:00:00.000Z',
+    normalizedScopes: [],
+    exclusions: ['node_modules'],
+    userExcludes: [],
+    references: [],
+    createdAt: '2026-06-20T00:00:00.000Z',
+    updatedAt: '2026-06-20T00:00:00.000Z'
+  };
+  const manifestPath = path.join(root, 'MANIFEST.md');
+  fs.writeFileSync(manifestPath, formatManifestV2(manifest));
+  const parsed = readManifestAny(manifestPath);
+  assert.equal(parsed.targetContextKind, 'code');
+  assert.equal(parsed.status, 'checkpoint');
+  assert.equal(parsed.currentPhase, 'review');
+  assert.equal(parsed.statusReason, 'checkpoint-requested');
+  assert.equal(parsed.blockingReason, 'none');
+  assert.equal(parsed.fileSetFingerprint, 'a'.repeat(64));
+  fs.rmSync(root, { recursive: true, force: true });
+});

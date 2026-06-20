@@ -216,20 +216,29 @@ test('CODE start with an excluded scope is blocked, not silently empty', async (
   assert.match(String(result.message), /excluded-scope/);
 });
 
-test('CODE start reports file-set-too-large with a reason-aware message', async (t) => {
+// PLAN-TASK-003: a whole-root over-cap review-and-fix start no longer hard-blocks; it
+// enters partitioned project review (checkpoint state + project-review plan). Scoped and
+// under-cap starts (covered above) stay byte-identical (SCOPE-OUT-001).
+test('CODE whole-root over-cap start enters partitioned review instead of blocking', async (t) => {
   const root = makePrRepo(t);
   writeOversizeDrift(root);
 
   const result = await runWorkflowCommand('start', practicalArgs(['review-fix-code', 'guard=snapshot']), { cwd: root });
-  assert.equal(result.ok, false);
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.blockingReason, 'state-validation-failed');
-  assert.match(String(result.message), /file-set-too-large/);
-  assert.doesNotMatch(String(result.message), /excluded-scope/);
-  assert.match(String(result.nextAction), /pass scope=<path> to narrow the review/);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.status, 'partitioned-review');
+  assert.equal(result.reviewMode, 'partitioned');
+  assert.equal(result.reviewPlanPath, 'project-review/units.json');
+  assert.ok(Number.isInteger(result.unitCount) && result.unitCount >= 1);
+  assert.notEqual(result.status, 'pass');
+
+  const manifest = parseManifestV2(fs.readFileSync(result.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'checkpoint');
+  assert.equal(manifest.statusReason, 'checkpoint-requested');
+  assert.equal(manifest.currentPhase, 'review');
+  assert.equal(fs.existsSync(path.join(result.targetStateDir, 'project-review', 'units.json')), true);
 });
 
-test('no-state CODE context reports file-set-too-large with the reason-aware next action', async (t) => {
+test('no-state whole-root over-cap CODE context returns a partition plan and writes nothing', async (t) => {
   const root = makePrRepo(t);
   writeOversizeDrift(root);
 
@@ -245,11 +254,13 @@ test('no-state CODE context reports file-set-too-large with the reason-aware nex
     'ready',
     '--json'
   ], { cwd: root });
-  assert.equal(result.ok, false);
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.errorCode, 'ERR_FILE_SET_RESOLVE');
-  assert.match(String(result.message), /file-set-too-large/);
-  assert.match(String(result.nextAction), /pass scope=<path> to narrow the review/);
+  assert.equal(result.status, 'partitioned-review');
+  assert.equal(result.reviewMode, 'partitioned');
+  assert.equal(result.mode, 'read-only');
+  assert.equal(result.targetStateDir, null);
+  assert.ok(Number.isInteger(result.unitCount) && result.unitCount >= 1);
+  assert.notEqual(result.status, 'pass');
+  assert.equal(fs.existsSync(path.join(root, '.drfx', 'targets')), false);
 });
 
 test('CODE persistent context reports file-set-too-large drift as blocked JSON', async (t) => {
