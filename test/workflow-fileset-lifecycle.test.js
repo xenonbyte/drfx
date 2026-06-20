@@ -1963,3 +1963,179 @@ test('unitsToReReview: changed ∪ suggestedRefs-hit ∪ extraReads-hit, determi
   assert.deepEqual(byHelper, sorted);
   assert.equal(new Set(byHelper).size, byHelper.length);
 });
+
+// ---------------------------------------------------------------------------
+// PLAN-TASK-011: post-fix integration for a PARTITIONED CODE target.
+//
+// After end-fix on a partitioned target (project-review/units.json present), the
+// result surfaces the BOUNDED affected unit ids (directly-changed ∪ suggestedRefs-hit
+// ∪ extraReads-hit) plus a nextAction directing a re-review of THOSE units then a
+// re-aggregate — NOT a whole-project re-review. The in-set fix guard and the
+// fixAttemptCount / MAX_FIX_ATTEMPTS counting stay byte-identical; a non-partitioned
+// CODE fix flow is unchanged.
+// ---------------------------------------------------------------------------
+
+// Write a deterministic, hand-crafted partitioned units.json under a resolved CODE
+// target state dir. src/a.js lives in unit-001; unit-002 carries src/a.js as a
+// suggestedRef; unit-003 owns src/b.js. The plan only needs reviewMode:'partitioned'
+// + a units array for readUnitsPlan/unitsToReReview.
+function writePartitionPlanForCodeTarget(targetStateDir) {
+  const planDir = path.join(targetStateDir, 'project-review');
+  fs.mkdirSync(planDir, { recursive: true });
+  const plan = {
+    reviewMode: 'partitioned',
+    unitByteBudget: 4096,
+    units: [
+      {
+        unit_id: 'unit-001',
+        files: [{ path: 'src/a.js', size: 1, ext: '.js', contentId: 'sha256:a', unit_id: 'unit-001' }],
+        member_digest: 'digest-001',
+        suggestedRefs: [],
+        oversize_file: false
+      },
+      {
+        unit_id: 'unit-002',
+        files: [{ path: 'src/b.js', size: 1, ext: '.js', contentId: 'sha256:b', unit_id: 'unit-002' }],
+        member_digest: 'digest-002',
+        // src/a.js (the file the fix touches) is a contract reference of unit-002.
+        suggestedRefs: [{ path: 'src/a.js', contentId: 'sha256:a' }],
+        oversize_file: false
+      }
+    ],
+    crosscuttingBackstops: [],
+    projectReviewFingerprint: 'fp-test'
+  };
+  fs.writeFileSync(path.join(planDir, 'units.json'), `${JSON.stringify(plan, null, 2)}\n`);
+  return plan;
+}
+
+async function reachCodeFixStageWithBeginFix(t, { writePlan = false } = {}) {
+  const root = makePrRepo(t);
+  const args = practicalArgs(['review-fix-code', 'scope=src']);
+  const start = await reachFileSetFixStage(root, args);
+  let plan = null;
+  if (writePlan) plan = writePartitionPlanForCodeTarget(start.targetStateDir);
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+  return { root, args, start, plan };
+}
+
+test('partitioned CODE end-fix surfaces the bounded affected units (changed ∪ suggestedRefs-hit) + a re-review nextAction', async (t) => {
+  const { root, start } = await reachCodeFixStageWithBeginFix(t, { writePlan: true });
+
+  // The fixer edits src/a.js — a member of unit-001 AND a suggestedRef of unit-002.
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+  assert.equal(endFix.status, 'end-fix');
+  // Bounded affected units: unit-001 (directly changed) ∪ unit-002 (suggestedRefs-hit).
+  assert.deepEqual(endFix.affectedUnits, ['unit-001', 'unit-002']);
+  // The nextAction directs re-review of THOSE units then re-aggregate, not a whole-project re-review.
+  assert.match(endFix.nextAction, /re-review/i);
+  assert.match(endFix.nextAction, /aggregate/i);
+  assert.equal(endFix.reReviewScope, 'bounded-affected-units');
+  // The manifest still transitions to diff-review (the existing loop is unchanged).
+  assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'diff-review');
+});
+
+test('partitioned CODE end-fix includes an extraReads-hit unit in the affected set', async (t) => {
+  const { root, start } = await reachCodeFixStageWithBeginFix(t, { writePlan: true });
+  // Record a summary for unit-002 whose extraReads hit src/a.js (the changed file).
+  const summariesDir = path.join(start.targetStateDir, 'project-review', 'summaries');
+  fs.mkdirSync(summariesDir, { recursive: true });
+  fs.writeFileSync(path.join(summariesDir, 'unit-002.json'), `${JSON.stringify({
+    reviewed: true,
+    coverage_risk: 'none',
+    reviewCacheKey: 'k',
+    extraReads: [{ path: 'src/a.js', contentId: 'sha256:a' }]
+  }, null, 2)}\n`);
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+  // unit-002 is included via BOTH suggestedRefs and extraReads; the union dedupes it.
+  assert.deepEqual(endFix.affectedUnits, ['unit-001', 'unit-002']);
+});
+
+test('partitioned CODE end-fix still blocks a fix that writes outside the recorded file set', async (t) => {
+  const { root, start } = await reachCodeFixStageWithBeginFix(t, { writePlan: true });
+
+  // Declare + write a file NOT in the resolved file set (src/a.js / src/b.js).
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 2;\n');
+  fs.writeFileSync(path.join(root, 'src', 'unrelated.js'), 'module.exports = 5;\n');
+  const declaresOutside = [
+    'Fixed:',
+    '- ISSUE-001: Restored the error handling.',
+    '',
+    'Files changed:',
+    '- src/a.js',
+    '- src/unrelated.js',
+    '',
+    'Not fixed:',
+    '- none',
+    '',
+    'Verification:',
+    '- node --check src/a.js: passed',
+    '',
+    'Residual risk:',
+    '- none identified'
+  ].join('\n');
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: declaresOutside });
+
+  // The in-set guard is unchanged: an outside-set fix is still blocked, no affected units surfaced.
+  assert.equal(endFix.ok, false);
+  assert.equal(endFix.status, 'blocked');
+  assert.equal(endFix.affectedUnits, undefined);
+  assert.notEqual(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'diff-review');
+});
+
+test('partitioned CODE begin-fix counting is unchanged: fixAttemptCount increments and the cap still holds', async (t) => {
+  const { root, start } = await reachCodeFixStageWithBeginFix(t, { writePlan: true });
+  // begin-fix recorded the first attempt — counting is independent of partitioning.
+  assert.equal(Number(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).fixAttemptCount), 1);
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+  // end-fix never touches fixAttemptCount (counting lives in begin-fix only).
+  assert.equal(Number(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).fixAttemptCount), 1);
+});
+
+test('non-partitioned CODE end-fix is byte-identical: no affected units, unchanged nextAction', async (t) => {
+  const { root, start } = await reachCodeFixStageWithBeginFix(t, { writePlan: false });
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_FILESET });
+
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+  assert.equal(endFix.status, 'end-fix');
+  // No project-review plan ⇒ today's behavior: no affected-unit surface, the original nextAction.
+  assert.equal(endFix.affectedUnits, undefined);
+  assert.equal(endFix.reReviewScope, undefined);
+  assert.equal(endFix.nextAction, 'run record-diff-review');
+});
