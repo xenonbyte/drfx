@@ -11,6 +11,9 @@ const test = require('node:test');
 const {
   resolveTargetContext,
   resolveCodeTarget,
+  resolveCodeInventory,
+  streamingContentId,
+  hashFileContent,
   describeCodeBlock,
   computeFileSetFingerprint,
   buildPrIdentity,
@@ -860,4 +863,254 @@ test('the version-ignore git queries are read-only plumbing only', async (t) => 
   for (const command of commandLog) {
     assert.match(command, /^git (rev-parse|ls-files) /);
   }
+});
+
+// ---------------------------------------------------------------------------
+// PLAN-TASK-002: resolveCodeInventory — whole-tree uncapped inventory builder
+// ---------------------------------------------------------------------------
+
+// Helper: create a temp dir with N small files in a flat layout.
+function makeFlatFixture(t, prefix, count, contentFn) {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (let i = 0; i < count; i++) {
+    fs.writeFileSync(path.join(dir, `f${i}.js`), contentFn ? contentFn(i) : `export const f${i} = ${i};\n`);
+  }
+  return dir;
+}
+
+test('streamingContentId produces a byte-identical digest to hashFileContent for a text file', async (t) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-streaming-text-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const filePath = path.join(dir, 'sample.js');
+  fs.writeFileSync(filePath, 'export const x = 42;\n');
+
+  const sync = hashFileContent(filePath);
+  const streaming = await streamingContentId(filePath);
+  assert.equal(streaming, sync, 'streaming sha256 must equal sync sha256 for the same file');
+  assert.match(streaming, /^[0-9a-f]{64}$/);
+});
+
+test('streamingContentId is byte-identical to hashFileContent for an empty file', async (t) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-streaming-empty-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const filePath = path.join(dir, 'empty.txt');
+  fs.writeFileSync(filePath, '');
+
+  const sync = hashFileContent(filePath);
+  const streaming = await streamingContentId(filePath);
+  assert.equal(streaming, sync, 'empty file: streaming digest must equal sync digest');
+});
+
+test('streamingContentId is byte-identical to hashFileContent for a binary file', async (t) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-streaming-bin-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const filePath = path.join(dir, 'binary.bin');
+  // Write a buffer with all byte values 0–255 repeated
+  const buf = Buffer.alloc(512);
+  for (let i = 0; i < 512; i++) buf[i] = i % 256;
+  fs.writeFileSync(filePath, buf);
+
+  const sync = hashFileContent(filePath);
+  const streaming = await streamingContentId(filePath);
+  assert.equal(streaming, sync, 'binary file: streaming digest must equal sync digest');
+});
+
+test('resolveCodeInventory returns all surviving files WITHOUT cap truncation', async (t) => {
+  // Build a tree with > MAX_WHOLE_ROOT_FILES (300) files.
+  // resolveCodeTarget would block with file-set-too-large; resolveCodeInventory must NOT.
+  const dir = makeFlatFixture(t, 'drfx-inv-nocap-', 310);
+
+  // Confirm resolveCodeTarget DOES block (sanity check for the fixture).
+  const blocked = await resolveCodeTarget({ cwd: dir, scopes: [] });
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.reason, 'file-set-too-large');
+
+  // resolveCodeInventory must return all 310 files.
+  const result = await resolveCodeInventory({ cwd: dir, scopes: [] });
+  assert.ok(result && result.inventory, 'result must have an inventory array');
+  assert.equal(result.inventory.length, 310, 'inventory must include ALL 310 files, not cap-truncated');
+  assert.match(result.projectReviewFingerprint, /^[0-9a-f]{64}$/, 'fingerprint must be a 64-char hex string');
+});
+
+test('resolveCodeInventory returns rows with {path,size,ext,contentId} shape', async (t) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-inv-shape-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'src', 'a.js'), 'const a = 1;\n');
+  fs.writeFileSync(path.join(dir, 'README.md'), '# readme\n');
+
+  const result = await resolveCodeInventory({ cwd: dir, scopes: [] });
+  assert.ok(Array.isArray(result.inventory));
+  for (const row of result.inventory) {
+    assert.ok(typeof row.path === 'string' && row.path.length > 0, 'path must be a non-empty string');
+    assert.ok(typeof row.size === 'number' && row.size >= 0, 'size must be a non-negative number');
+    assert.ok(typeof row.ext === 'string', 'ext must be a string');
+    assert.match(row.contentId, /^[0-9a-f]{64}$/, 'contentId must be a 64-char hex string');
+  }
+  // Paths must be root-relative POSIX (no absolute path, no leading slash)
+  for (const row of result.inventory) {
+    assert.ok(!path.isAbsolute(row.path), `path must be root-relative: ${row.path}`);
+    assert.ok(!row.path.startsWith('/'), `path must not start with /: ${row.path}`);
+  }
+  // ext must reflect the file extension (including dot, or '' for no-extension files)
+  const aRow = result.inventory.find((r) => r.path === 'src/a.js');
+  assert.ok(aRow, 'must find src/a.js');
+  assert.equal(aRow.ext, '.js');
+  const mdRow = result.inventory.find((r) => r.path === 'README.md');
+  assert.ok(mdRow, 'must find README.md');
+  assert.equal(mdRow.ext, '.md');
+});
+
+test('resolveCodeInventory contentIds match hashFileContent (namespace frozen)', async (t) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-inv-contentid-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'a.js'), 'const a = 1;\n');
+
+  const result = await resolveCodeInventory({ cwd: dir, scopes: [] });
+  const row = result.inventory.find((r) => r.path === 'a.js');
+  assert.ok(row, 'must find a.js');
+  const expected = hashFileContent(path.join(dir, 'a.js'));
+  assert.equal(row.contentId, expected, 'inventory contentId must equal hashFileContent digest');
+});
+
+test('resolveCodeInventory .drfxignore exclusions still apply', async (t) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-inv-ignore-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(dir, 'lib'));
+  fs.mkdirSync(path.join(dir, 'docs'));
+  fs.writeFileSync(path.join(dir, 'lib', 'a.js'), 'a\n');
+  fs.writeFileSync(path.join(dir, 'docs', 'big.md'), 'b\n');
+  fs.writeFileSync(path.join(dir, '.drfxignore'), 'docs\n');
+
+  const result = await resolveCodeInventory({ cwd: dir, scopes: [] });
+  const paths = result.inventory.map((r) => r.path);
+  assert.ok(paths.includes('lib/a.js'), 'lib/a.js must be in inventory');
+  assert.ok(paths.includes('.drfxignore'), '.drfxignore must be in inventory');
+  assert.ok(!paths.includes('docs/big.md'), 'docs/big.md must be excluded by .drfxignore');
+});
+
+test('resolveCodeInventory version-ignore (git) exclusions still apply', async (t) => {
+  const dir = makeGitIgnoreFixture(t);
+
+  const result = await resolveCodeInventory({ cwd: dir, scopes: [] });
+  const paths = result.inventory.map((r) => r.path);
+  // tracked.log is tracked by git: NOT excluded
+  assert.ok(paths.includes('tracked.log'), 'tracked.log must be in inventory (tracked, not version-ignored)');
+  // lib/debug.log matches *.log and is untracked: excluded
+  assert.ok(!paths.includes('lib/debug.log'), 'lib/debug.log must be version-ignored');
+  // generated/ is a version-ignored directory
+  assert.ok(!paths.includes('generated/out.js'), 'generated/out.js must be version-ignored');
+});
+
+test('resolveCodeInventory explicit scope= wins over ignore sources', async (t) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-inv-scope-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(dir, 'docs'));
+  fs.writeFileSync(path.join(dir, 'docs', 'big.md'), 'b\n');
+  fs.writeFileSync(path.join(dir, '.drfxignore'), 'docs\n');
+
+  const result = await resolveCodeInventory({ cwd: dir, scopes: ['docs'] });
+  const paths = result.inventory.map((r) => r.path);
+  assert.ok(paths.includes('docs/big.md'), 'explicit scope into ignored dir must win');
+});
+
+test('resolveCodeInventory excluded basenames (node_modules, .git, dist, etc) are pruned', async (t) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-inv-excluded-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'src', 'a.js'), 'a\n');
+  fs.mkdirSync(path.join(dir, 'node_modules', 'dep'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'node_modules', 'dep', 'index.js'), 'x\n');
+  fs.mkdirSync(path.join(dir, '.git'));
+  fs.writeFileSync(path.join(dir, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+  fs.mkdirSync(path.join(dir, 'dist'));
+  fs.writeFileSync(path.join(dir, 'dist', 'bundle.js'), 'bundled\n');
+
+  const result = await resolveCodeInventory({ cwd: dir, scopes: [] });
+  const paths = result.inventory.map((r) => r.path);
+  assert.ok(paths.includes('src/a.js'), 'src/a.js must be in inventory');
+  assert.ok(!paths.some((p) => p.startsWith('node_modules/')), 'node_modules must be excluded');
+  assert.ok(!paths.some((p) => p.startsWith('.git/')), '.git must be excluded');
+  assert.ok(!paths.some((p) => p.startsWith('dist/')), 'dist must be excluded');
+});
+
+test('resolveCodeInventory fingerprint is deterministic and stable for the same tree', async (t) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-inv-fp-stable-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'a.js'), 'a\n');
+  fs.writeFileSync(path.join(dir, 'b.js'), 'b\n');
+
+  const r1 = await resolveCodeInventory({ cwd: dir, scopes: [] });
+  const r2 = await resolveCodeInventory({ cwd: dir, scopes: [] });
+  assert.equal(r1.projectReviewFingerprint, r2.projectReviewFingerprint, 'same tree => same fingerprint');
+});
+
+test('resolveCodeInventory fingerprint changes when a file changes', async (t) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-inv-fp-change-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'a.js'), 'a\n');
+  fs.writeFileSync(path.join(dir, 'b.js'), 'b\n');
+
+  const before = await resolveCodeInventory({ cwd: dir, scopes: [] });
+  fs.writeFileSync(path.join(dir, 'a.js'), 'CHANGED\n');
+  const after = await resolveCodeInventory({ cwd: dir, scopes: [] });
+
+  assert.notEqual(before.projectReviewFingerprint, after.projectReviewFingerprint,
+    'changing a file must change the projectReviewFingerprint');
+});
+
+test('resolveCodeInventory fingerprint is order-independent (sorted by path before hashing)', async (t) => {
+  // Two dirs with same files but written in different orders on disk.
+  // Because inventory is sorted by path before fingerprinting, the fingerprint
+  // should be the SAME if the file contents are identical.
+  const dir1 = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-inv-fp-ord1-')));
+  const dir2 = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-inv-fp-ord2-')));
+  t.after(() => {
+    fs.rmSync(dir1, { recursive: true, force: true });
+    fs.rmSync(dir2, { recursive: true, force: true });
+  });
+  // Write files in different orders (the OS may return them in inode order)
+  const content = { 'a.js': 'same\n', 'b.js': 'same\n', 'c.js': 'same\n' };
+  const keys1 = ['a.js', 'b.js', 'c.js'];
+  const keys2 = ['c.js', 'b.js', 'a.js'];
+  for (const k of keys1) fs.writeFileSync(path.join(dir1, k), content[k]);
+  for (const k of keys2) fs.writeFileSync(path.join(dir2, k), content[k]);
+
+  const r1 = await resolveCodeInventory({ cwd: dir1, scopes: [] });
+  const r2 = await resolveCodeInventory({ cwd: dir2, scopes: [] });
+  assert.equal(r1.projectReviewFingerprint, r2.projectReviewFingerprint,
+    'fingerprint must be order-independent (sorted by path)');
+});
+
+test('resolveCodeInventory inventory is sorted by path', async (t) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-inv-sorted-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'src', 'b.js'), 'b\n');
+  fs.writeFileSync(path.join(dir, 'src', 'a.js'), 'a\n');
+  fs.writeFileSync(path.join(dir, 'README.md'), 'r\n');
+
+  const result = await resolveCodeInventory({ cwd: dir, scopes: [] });
+  const paths = result.inventory.map((r) => r.path);
+  const sorted = [...paths].sort();
+  assert.deepEqual(paths, sorted, 'inventory must be sorted by path');
+});
+
+test('resolveCodeTarget behavior is unchanged after adding resolveCodeInventory', async (t) => {
+  // Sanity: resolveCodeTarget still blocks on over-cap whole-root
+  const dir = makeFlatFixture(t, 'drfx-inv-compat-', 310);
+  const blocked = await resolveCodeTarget({ cwd: dir, scopes: [] });
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.reason, 'file-set-too-large');
+
+  // And resolveCodeTarget still succeeds on a narrow scope
+  const small = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-inv-compat-small-')));
+  t.after(() => fs.rmSync(small, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(small, 'src'));
+  fs.writeFileSync(path.join(small, 'src', 'a.js'), 'a\n');
+  const ctx = await resolveCodeTarget({ cwd: small, scopes: ['src'] });
+  assert.equal(ctx.routeKind, 'code');
+  assert.equal(ctx.files.length, 1);
+  assert.equal(ctx.files[0].path, 'src/a.js');
 });
