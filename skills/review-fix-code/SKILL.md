@@ -29,6 +29,8 @@ Pass `debug` to print redacted workflow audit details. Default output is concise
 
 Do not call, wrap, or delegate to a platform-native code-review command; this route runs the deterministic `drfx workflow` protocol itself.
 
+For partitioned project review, do not use a single `--phase initial-review` result to claim workflow PASS. Drive bounded unit contexts with `drfx workflow context review-fix-code <scopeTokens> review-and-fix ... --phase unit-review --json`, record each unit with `drfx workflow record-review ... --phase unit-review --unit <unitId>` plus both reviewer findings and coverage receipt payloads, then run crosscutting backstops with `--phase crosscutting --backstop <backstopId>`. Omit `--unit` when recording crosscutting backstops so the workflow spans every planned unit. Only after all units and backstops are recorded may the route run `drfx workflow aggregate-review <targetStateDir> --json`; the aggregate verdict is authoritative, and project PASS is allowed only when it returns `verdict: PASS`.
+
 Practical Mode requires a live reviewer subagent probe that returns exactly `DRFX_REVIEWER_READY`, plus verified stdin handoff for semantic payloads. If subagent delegation is unavailable or invalid, downgrade only through the allowed advisory downgrade reasons. If fingerprint guard or stdin handoff is unavailable, fail closed; stdin handoff failure is `unsafe-handoff-file`.
 
 Automatic writes require `review-and-fix` plus a selected guard mode: use `guard=git` with a clean HEAD-backed git worktree, or `guard=snapshot` with a valid snapshot rollback anchor. File-set guard checks and lock refresh must still pass.

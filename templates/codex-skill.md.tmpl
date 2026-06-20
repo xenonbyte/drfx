@@ -176,7 +176,7 @@ drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix{{STATE_CONTRO
 ```
 
 This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, `<selectedGuard>` is explicit guard or default `git`, and `<stateControlToken>` is `reset` only for explicit reset starts. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
-
+{{PARTITIONED_REVIEW_FLOW}}
 Then coordinate this loop:
 
 1. Run persistent context with `drfx workflow context {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json`.

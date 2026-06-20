@@ -1626,6 +1626,16 @@ test('rendered review-fix-code route carries partitioned-review markers on every
     // PASS-is-earned reinforcement
     assert.match(body, /unit PASS is NOT a project PASS|unit PASS.*not.*project PASS/i, `${platform}:review-fix-code must assert unit PASS != project PASS`);
 
+    if (platform === 'claude' || platform === 'codex') {
+      assert.match(body, /Partitioned CODE Review Flow/, `${platform}:review-fix-code must include the executable partitioned flow`);
+      assert.match(body, /--phase unit-review/, `${platform}:review-fix-code must instruct unit-review contexts`);
+      assert.match(body, /--phase crosscutting/, `${platform}:review-fix-code must instruct crosscutting contexts`);
+      assert.match(body, /workflow aggregate-review <targetStateDir>/, `${platform}:review-fix-code must instruct aggregate-review before PASS`);
+      assert.match(body, /Do not run `--phase initial-review` to claim a project PASS/, `${platform}:review-fix-code must reject single-shot initial-review PASS`);
+    } else {
+      assert.doesNotMatch(body, /Partitioned CODE Review Flow/, `${platform}:review-fix-code must not advertise review-and-fix partitioned execution`);
+    }
+
     // Route-contract: three-phase description + no single-shot PASS claim
     assert.match(body, /independently-mergeable|independently.usable/i, `${platform}:review-fix-code route contract must describe independently-mergeable phases`);
     assert.match(body, /never claims a single-shot full-project PASS|never claims.*workflow PASS/i, `${platform}:review-fix-code must assert partitioned run never claims single-shot PASS`);
