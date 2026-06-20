@@ -1826,6 +1826,56 @@ test('recordUnitReview: writes summaries/<id>.json + findings/<id>.json with the
   assert.equal(findings.result, 'PASS');
 });
 
+test('recordUnitReview: rejects stale projectReviewFingerprint before writing summaries', async (t) => {
+  const { root, targetStateDir, plan } = await makeUnitReviewProject(t);
+  const unit = plan.units[0];
+  fs.writeFileSync(path.join(root, 'src', 'b.js'), 'module.exports = 999;\n');
+
+  await assert.rejects(
+    recordUnitReview({
+      targetStateDir,
+      projectRoot: root,
+      unitId: unit.unit_id,
+      coverageReceipt: unitReviewPayload({ unitId: unit.unit_id }),
+      reviewerFindings: REVIEWER_PASS
+    }),
+    (error) => error.code === 'ERR_STATE_VALIDATION_FAILED' &&
+      /stale-fingerprint-mismatch/.test(String(error.message))
+  );
+
+  assert.equal(fs.existsSync(path.join(
+    targetStateDir, 'project-review', 'summaries', `${unit.unit_id}.json`
+  )), false);
+  assert.equal(fs.existsSync(path.join(
+    targetStateDir, 'project-review', 'findings', `${unit.unit_id}.json`
+  )), false);
+});
+
+test('recordUnitReview: rejects reviewed false with coverage_risk none before persistence', async (t) => {
+  const { root, targetStateDir, plan } = await makeUnitReviewProject(t);
+  const unit = plan.units[0];
+
+  await assert.rejects(
+    recordUnitReview({
+      targetStateDir,
+      projectRoot: root,
+      unitId: unit.unit_id,
+      coverageReceipt: unitReviewPayload({
+        unitId: unit.unit_id,
+        reviewed: false,
+        coverageRisk: 'none'
+      }),
+      reviewerFindings: REVIEWER_PASS
+    }),
+    (error) => error.code === 'ERR_UNIT_REVIEW_INCONSISTENT_RECEIPT' &&
+      /coverage_risk:none requires Reviewed:true/.test(String(error.message))
+  );
+
+  assert.equal(fs.existsSync(path.join(
+    targetStateDir, 'project-review', 'summaries', `${unit.unit_id}.json`
+  )), false);
+});
+
 test('recordUnitReview: rejects a coverage receipt for a different unit', async (t) => {
   const { root, targetStateDir, plan } = await makeUnitReviewProject(t);
   assert.ok(plan.units.length >= 2, 'multi-unit plan');
@@ -2025,12 +2075,12 @@ test('unitsToReReview: changed ∪ suggestedRefs-hit ∪ extraReads-hit, determi
 // ---------------------------------------------------------------------------
 // PLAN-TASK-011: post-fix integration for a PARTITIONED CODE target.
 //
-// After end-fix on a partitioned target (project-review/units.json present), the
-// result surfaces the BOUNDED affected unit ids (directly-changed ∪ suggestedRefs-hit
-// ∪ extraReads-hit) plus a nextAction directing a re-review of THOSE units then a
-// re-aggregate — NOT a whole-project re-review. The in-set fix guard and the
-// fixAttemptCount / MAX_FIX_ATTEMPTS counting stay byte-identical; a non-partitioned
-// CODE fix flow is unchanged.
+// After end-fix on a partitioned target (project-review/units.json present), changed
+// source content makes the persisted plan's member contentIds/projectReviewFingerprint
+// stale. The workflow must block and require a fresh partition plan instead of
+// returning bounded re-review instructions from old unit bytes. The pure
+// unitsToReReview helper still covers changed ∪ suggestedRefs-hit ∪ extraReads-hit
+// selection above; a non-partitioned CODE fix flow is unchanged.
 // ---------------------------------------------------------------------------
 
 // Write a deterministic, hand-crafted partitioned units.json under a resolved CODE
@@ -2081,10 +2131,12 @@ async function reachCodeFixStageWithBeginFix(t, { writePlan = false } = {}) {
   return { root, args, start, plan };
 }
 
-test('partitioned CODE end-fix surfaces the bounded affected units (changed ∪ suggestedRefs-hit) + a re-review nextAction', async (t) => {
+test('partitioned CODE end-fix blocks instead of returning bounded units from a stale plan', async (t) => {
   const { root, start } = await reachCodeFixStageWithBeginFix(t, { writePlan: true });
 
   // The fixer edits src/a.js — a member of unit-001 AND a suggestedRef of unit-002.
+  // The old units.json contentIds are now stale, so end-fix must not direct a --unit
+  // re-review from that plan.
   fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
   const endFix = await runWorkflowCommand('end-fix', [
     start.targetStateDir,
@@ -2092,19 +2144,16 @@ test('partitioned CODE end-fix surfaces the bounded affected units (changed ∪ 
     '--json'
   ], { cwd: root, stdin: FIX_REPORT_FILESET });
 
-  assert.equal(endFix.ok, true, JSON.stringify(endFix));
-  assert.equal(endFix.status, 'end-fix');
-  // Bounded affected units: unit-001 (directly changed) ∪ unit-002 (suggestedRefs-hit).
-  assert.deepEqual(endFix.affectedUnits, ['unit-001', 'unit-002']);
-  // The nextAction directs re-review of THOSE units then re-aggregate, not a whole-project re-review.
-  assert.match(endFix.nextAction, /re-review/i);
-  assert.match(endFix.nextAction, /aggregate/i);
-  assert.equal(endFix.reReviewScope, 'bounded-affected-units');
-  // The manifest still transitions to diff-review (the existing loop is unchanged).
-  assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'diff-review');
+  assert.equal(endFix.ok, false);
+  assert.equal(endFix.status, 'blocked');
+  assert.equal(endFix.blockingReason, 'state-validation-failed');
+  assert.equal(endFix.affectedUnits, undefined);
+  assert.equal(endFix.reReviewScope, undefined);
+  assert.match(endFix.nextAction, /partition/i);
+  assert.notEqual(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'diff-review');
 });
 
-test('partitioned CODE end-fix includes an extraReads-hit unit in the affected set', async (t) => {
+test('partitioned CODE end-fix blocks before using stale extraReads-hit data', async (t) => {
   const { root, start } = await reachCodeFixStageWithBeginFix(t, { writePlan: true });
   // Record a summary for unit-002 whose extraReads hit src/a.js (the changed file).
   const summariesDir = path.join(start.targetStateDir, 'project-review', 'summaries');
@@ -2123,9 +2172,11 @@ test('partitioned CODE end-fix includes an extraReads-hit unit in the affected s
     '--json'
   ], { cwd: root, stdin: FIX_REPORT_FILESET });
 
-  assert.equal(endFix.ok, true, JSON.stringify(endFix));
-  // unit-002 is included via BOTH suggestedRefs and extraReads; the union dedupes it.
-  assert.deepEqual(endFix.affectedUnits, ['unit-001', 'unit-002']);
+  assert.equal(endFix.ok, false);
+  assert.equal(endFix.status, 'blocked');
+  assert.equal(endFix.blockingReason, 'state-validation-failed');
+  assert.equal(endFix.affectedUnits, undefined);
+  assert.match(endFix.nextAction, /partition/i);
 });
 
 test('partitioned CODE end-fix still blocks a fix that writes outside the recorded file set', async (t) => {
@@ -2175,8 +2226,9 @@ test('partitioned CODE begin-fix counting is unchanged: fixAttemptCount incremen
     '--fix-report-stdin',
     '--json'
   ], { cwd: root, stdin: FIX_REPORT_FILESET });
-  assert.equal(endFix.ok, true, JSON.stringify(endFix));
-  // end-fix never touches fixAttemptCount (counting lives in begin-fix only).
+  assert.equal(endFix.ok, false);
+  assert.equal(endFix.status, 'blocked');
+  // A stale-plan block still does not burn another fix attempt (counting lives in begin-fix only).
   assert.equal(Number(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).fixAttemptCount), 1);
 });
 

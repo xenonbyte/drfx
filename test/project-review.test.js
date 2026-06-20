@@ -7,7 +7,7 @@
 //   - oversize unit (size > MAX_UNIT_BYTES => single-member oversize_file:true)
 //   - reviewCacheKey invalidation on contract change; stability when unchanged
 //   - suggestRefsFor: only in-root refs, deterministic order, bare specifiers dropped, non-JS yields none
-//   - aggregate: dedup findings by (location,category); earned-PASS gate; coverage proof counts;
+//   - aggregate: dedup identical findings without folding distinct reviewer issues; earned-PASS gate; coverage proof counts;
 //     high-severity findings flagged for forced re-read
 
 const assert = require('node:assert/strict');
@@ -350,6 +350,37 @@ test('suggestRefsFor: resolves relative require() with extension', () => {
   assert.deepEqual(refs, [{ path: 'lib/b.js', contentId: 'cb' }]);
 });
 
+test('suggestRefsFor: resolves extensionless imports across JS extensions and index files', () => {
+  const files = [
+    {
+      path: 'lib/a.ts',
+      contentId: 'ca',
+      text: [
+        "import Button from './Button';",
+        "import Widget from './Widget';",
+        "const esm = await import('./esm');",
+        "const cjs = require('./cjs');",
+        "import Directory from './Directory';"
+      ].join('\n'),
+    },
+  ];
+  const inRootSet = new Map([
+    ['lib/Button.tsx', 'button'],
+    ['lib/Widget.jsx', 'widget'],
+    ['lib/esm.mjs', 'esm'],
+    ['lib/cjs.cjs', 'cjs'],
+    ['lib/Directory/index.ts', 'directory'],
+  ]);
+  const refs = suggestRefsFor(files, inRootSet);
+  assert.deepEqual(refs, [
+    { path: 'lib/Button.tsx', contentId: 'button' },
+    { path: 'lib/Directory/index.ts', contentId: 'directory' },
+    { path: 'lib/Widget.jsx', contentId: 'widget' },
+    { path: 'lib/cjs.cjs', contentId: 'cjs' },
+    { path: 'lib/esm.mjs', contentId: 'esm' },
+  ]);
+});
+
 test('suggestRefsFor: handles parent directory traversal ../', () => {
   const files = [
     { path: 'lib/sub/a.js', contentId: 'ca', text: "const b = require('../b.js');" },
@@ -469,6 +500,16 @@ test('aggregate: returns PASS when all units coverage_risk=none and no open high
   assert.equal(result.verdict, 'PASS');
 });
 
+test('aggregate: does not PASS an unreviewed summary even when coverage_risk is none', () => {
+  const summaries = [
+    makeSummary('unit-001', { reviewed: false, coverage_risk: 'none' }),
+  ];
+  const result = aggregate(summaries, []);
+  assert.equal(result.verdict, 'stopped-with-deferrals');
+  assert.equal(result.coverageProof.bodyReviewed, 0);
+  assert.equal(result.coverageProof.residualRisk, 'present');
+});
+
 test('aggregate: returns stopped-with-deferrals when any unit has coverage_risk=high', () => {
   const summaries = [
     makeSummary('unit-001'),
@@ -504,6 +545,36 @@ test('aggregate: deduplicates findings by (location, category)', () => {
   ];
   const result = aggregate(summaries, findings);
   assert.equal(result.findings.length, 2);
+});
+
+test('aggregate: does not collapse distinct reviewer findings when category is absent', () => {
+  const summaries = [makeSummary('unit-001')];
+  const findings = [
+    {
+      id: 'R001',
+      severity: 'low',
+      location: 'lib/a.js:10',
+      issue: 'The wording is unclear.',
+      why_it_matters: 'A maintainer may need to reread it.',
+      suggested_fix: 'Clarify the sentence.',
+      confidence: 'confirmed',
+      sensitive: false
+    },
+    {
+      id: 'R002',
+      severity: 'high',
+      location: 'lib/a.js:10',
+      issue: 'The guard is bypassed.',
+      why_it_matters: 'A high-risk finding at the same location must still block PASS.',
+      suggested_fix: 'Restore the guard.',
+      confidence: 'confirmed',
+      sensitive: false
+    },
+  ];
+  const result = aggregate(summaries, findings);
+  assert.equal(result.findings.length, 2);
+  assert.equal(result.verdict, 'stopped-with-deferrals');
+  assert.equal(result.findings.find((finding) => finding.id === 'R002').forceReread, true);
 });
 
 test('aggregate: coverage proof contains required fields', () => {
