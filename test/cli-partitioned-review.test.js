@@ -22,9 +22,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
-const { runWorkflowCommand } = require('../lib/workflow');
+const { formatWorkflowJson, runWorkflowCommand } = require('../lib/workflow');
 const { readSummaryIfPresent } = require('../lib/workflow/file-set-unit-review');
 const { parseManifestV2 } = require('../lib/workflow-state');
+const { resolveCodeInventory, streamingContentId } = require('../lib/target-context');
 
 const BIN = path.join(__dirname, '..', 'bin', 'drfx.js');
 
@@ -97,7 +98,10 @@ async function startPartitioned(root) {
   return start;
 }
 
-function unitReviewReceipt({ unit, reviewed = 'true', coverageRisk = 'none', cacheKey }) {
+function unitReviewReceipt({ unit, reviewed = 'true', coverageRisk = 'none', cacheKey, extraReads = [] }) {
+  const extraReadLines = extraReads.length > 0
+    ? extraReads.map((read) => `- path: ${read.path}  contentId: ${read.contentId}`)
+    : ['- none'];
   return [
     `Unit: ${unit}`,
     `Reviewed: ${reviewed}`,
@@ -107,7 +111,7 @@ function unitReviewReceipt({ unit, reviewed = 'true', coverageRisk = 'none', cac
     '- none',
     '',
     'Extra reads:',
-    '- none',
+    ...extraReadLines,
     '',
     'Contracts touched:',
     '- none'
@@ -583,6 +587,58 @@ test('aggregate-review blocks (stale) when the project tree drifts after the par
   assert.equal(fs.existsSync(path.join(start.targetStateDir, 'project-review', 'aggregate.json')), false);
 });
 
+test('aggregate-review blocks when a recorded extraRead changes outside the CODE inventory', async (t) => {
+  const root = makeOverCapRepo(t);
+  fs.writeFileSync(path.join(root, '.gitignore'), 'support.tmp\n');
+  fs.writeFileSync(path.join(root, 'support.tmp'), 'alpha\n');
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+  const supportContentId = await streamingContentId(path.join(root, 'support.tmp'));
+
+  for (const unit of plan.units) {
+    const extraReads = unit.unit_id === 'unit-001'
+      ? [{ path: 'support.tmp', contentId: supportContentId }]
+      : [];
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({
+      unit: unit.unit_id,
+      extraReads
+    }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  for (const backstop of plan.crosscuttingBackstops) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  fs.writeFileSync(path.join(root, 'support.tmp'), 'beta\n');
+  const liveInventory = await resolveCodeInventory({ cwd: root, scopes: [] });
+  assert.equal(
+    liveInventory.projectReviewFingerprint,
+    plan.projectReviewFingerprint,
+    'ignored extraRead fixture must not move the CODE inventory fingerprint'
+  );
+
+  const result = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(result.ok, false, JSON.stringify(result));
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.statusReason, 'stale-fingerprint-mismatch');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.equal(result.reviewerReportPath, undefined);
+  assert.equal(fs.existsSync(path.join(start.targetStateDir, 'project-review', 'aggregate.json')), false);
+});
+
 test('aggregate-review never claims PASS when every unit is none but backstop summaries are MISSING', async (t) => {
   const root = makeOverCapRepo(t);
   const start = await startPartitioned(root);
@@ -957,6 +1013,22 @@ test('bin no-state over-cap CODE context JSON serializes the partition plan', as
   assert.equal(result.units.length, result.unitCount);
   assert.match(result.projectReviewFingerprint, /^[0-9a-f]{64}$/);
   assert.equal(fs.existsSync(path.join(root, '.drfx')), false);
+});
+
+test('partitioned workflow JSON formatter exposes route-required fields', () => {
+  const result = JSON.parse(formatWorkflowJson({
+    ok: true,
+    status: 'aggregated-review',
+    targetStateDir: '/tmp/drfx-state',
+    reviewMode: 'partitioned',
+    reviewPlanPath: 'project-review/units.json',
+    reason: 'coverage-incomplete',
+    reviewerReportPath: '/tmp/drfx-state/reports/aggregate-review-round-001.md'
+  }));
+
+  assert.equal(result.reviewPlanPath, 'project-review/units.json');
+  assert.equal(result.reason, 'coverage-incomplete');
+  assert.equal(result.reviewerReportPath, '/tmp/drfx-state/reports/aggregate-review-round-001.md');
 });
 
 // ---------------------------------------------------------------------------
