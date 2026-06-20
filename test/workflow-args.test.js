@@ -959,3 +959,79 @@ test('parseWorkflowArgs rejects review-fix-code with base= (usage error before s
     /review-fix-pr/i
   );
 });
+
+// ---------------------------------------------------------------------------
+// PLAN-TASK-007: partitioned-review CLI flags + subcommand parse into the
+// existing VALUE_FLAGS / WORKFLOW_SUBCOMMANDS machinery (no bespoke parsing).
+// ---------------------------------------------------------------------------
+
+function partitionedFlags(extra) {
+  return [
+    'review-fix-code',
+    'review-and-fix',
+    'guard=snapshot',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    ...extra
+  ];
+}
+
+test('context --phase unit-review --unit parses unit + phase into the parsed object', () => {
+  const parsed = parseWorkflowArgs('context', partitionedFlags(['--phase', 'unit-review', '--unit', 'unit-001']));
+  assert.equal(parsed.subcommand, 'context');
+  assert.equal(parsed.phase, 'unit-review');
+  assert.equal(parsed.unit, 'unit-001');
+  assert.equal(parsed.backstop, null);
+});
+
+test('context --phase crosscutting --backstop parses backstop + phase', () => {
+  const parsed = parseWorkflowArgs('context', partitionedFlags(['--phase', 'crosscutting', '--backstop', 'security-redaction']));
+  assert.equal(parsed.phase, 'crosscutting');
+  assert.equal(parsed.backstop, 'security-redaction');
+  assert.equal(parsed.unit, null);
+});
+
+test('record-review --phase unit-review --result-stdin --payload-file parses both payload inputs', () => {
+  const parsed = parseWorkflowArgs('record-review', partitionedFlags([
+    '--phase', 'unit-review', '--unit', 'unit-001',
+    '--result-stdin', '--payload-file', '/tmp/receipt.txt'
+  ]));
+  assert.equal(parsed.phase, 'unit-review');
+  assert.equal(parsed.unit, 'unit-001');
+  assert.equal(parsed.payloadFlags.resultStdin, true);
+  assert.equal(parsed.payloadFlags.payloadFile, '/tmp/receipt.txt');
+});
+
+test('aggregate-review is a known subcommand taking exactly one target-state dir', () => {
+  const parsed = parseWorkflowArgs('aggregate-review', ['/abs/target/state/dir', '--json']);
+  assert.equal(parsed.subcommand, 'aggregate-review');
+  assert.equal(parsed.json, true);
+  assert.equal(parsed.targetStateDir, path.resolve('/abs/target/state/dir'));
+});
+
+test('aggregate-review rejects --no-state cleanly', () => {
+  assert.throws(
+    () => parseWorkflowArgs('aggregate-review', ['/abs/dir', '--no-state']),
+    (error) => error.code === 'ERR_NO_STATE_COMMAND'
+  );
+});
+
+test('aggregate-review requires exactly one target-state dir', () => {
+  assert.throws(
+    () => parseWorkflowArgs('aggregate-review', ['--json']),
+    (error) => error.code === 'ERR_TARGET_STATE_DIR'
+  );
+});
+
+test('unknown --unit-like typo on a non-partitioned subcommand still rejects', () => {
+  assert.throws(
+    () => parseWorkflowArgs('context', partitionedFlags(['--unitt', 'unit-001'])),
+    /Unknown workflow option: --unitt/
+  );
+});

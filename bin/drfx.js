@@ -50,6 +50,7 @@ function printWorkflowHelp() {
     'Usage:',
     '  drfx workflow start <entry-skill> [tokens...] [--json] [--assurance advisory|practical|strict-verified]',
     '  drfx workflow preflight|context|record-review|record-triage|begin-fix|refresh-lock|end-fix|abort-fix|record-diff-review|finalize ...',
+    '  drfx workflow aggregate-review <target-state-dir> [--json]',
     ''
   ].join('\n'));
 }
