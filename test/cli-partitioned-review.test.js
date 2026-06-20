@@ -460,6 +460,135 @@ test('aggregate-review never claims PASS over ZERO recorded summaries (empty set
   assert.equal(persisted.reason, 'coverage-incomplete');
 });
 
+test('aggregate-review never claims PASS when every unit is none but backstop summaries are MISSING', async (t) => {
+  const root = makeOverCapRepo(t);
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+  assert.equal(plan.crosscuttingBackstops.length, 7, 'plan declares the 7 fixed backstops');
+
+  // Every unit coverage_risk:none, but record ZERO backstop summaries. aggregate()'s
+  // all-none gate is vacuously satisfied (no backstop summary on disk to violate it);
+  // the workflow-layer backstop reconciliation must still refuse PASS — this is the
+  // symmetric hole to the unit-coverage hole.
+  for (const unit of plan.units) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  const result = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.notEqual(result.verdict, 'PASS', 'full unit coverage without backstops can never earn a project PASS');
+  assert.equal(result.verdict, 'stopped-with-deferrals');
+  assert.equal(result.reason, 'coverage-incomplete');
+  assert.deepEqual(result.uncoveredUnitIds, [], 'every unit is covered');
+  assert.deepEqual(
+    result.uncoveredBackstops.slice().sort(),
+    plan.crosscuttingBackstops.slice().sort(),
+    'every backstop is uncovered when none were recorded'
+  );
+  assert.equal(result.coverageProof.residualRisk, 'present');
+
+  // The honest verdict is what gets persisted into aggregate.json.
+  const persisted = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'aggregate.json'), 'utf8'
+  ));
+  assert.equal(persisted.verdict, 'stopped-with-deferrals');
+  assert.equal(persisted.reason, 'coverage-incomplete');
+  assert.deepEqual(
+    persisted.uncoveredBackstops.slice().sort(),
+    plan.crosscuttingBackstops.slice().sort()
+  );
+});
+
+test('aggregate-review never claims PASS when a backstop summary is present-but-high', async (t) => {
+  const root = makeOverCapRepo(t);
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+
+  for (const unit of plan.units) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  // Record every backstop as none EXCEPT one left high (no positive evidence).
+  for (const backstop of plan.crosscuttingBackstops) {
+    const high = backstop === plan.crosscuttingBackstops[0];
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({
+      unit: 'unit-001',
+      reviewed: high ? 'false' : 'true',
+      coverageRisk: high ? 'high' : 'none'
+    }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop, '--unit', 'unit-001',
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  const result = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.notEqual(result.verdict, 'PASS', 'a high backstop can never earn a project PASS');
+  assert.equal(result.verdict, 'stopped-with-deferrals');
+  assert.deepEqual(result.uncoveredBackstops, [plan.crosscuttingBackstops[0]],
+    'the present-but-high backstop surfaces as uncovered');
+});
+
+test('aggregate-review reaches PASS only when every unit AND all 7 backstops report coverage_risk none', async (t) => {
+  const root = makeOverCapRepo(t);
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+
+  // Every unit none.
+  for (const unit of plan.units) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  // Every backstop earns none via positive cross-unit evidence (spanned unit is none,
+  // receipt confirms reviewed:true + coverage_risk:none, and a spanned unit is given).
+  for (const backstop of plan.crosscuttingBackstops) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+    const recorded = await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop, '--unit', 'unit-001',
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+    assert.equal(recorded.coverageRisk, 'none', `backstop ${backstop} must earn none`);
+  }
+
+  const result = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  // Full unit AND full backstop coverage, no open high/medium findings → PASS reachable.
+  assert.equal(result.verdict, 'PASS', JSON.stringify(result));
+  assert.equal(result.coverageProof.residualRisk, 'none');
+
+  const persisted = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'aggregate.json'), 'utf8'
+  ));
+  assert.equal(persisted.verdict, 'PASS');
+});
+
 // ---------------------------------------------------------------------------
 // PERSISTENT-only: --no-state partitioned subcommands reject cleanly
 // ---------------------------------------------------------------------------
