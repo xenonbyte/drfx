@@ -13,3 +13,5 @@
 - workflow PASS is unavailable in Gemini v1; Gemini must not claim workflow PASS.
 - Gemini must not edit source files or workflow state except through no-state workflow outputs.
 - Do not call, wrap, or delegate to a platform-native code-review command; this route only produces advisory read-only findings.
+- When the whole-root source file set exceeds the single-pass budget, the route runs as **partitioned project review** across three **independently-mergeable / independently-usable phases**: (1) a deterministic partition plan; (2) bounded read-only per-unit advisory findings with coverage receipts; (3) aggregate advisory findings. Each phase leaves usable advisory output even if the next never runs.
+- A partitioned run on Gemini is advisory-only and **never claims a workflow PASS**; Gemini must not claim PASS at any phase.

@@ -495,6 +495,21 @@ Allowed, not findings: named constants with clear scope and rationale; obviously
 - Do not silently swallow errors, downgrade a security check, or continue after a failed validation; fallbacks must be explicit, observable, and safe by default.
 - Do not log raw secrets, credentials, tokens, cookies, private keys, or PII. Findings must identify a secret's location without quoting its value.
 
+## Partitioned project review
+
+When a whole-root review is too large for one pass, the route runs as **partitioned project review**: the project is split into review **units** that never split a file; each unit is reviewed in a **bounded** context — only that unit's file bodies, the merged rules, and the unit's `suggestedRefs` (the in-root files it `require()/import`s) as read-only references. The reviewer may read those refs up to the contract-read budget; any read beyond budget, any metadata-only review, or any property it cannot positively confirm is recorded `coverage_risk: high` (honest non-confirmation, never a silent pass).
+
+**A unit PASS is NOT a project PASS.** Project PASS is earned only when every unit AND the crosscutting backstop report `coverage_risk: none`, all findings are triaged, and no open high/medium remains. Any miss ends `stopped-with-deferrals` + `coverage-incomplete` — never PASS.
+
+A **cross-unit finding MUST name the specific dependency edge / caller path** it relies on (the `suggestedRefs` entry or the caller→callee path), never a vague "some other module."
+
+The four **locally-checkable disciplines** (each verifiable inside one unit without whole-project context):
+
+1. **redaction-at-write-boundary** — secrets/tokens/credentials/cookies/private keys/raw logs must be redacted at every persistence/write boundary (workflow state, receipts, generated prompts).
+2. **identity-field-coverage** — any fingerprint/identity projection must cover every identity-bearing field; a silently dropped field is a finding.
+3. **allowlist-only-git** — git invocations stay within the read-only allowlist; no fetch/push/remote/branch/ref mutation.
+4. **status/phase legality** — status + phase combinations must be legal per the state machine; no active-status misuse or fabricated PASS.
+
 ---
 
 <!-- shared/prompts/reviewer.md -->

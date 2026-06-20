@@ -1549,3 +1549,35 @@ test('codex generated skills copy shared assets byte-for-byte from source', () =
     }
   }
 });
+
+// ---------------------------------------------------------------------------
+// PLAN-TASK-004: Partitioned rubric + route-contract text
+// Positive-assertion gate: the rendered review-fix-code route (per platform)
+// must carry the partitioned-review markers and all four discipline names so
+// the section cannot silently vanish in a future regeneration.
+// ---------------------------------------------------------------------------
+
+test('rendered review-fix-code route carries partitioned-review markers on every platform', () => {
+  for (const platform of ['claude', 'codex', 'gemini']) {
+    const body = renderPlatformRoute(platform, 'review-fix-code', { packageVersion: '0.0.0-test' });
+
+    // Core partitioned-review markers (from rubric + route contract)
+    assert.match(body, /partitioned project review/i, `${platform}:review-fix-code must mention partitioned project review`);
+    assert.match(body, /unit PASS/i, `${platform}:review-fix-code must state unit PASS`);
+    assert.match(body, /coverage-incomplete/i, `${platform}:review-fix-code must mention coverage-incomplete`);
+    assert.match(body, /coverage_risk/i, `${platform}:review-fix-code must mention coverage_risk`);
+
+    // Four locally-checkable disciplines (from rubric, embedded in generated route)
+    assert.match(body, /redaction-at-write-boundary/i, `${platform}:review-fix-code must list discipline: redaction-at-write-boundary`);
+    assert.match(body, /identity-field-coverage/i, `${platform}:review-fix-code must list discipline: identity-field-coverage`);
+    assert.match(body, /allowlist-only-git/i, `${platform}:review-fix-code must list discipline: allowlist-only-git`);
+    assert.match(body, /status\/phase legality/i, `${platform}:review-fix-code must list discipline: status/phase legality`);
+
+    // PASS-is-earned reinforcement
+    assert.match(body, /unit PASS is NOT a project PASS|unit PASS.*not.*project PASS/i, `${platform}:review-fix-code must assert unit PASS != project PASS`);
+
+    // Route-contract: three-phase description + no single-shot PASS claim
+    assert.match(body, /independently-mergeable|independently.usable/i, `${platform}:review-fix-code route contract must describe independently-mergeable phases`);
+    assert.match(body, /never claims a single-shot full-project PASS|never claims.*workflow PASS/i, `${platform}:review-fix-code must assert partitioned run never claims single-shot PASS`);
+  }
+});
