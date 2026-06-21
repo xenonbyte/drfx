@@ -510,6 +510,19 @@ test('aggregate: does not PASS an unreviewed summary even when coverage_risk is 
   assert.equal(result.coverageProof.residualRisk, 'present');
 });
 
+test('aggregate: does not PASS a summary that skipped a file even when coverage_risk is none', () => {
+  // Defense-in-depth: record-time gates refuse skipped+none, but aggregate re-derives
+  // coverage and must independently refuse PASS for a (hand-written/stale) summary that
+  // reports coverage_risk:none while carrying a non-empty skipped list.
+  const summaries = [
+    makeSummary('unit-001'),
+    makeSummary('unit-002', { coverage_risk: 'none', skipped: [{ path: 'src/a.js', reason: 'context-limit' }] }),
+  ];
+  const result = aggregate(summaries, []);
+  assert.equal(result.verdict, 'stopped-with-deferrals');
+  assert.equal(result.coverageProof.residualRisk, 'present');
+});
+
 test('aggregate: returns stopped-with-deferrals when any unit has coverage_risk=high', () => {
   const summaries = [
     makeSummary('unit-001'),

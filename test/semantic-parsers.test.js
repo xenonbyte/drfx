@@ -304,7 +304,6 @@ function makeUnitReviewReport(overrides = {}) {
     unit: 'unit-001',
     reviewed: 'true',
     coverageRisk: 'none',
-    reviewCacheKey: 'a'.repeat(64),
     skippedLines: ['- none'],
     extraReadsLines: ['- none'],
     contractsLines: ['- none']
@@ -314,7 +313,6 @@ function makeUnitReviewReport(overrides = {}) {
     `Unit: ${o.unit}`,
     `Reviewed: ${o.reviewed}`,
     `Coverage risk: ${o.coverageRisk}`,
-    `Review cache key: ${o.reviewCacheKey}`,
     'Skipped:',
     ...o.skippedLines,
     '',
@@ -331,7 +329,6 @@ test('parseUnitReviewReport: valid receipt with coverage_risk none and empty lis
   assert.equal(parsed.unitId, 'unit-001');
   assert.equal(parsed.reviewed, true);
   assert.equal(parsed.coverageRisk, 'none');
-  assert.equal(parsed.reviewCacheKey, 'a'.repeat(64));
   assert.deepEqual(parsed.skipped, []);
   assert.deepEqual(parsed.extraReads, []);
   assert.deepEqual(parsed.contractsTouched, []);
@@ -341,12 +338,10 @@ test('parseUnitReviewReport: valid receipt with coverage_risk none and empty lis
 test('parseUnitReviewReport: valid receipt with coverage_risk high and reviewed false', () => {
   const parsed = parseUnitReviewReport(makeUnitReviewReport({
     coverageRisk: 'high',
-    reviewed: 'false',
-    reviewCacheKey: 'none'
+    reviewed: 'false'
   }));
   assert.equal(parsed.coverageRisk, 'high');
   assert.equal(parsed.reviewed, false);
-  assert.equal(parsed.reviewCacheKey, 'none');
 });
 
 test('parseUnitReviewReport: valid receipt with populated skipped, extraReads, contractsTouched', () => {
@@ -393,22 +388,28 @@ test('parseUnitReviewReport: rejects malformed unit_id', () => {
   assert.throws(() => parseUnitReviewReport(makeUnitReviewReport({ unit: 'UNIT-001' })), /Unit/i);
 });
 
-test('parseUnitReviewReport: rejects non-hex reviewCacheKey', () => {
-  // Not 64 chars
-  assert.throws(
-    () => parseUnitReviewReport(makeUnitReviewReport({ reviewCacheKey: 'abc123' })),
-    /Review cache key/i
-  );
-  // 64 chars but contains uppercase
-  assert.throws(
-    () => parseUnitReviewReport(makeUnitReviewReport({ reviewCacheKey: 'A'.repeat(64) })),
-    /Review cache key/i
-  );
-  // 64 chars but has non-hex character
-  assert.throws(
-    () => parseUnitReviewReport(makeUnitReviewReport({ reviewCacheKey: 'g'.repeat(64) })),
-    /Review cache key/i
-  );
+test('parseUnitReviewReport: "Review cache key" is no longer part of the wire format', () => {
+  // The field was mandatory-but-unused (never compared to the computed key). It was
+  // removed from the wire format; a receipt that still carries it now fails as an
+  // unknown scalar under the strict parser.
+  const withCacheKey = [
+    'Unit: unit-001',
+    'Reviewed: true',
+    'Coverage risk: none',
+    `Review cache key: ${'a'.repeat(64)}`,
+    'Skipped:',
+    '- none',
+    '',
+    'Extra reads:',
+    '- none',
+    '',
+    'Contracts touched:',
+    '- none'
+  ].join('\n');
+  assert.throws(() => parseUnitReviewReport(withCacheKey), /unknown scalar field: Review cache key/);
+  // A receipt WITHOUT the field parses cleanly and never surfaces a reviewCacheKey.
+  const parsed = parseUnitReviewReport(makeUnitReviewReport());
+  assert.equal(Object.hasOwn(parsed, 'reviewCacheKey'), false);
 });
 
 test('parseUnitReviewReport: rejects unsafe extraRead paths and malformed contentIds', () => {
@@ -434,7 +435,6 @@ test('parseUnitReviewReport: rejects missing required fields', () => {
     () => parseUnitReviewReport([
       'Reviewed: true',
       'Coverage risk: none',
-      'Review cache key: none',
       'Skipped:',
       '- none',
       '',
@@ -451,7 +451,6 @@ test('parseUnitReviewReport: rejects missing required fields', () => {
     () => parseUnitReviewReport([
       'Unit: unit-001',
       'Reviewed: true',
-      'Review cache key: none',
       'Skipped:',
       '- none',
       '',
@@ -471,7 +470,6 @@ test('parseUnitReviewReport: rejects unknown scalar field', () => {
       'Unit: unit-001',
       'Reviewed: true',
       'Coverage risk: none',
-      'Review cache key: none',
       'Extra flag: unexpected',
       'Skipped:',
       '- none',
@@ -492,7 +490,6 @@ test('parseUnitReviewReport: rejects unknown section', () => {
       'Unit: unit-001',
       'Reviewed: true',
       'Coverage risk: none',
-      'Review cache key: none',
       'Skipped:',
       '- none',
       '',
@@ -515,7 +512,6 @@ test('parseUnitReviewReport: rejects duplicate section', () => {
       'Unit: unit-001',
       'Reviewed: true',
       'Coverage risk: none',
-      'Review cache key: none',
       'Skipped:',
       '- none',
       '',
@@ -538,7 +534,6 @@ test('parseUnitReviewReport: rejects blank line inside list', () => {
       'Unit: unit-001',
       'Reviewed: true',
       'Coverage risk: none',
-      'Review cache key: none',
       'Skipped:',
       '- path: src/a.js  reason: out-of-scope',
       '',
@@ -562,7 +557,6 @@ test('parseUnitReviewReport: rejects missing required sections', () => {
       'Unit: unit-001',
       'Reviewed: true',
       'Coverage risk: none',
-      'Review cache key: none',
       'Skipped:',
       '- none'
     ].join('\n')),

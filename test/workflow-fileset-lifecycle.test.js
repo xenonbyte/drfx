@@ -1698,8 +1698,6 @@ const {
   writeProjectReviewPlan
 } = require('../lib/workflow/file-set-context');
 const { resolveCodeInventory, streamingContentId } = require('../lib/target-context');
-const { mergedRulesFingerprint } = require('../lib/context-pack');
-const { reviewCacheKey } = require('../lib/project-review');
 
 // Build a small CODE project root with a couple of importing JS files so the
 // partition plan produces suggestedRefs, plus write a units.json plan under
@@ -1733,14 +1731,13 @@ async function makeUnitReviewProject(t, { oversize = false } = {}) {
   return { root, targetStateDir, plan };
 }
 
-function unitReviewPayload({ unitId, reviewed = true, coverageRisk = 'none', cacheKey = 'none', extraReads = [] }) {
+function unitReviewPayload({ unitId, reviewed = true, coverageRisk = 'none', skippedLines = ['- none'], extraReads = [] }) {
   const lines = [
     `Unit: ${unitId}`,
     `Reviewed: ${reviewed}`,
     `Coverage risk: ${coverageRisk}`,
-    `Review cache key: ${cacheKey}`,
     'Skipped:',
-    '- none',
+    ...skippedLines,
     'Extra reads:'
   ];
   if (extraReads.length === 0) {
@@ -1869,6 +1866,31 @@ test('recordUnitReview: rejects reviewed false with coverage_risk none before pe
     }),
     (error) => error.code === 'ERR_UNIT_REVIEW_INCONSISTENT_RECEIPT' &&
       /coverage_risk:none requires Reviewed:true/.test(String(error.message))
+  );
+
+  assert.equal(fs.existsSync(path.join(
+    targetStateDir, 'project-review', 'summaries', `${unit.unit_id}.json`
+  )), false);
+});
+
+test('recordUnitReview: rejects a non-empty Skipped list with coverage_risk none before persistence', async (t) => {
+  const { root, targetStateDir, plan } = await makeUnitReviewProject(t);
+  const unit = plan.units[0];
+
+  await assert.rejects(
+    recordUnitReview({
+      targetStateDir,
+      projectRoot: root,
+      unitId: unit.unit_id,
+      coverageReceipt: unitReviewPayload({
+        unitId: unit.unit_id,
+        coverageRisk: 'none',
+        skippedLines: ['- path: src/a.js  reason: context-limit']
+      }),
+      reviewerFindings: REVIEWER_PASS
+    }),
+    (error) => error.code === 'ERR_UNIT_REVIEW_SKIPPED_WITH_NONE' &&
+      /coverage_risk:none requires Skipped:none/.test(String(error.message))
   );
 
   assert.equal(fs.existsSync(path.join(

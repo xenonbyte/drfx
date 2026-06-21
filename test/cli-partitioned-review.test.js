@@ -98,7 +98,7 @@ async function startPartitioned(root) {
   return start;
 }
 
-function unitReviewReceipt({ unit, reviewed = 'true', coverageRisk = 'none', cacheKey, extraReads = [] }) {
+function unitReviewReceipt({ unit, reviewed = 'true', coverageRisk = 'none', skippedLines = ['- none'], extraReads = [] }) {
   const extraReadLines = extraReads.length > 0
     ? extraReads.map((read) => `- path: ${read.path}  contentId: ${read.contentId}`)
     : ['- none'];
@@ -106,9 +106,8 @@ function unitReviewReceipt({ unit, reviewed = 'true', coverageRisk = 'none', cac
     `Unit: ${unit}`,
     `Reviewed: ${reviewed}`,
     `Coverage risk: ${coverageRisk}`,
-    `Review cache key: ${cacheKey || 'none'}`,
     'Skipped:',
-    '- none',
+    ...skippedLines,
     '',
     'Extra reads:',
     ...extraReadLines,
@@ -211,6 +210,57 @@ function runBin(args, { cwd, input } = {}) {
     return { code: error.status, stdout: error.stdout || '', stderr: error.stderr || '' };
   }
 }
+
+// ---------------------------------------------------------------------------
+// resume on a partitioned checkpoint
+// ---------------------------------------------------------------------------
+
+test('resume on a partitioned checkpoint points back into the unit-review loop', async (t) => {
+  const root = makeOverCapRepo(t);
+  await startPartitioned(root);
+
+  const resumed = await runWorkflowCommand('start', practicalArgs(['review-fix-code', 'resume']), { cwd: root });
+  assert.equal(resumed.status, 'checkpoint');
+  assert.equal(resumed.reviewMode, 'partitioned', 'resume advertises partitioned mode so the caller re-enters the unit loop');
+  assert.match(resumed.nextAction, /--phase unit-review/, 'resume points at the bounded unit-review loop, not a generic phase');
+});
+
+test('partitioned checkpoint records ordered .drfxignore digests in the manifest and units.json', async (t) => {
+  const root = makeOverCapRepo(t);
+  // .drfxignore is git-ignored (untracked + .gitignore), so it is NOT inventoried: its
+  // patterns still shape userExcludes but editing it never moves the content fingerprint.
+  fs.writeFileSync(path.join(root, '.gitignore'), '.drfxignore\n');
+  fs.writeFileSync(path.join(root, '.drfxignore'), 'zzz-nonexistent-*.log\n');
+
+  const start = await startPartitioned(root);
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.userExcludes.length, 1, 'checkpoint manifest carries the ordered .drfxignore digest, not []');
+  assert.match(manifest.userExcludes[0], /^[0-9a-f]{64}$/, 'a digest, never the raw pattern text');
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+  assert.deepEqual(plan.userExcludes, manifest.userExcludes, 'units.json mirrors the manifest rule-identity digests');
+});
+
+test('resume on a partitioned checkpoint with a stable .drfxignore matches identity (recorded digests cause no false mismatch)', async (t) => {
+  // The CODE target key already folds the .drfxignore digests, so a rule change reroutes to
+  // a different target. The manifest/units.json digests this fix records must therefore match
+  // the LIVE recompute on an UNCHANGED rule set — otherwise resume would falsely block.
+  const root = makeOverCapRepo(t);
+  fs.writeFileSync(path.join(root, '.gitignore'), '.drfxignore\n');
+  fs.writeFileSync(path.join(root, '.drfxignore'), 'zzz-nonexistent-*.log\n');
+  const start = await startPartitioned(root);
+
+  const resumed = await runWorkflowCommand('start', practicalArgs(['review-fix-code', 'resume']), { cwd: root });
+  assert.equal(resumed.status, 'checkpoint', JSON.stringify(resumed));
+  assert.equal(resumed.blockingReason, 'none', 'recorded rule digests must not produce a false stale-identity block');
+  assert.equal(resumed.reviewMode, 'partitioned');
+  assert.match(resumed.nextAction, /--phase unit-review/);
+  // The stored identity reflects the real rule set, consistent with the normal CODE path.
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.userExcludes.length, 1);
+});
 
 // ---------------------------------------------------------------------------
 // context --phase unit-review
@@ -429,6 +479,45 @@ test('record-review --phase crosscutting writes an honest high coverage_risk whe
   );
   assert.equal(fs.existsSync(summaryPath), true);
   const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+  assert.equal(summary.coverage_risk, 'high');
+});
+
+test('record-review --phase crosscutting folds a non-empty Skipped list into high coverage_risk', async (t) => {
+  const root = makeOverCapRepo(t);
+  const start = await startPartitioned(root);
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+  // Record every unit clean so everySpannedNone CAN hold; the ONLY thing standing
+  // between this backstop and a none verdict is its non-empty Skipped list.
+  for (const unit of plan.units) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+  // Backstop spans all units (no --unit) and the receipt confirms reviewed:true + none,
+  // but declares a skipped file → must end high, never a silent none.
+  const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({
+    unit: 'unit-001',
+    reviewed: 'true',
+    coverageRisk: 'none',
+    skippedLines: ['- path: src/a.js  reason: context-limit']
+  }));
+  const result = await runWorkflowCommand('record-review', [
+    ...practicalArgs(['review-fix-code']),
+    '--phase', 'crosscutting',
+    '--backstop', 'security-redaction',
+    '--result-stdin', '--payload-file', receiptFile
+  ], { cwd: root, stdin: REVIEWER_PASS });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.coverageRisk, 'high', 'a skipped file blocks a backstop none verdict');
+  const summary = JSON.parse(fs.readFileSync(path.join(
+    start.targetStateDir, 'project-review', 'summaries', 'backstop-security-redaction.json'
+  ), 'utf8'));
   assert.equal(summary.coverage_risk, 'high');
 });
 
