@@ -18,6 +18,7 @@ const {
   suggestRefsFor,
   reviewCacheKey,
   aggregate,
+  refreshPartitionPlanContent,
   CROSSCUTTING_BACKSTOPS,
   MAX_UNIT_BYTES,
   CONTRACT_READ_BUDGET,
@@ -671,4 +672,95 @@ test('aggregate: includes crosscuttingBackstops in output', () => {
   const result = aggregate(summaries, []);
   assert.ok(Array.isArray(result.crosscuttingBackstops));
   assert.ok(result.crosscuttingBackstops.length > 0);
+});
+
+// ---------------------------------------------------------------------------
+// refreshPartitionPlanContent
+// ---------------------------------------------------------------------------
+
+// Minimal 2-unit plan fixture: unit-001 {a.js}, unit-002 {b.js}; b.js requires ./a.
+function basePlan() {
+  return {
+    reviewMode: 'partitioned',
+    unitByteBudget: 1_000_000,
+    units: [
+      { unit_id: 'unit-001', member_count: 1, member_bytes: 10, member_digest: 'OLD1',
+        files: [{ path: 'a.js', size: 10, ext: '.js', contentId: 'ca0', unit_id: 'unit-001' }],
+        suggestedRefs: [] },
+      { unit_id: 'unit-002', member_count: 1, member_bytes: 20, member_digest: 'OLD2',
+        files: [{ path: 'b.js', size: 20, ext: '.js', contentId: 'cb0', unit_id: 'unit-002' }],
+        suggestedRefs: [{ path: 'a.js', contentId: 'ca0' }] },
+    ],
+    crosscuttingBackstops: ['security-redaction'],
+    projectReviewFingerprint: 'FP0',
+    userExcludes: [],
+    inventoryRows: [],
+  };
+}
+
+test('refreshPartitionPlanContent refreshes content fields and stamps the new fingerprint', () => {
+  const newInventory = [
+    { path: 'a.js', size: 11, ext: '.js', contentId: 'ca1' }, // a.js edited
+    { path: 'b.js', size: 20, ext: '.js', contentId: 'cb0' },
+  ];
+  const { refreshedPlan, refsChangedUnitIds } = refreshPartitionPlanContent(basePlan(), newInventory, {
+    nextSuggestedRefsByUnit: { 'unit-001': [], 'unit-002': [{ path: 'a.js', contentId: 'ca1' }] },
+    projectReviewFingerprint: 'FP1',
+  });
+  assert.equal(refreshedPlan.projectReviewFingerprint, 'FP1');
+  assert.equal(refreshedPlan.units[0].files[0].contentId, 'ca1');
+  assert.equal(refreshedPlan.units[0].files[0].size, 11);
+  assert.notEqual(refreshedPlan.units[0].member_digest, 'OLD1'); // recomputed to a real sha256
+  assert.notEqual(refreshedPlan.units[1].member_digest, 'OLD2'); // recomputed (was a placeholder digest)
+  // unit-002's suggestedRef still points to a.js; only the contentId refreshed.
+  // refsChangedUnitIds is reserved for ref PATH topology changes. The end-fix
+  // caller still invalidates unit-002 through unitsToReReview(declaredFiles, oldPlan).
+  assert.equal(refreshedPlan.units[1].suggestedRefs[0].contentId, 'ca1');
+  assert.deepEqual(refsChangedUnitIds, []);
+});
+
+test('refreshPartitionPlanContent reports refsChangedUnitIds when ref path topology changes', () => {
+  const newInventory = [
+    { path: 'a.js', size: 10, ext: '.js', contentId: 'ca0' },
+    { path: 'b.js', size: 20, ext: '.js', contentId: 'cb0' },
+  ];
+  const { refsChangedUnitIds } = refreshPartitionPlanContent(basePlan(), newInventory, {
+    nextSuggestedRefsByUnit: { 'unit-001': [], 'unit-002': [] }, // unit-002 dropped ref path a.js
+    projectReviewFingerprint: 'FP1',
+  });
+  assert.deepEqual(refsChangedUnitIds, ['unit-002']);
+});
+
+test('refreshPartitionPlanContent throws MEMBERSHIP_CHANGED when a member is added or removed', () => {
+  const added = [
+    { path: 'a.js', size: 10, ext: '.js', contentId: 'ca0' },
+    { path: 'b.js', size: 20, ext: '.js', contentId: 'cb0' },
+    { path: 'c.js', size: 5, ext: '.js', contentId: 'cc0' }, // NEW member
+  ];
+  assert.throws(
+    () => refreshPartitionPlanContent(basePlan(), added, { nextSuggestedRefsByUnit: { 'unit-001': [], 'unit-002': [] }, projectReviewFingerprint: 'FP1' }),
+    (e) => e.code === 'ERR_PARTITION_MEMBERSHIP_CHANGED'
+  );
+});
+
+test('refreshPartitionPlanContent throws REBUCKET_REQUIRED when a unit exceeds the byte budget', () => {
+  const fat = [
+    { path: 'a.js', size: 2_000_000, ext: '.js', contentId: 'ca1' }, // now over budget
+    { path: 'b.js', size: 20, ext: '.js', contentId: 'cb0' },
+  ];
+  assert.throws(
+    () => refreshPartitionPlanContent(basePlan(), fat, { nextSuggestedRefsByUnit: { 'unit-001': [], 'unit-002': [{ path: 'a.js', contentId: 'ca1' }] }, projectReviewFingerprint: 'FP1' }),
+    (e) => e.code === 'ERR_PARTITION_REBUCKET_REQUIRED'
+  );
+});
+
+test('refreshPartitionPlanContent throws REFS_CHANGED when a non-chunk unit has no re-resolved refs', () => {
+  const newInventory = [
+    { path: 'a.js', size: 10, ext: '.js', contentId: 'ca0' },
+    { path: 'b.js', size: 20, ext: '.js', contentId: 'cb0' },
+  ];
+  assert.throws(
+    () => refreshPartitionPlanContent(basePlan(), newInventory, { nextSuggestedRefsByUnit: { 'unit-001': [] /* unit-002 missing */ }, projectReviewFingerprint: 'FP1' }),
+    (e) => e.code === 'ERR_PARTITION_REFS_CHANGED'
+  );
 });
