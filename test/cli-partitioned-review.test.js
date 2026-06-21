@@ -26,6 +26,9 @@ const { formatWorkflowJson, runWorkflowCommand } = require('../lib/workflow');
 const { readSummaryIfPresent } = require('../lib/workflow/file-set-unit-review');
 const { parseManifestV2 } = require('../lib/workflow-state');
 const { resolveCodeInventory, streamingContentId } = require('../lib/target-context');
+const { applyPartitionedIncrement } = require('../lib/workflow/file-set-partitioned-increment');
+const { resolveFileSetStateMetadata } = require('../lib/workflow/helpers');
+const { readActivePartitionedPlan } = require('../lib/workflow/file-set-partitioned-live');
 
 const BIN = path.join(__dirname, '..', 'bin', 'drfx.js');
 
@@ -1218,4 +1221,50 @@ test('non-partitioned no-state context (no unit-review/crosscutting phase) dispa
   assert.equal(typeof context.reviewGuard, 'string');
   // The partitioned result fields must be absent on the unchanged path.
   assert.equal(context.unitId === undefined || context.unitId === null, true);
+});
+
+// ---------------------------------------------------------------------------
+// Task 3: applyPartitionedIncrement + whole-root scope invariant
+// ---------------------------------------------------------------------------
+
+test('applyPartitionedIncrement refreshes units.json, invalidates affected units + backstops, returns to checkpoint/review', async (t) => {
+  const root = makeMultiUnitRepo(t);              // >=2 units
+  const start = await startPartitioned(root);
+  const plan = readActivePartitionedPlan(resolveFileSetStateMetadata(start.targetStateDir));
+  await recordCompletePartitionedCoverage(t, root, plan); // every unit + backstop coverage_risk:none
+
+  // Simulate a route-owned, in-set fix: edit src/a.js (owned by the unit that bin-packed it).
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { return 7; };\n');
+
+  const metadata = resolveFileSetStateMetadata(start.targetStateDir);
+  const oldPlan = readActivePartitionedPlan(metadata);
+  // Find the unit that actually owns src/a.js (bin-packing may place it in any unit).
+  const ownerUnit = oldPlan.units.find((u) => u.files.some((f) => f.path === 'src/a.js'));
+  assert.ok(ownerUnit, 'src/a.js must belong to some unit');
+  const result = await applyPartitionedIncrement({
+    metadata,
+    declaredFiles: ['src/a.js'],
+    fixReport: { fixed: [], filesChanged: ['src/a.js'], verification: ['node --test: 1/1'] },
+    ledger: { issues: [] },
+    options: {},
+    oldPlan,
+  });
+
+  assert.equal(result.ok, true);
+  const manifest = parseManifestV2(fs.readFileSync(path.join(start.targetStateDir, 'MANIFEST.md'), 'utf8'));
+  assert.equal(manifest.status, 'checkpoint');
+  assert.equal(manifest.currentPhase, 'review');         // NOT 'unit-review' (illegal)
+  // The owning unit was invalidated (a.js changed); its summary is gone -> needs re-review.
+  assert.equal(readSummaryIfPresent(start.targetStateDir, ownerUnit.unit_id), null);
+  // a unit that does NOT own a.js and does not reference it keeps its summary.
+  const survivor = oldPlan.units.find((u) => !u.files.some((f) => f.path === 'src/a.js')
+    && !(u.suggestedRefs || []).some((r) => r.path === 'src/a.js'));
+  assert.notEqual(readSummaryIfPresent(start.targetStateDir, survivor.unit_id), null);
+});
+
+test('partitioned start writes a whole-root manifest (normalizedScopes is empty)', async (t) => {
+  const root = makeOverCapRepo(t);
+  const start = await startPartitioned(root);
+  const manifest = parseManifestV2(fs.readFileSync(path.join(start.targetStateDir, 'MANIFEST.md'), 'utf8'));
+  assert.deepEqual(manifest.normalizedScopes || [], []);
 });
