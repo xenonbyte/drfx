@@ -970,7 +970,7 @@ test('aggregate-review reaches PASS only when every unit AND all 7 backstops rep
   assert.equal(final.status, 'pass');
 });
 
-test('aggregate-review FAIL writes a reviewer report that can be triaged into begin-fix', async (t) => {
+test('aggregate-review FAIL records findings but the partitioned fix loop is refused at begin-fix (read-only v1)', async (t) => {
   const root = makeOverCapRepo(t);
   const start = await startPartitioned(root);
 
@@ -1003,12 +1003,18 @@ test('aggregate-review FAIL writes a reviewer report that can be triaged into be
   assert.equal(aggregate.verdict, 'stopped-with-deferrals');
   assert.ok(aggregate.reviewerReportPath, 'aggregate FAIL must surface a reviewer report path');
   assert.equal(fs.existsSync(aggregate.reviewerReportPath), true);
+  // FAIL guidance no longer promises the in-place fix loop; it points at scope= / manual fix + re-review.
+  assert.match(aggregate.nextAction, /read-only/);
+  assert.match(aggregate.nextAction, /scope=/);
+  assert.doesNotMatch(aggregate.nextAction, /begin-fix/);
 
   let manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
   assert.equal(manifest.status, 'triage');
   assert.equal(manifest.currentPhase, 'triage');
   assert.match(manifest.lastReviewerReportPath, /^reports\/aggregate-review-round-001/);
 
+  // Triage still records findings into the ledger (a useful audit record) and advances to
+  // the fix phase, but for an over-cap partitioned target it no longer opens a fix loop.
   const triage = await runWorkflowCommand('record-triage', [
     ...practicalArgs(['review-fix-code']),
     '--triage-stdin'
@@ -1020,12 +1026,17 @@ test('aggregate-review FAIL writes a reviewer report that can be triaged into be
   assert.equal(manifest.status, 'fix');
   assert.equal(manifest.currentPhase, 'fix');
 
+  // begin-fix is refused at the door for an ACTIVE partition plan: no lock, no baseline,
+  // no fixer round — early-fail instead of a late end-fix block. The aggregate path still
+  // earns PASS without a fix loop (covered by the PASS→finalize test above).
   const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
     cwd: root,
     now: new Date('2026-06-20T00:00:00.000Z')
   });
-  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
-  assert.equal(beginFix.status, 'begin-fix');
+  assert.equal(beginFix.ok, false, JSON.stringify(beginFix));
+  assert.equal(beginFix.status, 'blocked');
+  assert.equal(beginFix.blockingReason, 'state-validation-failed');
+  assert.match(beginFix.nextAction, /read-only|scope=|manually/);
 });
 
 test('aggregate-review rewrites duplicate partition reviewer ids before triage report output', async (t) => {
