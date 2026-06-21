@@ -30,6 +30,7 @@ const {
 const {
   invalidateUnitReviews,
   invalidateAllBackstopReviews,
+  CROSSCUTTING_BACKSTOPS: BACKSTOPS_FOR_TEST,
 } = require('../lib/workflow/file-set-unit-review');
 
 // ---------------------------------------------------------------------------
@@ -799,10 +800,31 @@ test('invalidateUnitReviews removes summary+findings for the named units only', 
 });
 
 test('invalidateAllBackstopReviews clears every backstop summary+findings', () => {
-  const dir = tmpTargetWithReviews();
+  // Build a tmp dir with fixtures for EVERY backstop in CROSSCUTTING_BACKSTOPS.
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'drfx-inval-all-backstops-'));
+  const pr = pathMod.join(dir, 'project-review');
+  fs.mkdirSync(pathMod.join(pr, 'summaries'), { recursive: true });
+  fs.mkdirSync(pathMod.join(pr, 'findings'), { recursive: true });
+  for (const backstop of BACKSTOPS_FOR_TEST) {
+    const backstopId = `backstop-${backstop}`;
+    fs.writeFileSync(pathMod.join(pr, 'summaries', `${backstopId}.json`), '{}\n');
+    fs.writeFileSync(pathMod.join(pr, 'findings', `${backstopId}.json`), '{}\n');
+  }
   const cleared = invalidateAllBackstopReviews(dir);
-  assert.ok(cleared.includes('security-redaction'));
-  assert.ok(!fs.existsSync(pathMod.join(dir, 'project-review', 'summaries', 'backstop-security-redaction.json')));
+  // Assert: returned list is sorted and matches every backstop.
+  assert.deepEqual(cleared, [...BACKSTOPS_FOR_TEST].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
+  // Assert: for every backstop, both summary and findings files are gone.
+  for (const backstop of BACKSTOPS_FOR_TEST) {
+    const backstopId = `backstop-${backstop}`;
+    assert.ok(
+      !fs.existsSync(pathMod.join(dir, 'project-review', 'summaries', `${backstopId}.json`)),
+      `summary file for ${backstopId} should not exist`
+    );
+    assert.ok(
+      !fs.existsSync(pathMod.join(dir, 'project-review', 'findings', `${backstopId}.json`)),
+      `findings file for ${backstopId} should not exist`
+    );
+  }
 });
 
 test('invalidateUnitReviews fails loudly when a review artifact cannot be removed', () => {
