@@ -113,21 +113,20 @@ test('Claude and Codex file-set review-and-fix routes require full re-review aft
   }
 });
 
-test('Claude and Codex partitioned CODE flow routes deferrals to narrow-scope or manual re-review', () => {
+test('Claude and Codex partitioned CODE flow routes aggregate FAIL into the triage/fix loop', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
   for (const platform of ['claude', 'codex']) {
     const rendered = renderPlatformRoute(platform, 'review-fix-code', { packageVersion: SNAPSHOT_VERSION });
-
-    assert.doesNotMatch(
-      rendered,
-      /normal triage\/fix loop before re-aggregating/,
-      `${platform}:review-fix-code must not send partitioned aggregate deferrals into the blocked fix loop`
-    );
     assert.match(
       rendered,
-      /If aggregate returns `stopped-with-deferrals` with a reviewer report path,[^\n]*narrowing `scope=`[^\n]*fixing manually[^\n]*re-review/i,
-      `${platform}:review-fix-code must route partitioned aggregate deferrals to narrow-scope or manual re-review`
+      /stopped-with-deferrals[^\n]*reviewer report path[^\n]*record-triage[^\n]*begin-fix/i,
+      `${platform}:review-fix-code must route partitioned aggregate FAIL into the triage/fix loop`
+    );
+    assert.doesNotMatch(
+      rendered,
+      /do not invoke `begin-fix` for the active partition plan/i,
+      `${platform}:review-fix-code must not advertise the v1 read-only partition guard`
     );
   }
 });
