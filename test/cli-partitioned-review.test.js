@@ -1360,3 +1360,211 @@ test('end-fix on an active partition plan takes the incremental exit (checkpoint
   assert.equal(manifest.status, 'checkpoint', 'manifest must advance to checkpoint, not diff-review');
   assert.equal(manifest.currentPhase, 'review', 'manifest currentPhase must be review');
 });
+
+// ---------------------------------------------------------------------------
+// Task 10: Part 1 capstone — full earned-PASS integration tests
+// ---------------------------------------------------------------------------
+
+// Final response for the capstone: fixes ISSUE-001 (matching FIX_REPORT_PARTITIONED).
+function finalPassWithFixedIssue() {
+  return [
+    'Final status: pass',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Mode: review-and-fix',
+    'Target: none',
+    'Files changed: src/a.js',
+    'Fixed issue IDs: ISSUE-001',
+    'Verification performed: partitioned aggregate project review',
+    'Deferrals or blockers: none',
+    'Blocking reason: none',
+    'Status reason: none',
+    'Residual risk: none identified',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: approved after aggregate coverage gate'
+  ].join('\n');
+}
+
+test('over-cap partitioned project earns PASS through the incremental fix loop', async (t) => {
+  const root = makeMultiUnitRepo(t);
+  const start = await startPartitioned(root);
+  const metadata = resolveFileSetStateMetadata(start.targetStateDir);
+  const oldPlan = readActivePartitionedPlan(metadata);
+
+  // 1. Identify the owner unit of src/a.js DYNAMICALLY — bin-packing may place it in any unit.
+  const ownerUnit = oldPlan.units.find((u) => u.files.some((f) => f.path === 'src/a.js'));
+  assert.ok(ownerUnit, 'src/a.js must belong to some unit in the partition plan');
+
+  // Record all non-owner units with REVIEWER_PASS; owner unit gets ONE high finding (R901 at src/a.js).
+  for (const unit of oldPlan.units) {
+    const isOwner = unit.unit_id === ownerUnit.unit_id;
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    const stdin = isOwner ? reviewerFailHighWithId('R901', 'src/a.js') : REVIEWER_PASS;
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin });
+  }
+
+  // All 7 backstops clean.
+  for (const backstop of oldPlan.crosscuttingBackstops) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  // 2. aggregate-review → stopped-with-deferrals (owner unit has a high finding).
+  const agg1 = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(agg1.ok, true, JSON.stringify(agg1));
+  assert.equal(agg1.verdict, 'stopped-with-deferrals', 'owner-unit high finding must block aggregate PASS');
+  assert.ok(agg1.reviewerReportPath, 'aggregate FAIL must surface a reviewer report path for triage');
+
+  // 3. record-triage (accept R901) → begin-fix → edit src/a.js → end-fix declaring src/a.js.
+  const triage = await runWorkflowCommand('record-triage', [
+    ...practicalArgs(['review-fix-code']),
+    '--triage-stdin'
+  ], { cwd: root, stdin: TRIAGE_ACCEPT_PARTITIONED });
+  assert.equal(triage.ok, true, JSON.stringify(triage));
+  assert.equal(triage.status, 'recorded-triage');
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+  assert.equal(beginFix.status, 'begin-fix');
+
+  // Apply the in-set fix: edit src/a.js (a real in-set member of the multiunit repo).
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_PARTITIONED });
+
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+  assert.equal(endFix.reviewMode, 'partitioned', 'end-fix must take the partitioned incremental exit');
+
+  const manifestAfterFix = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifestAfterFix.status, 'checkpoint', 'manifest must advance to checkpoint after incremental end-fix');
+  assert.equal(manifestAfterFix.currentPhase, 'review', 'manifest currentPhase must be review after end-fix');
+
+  // Owner unit summary is now gone (invalidated by the increment).
+  assert.equal(
+    readSummaryIfPresent(start.targetStateDir, ownerUnit.unit_id),
+    null,
+    'owner unit summary must be invalidated after end-fix'
+  );
+
+  // A genuine survivor (not owner, not referencing src/a.js) still has its summary.
+  const survivorUnit = oldPlan.units.find((u) =>
+    u.unit_id !== ownerUnit.unit_id &&
+    !u.files.some((f) => f.path === 'src/a.js') &&
+    !(u.suggestedRefs || []).some((r) => r.path === 'src/a.js')
+  );
+  assert.ok(survivorUnit, 'there must be at least one survivor unit (non-owner, non-ref)');
+  assert.notEqual(
+    readSummaryIfPresent(start.targetStateDir, survivorUnit.unit_id),
+    null,
+    'survivor unit summary must survive the increment (not re-review needed)'
+  );
+
+  // 4. Re-review ONLY the invalidated units: the owner unit (now clean) + all 7 backstops.
+  //    Non-owner units kept their summaries — do NOT re-review them.
+  //    Re-record owner unit first so everySpannedNone can hold for backstops.
+  const ownerReceiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: ownerUnit.unit_id }));
+  await runWorkflowCommand('record-review', [
+    ...practicalArgs(['review-fix-code']),
+    '--phase', 'unit-review', '--unit', ownerUnit.unit_id,
+    '--result-stdin', '--payload-file', ownerReceiptFile
+  ], { cwd: root, stdin: REVIEWER_PASS });
+
+  // Re-record all 7 backstops clean (increment invalidates backstops every time).
+  for (const backstop of oldPlan.crosscuttingBackstops) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+    const recorded = await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+    assert.equal(recorded.coverageRisk, 'none', `backstop ${backstop} must earn none after re-review`);
+  }
+
+  // 5. aggregate-review → PASS (all units + backstops now have coverage_risk:none).
+  const agg2 = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(agg2.ok, true, JSON.stringify(agg2));
+  assert.equal(agg2.verdict, 'PASS', 'all units and backstops clean after fix → aggregate must earn PASS');
+  assert.equal(agg2.nextAction, 'verdict PASS earned; proceed to finalize');
+
+  const manifestAfterPass = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifestAfterPass.status, 'full-re-review', 'manifest must advance to full-re-review on aggregate PASS');
+  assert.match(manifestAfterPass.lastReviewerReportPath, /^reports\/full-review-round-001/);
+
+  // 6. finalize → workflow PASS (FIX_REPORT_PARTITIONED fixed ISSUE-001 in src/a.js).
+  const fin = await runWorkflowCommand('finalize', [
+    start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], { cwd: root, stdin: finalPassWithFixedIssue() });
+  assert.equal(fin.ok, true, JSON.stringify(fin));
+  assert.equal(fin.status, 'pass', 'finalize must earn workflow PASS after full incremental fix loop');
+});
+
+// NOTE: A persistent partitioned read-only start is not a supported path in this version.
+// The production code explicitly documents this: `fileSetLifecycleUnsupported` (index.js)
+// catches a read-only persistent file-set start and returns status:'unsupported', because
+// "read-only belongs on the no-state advisory path" (the code comment says so literally).
+// This test therefore proves the mode gate at finalize level instead: even if the final
+// response claims Mode: read-only, the mismatch gate (assertMatchesState) blocks with
+// ERR_FINAL_MODE_MISMATCH when the manifest mode is review-and-fix. This is the correct
+// integration-test of the guarantee: "read-only cannot claim workflow PASS".
+test('read-only partitioned run can never finalize PASS even with full unit coverage', async (t) => {
+  const root = makeMultiUnitRepo(t);
+  const start = await startPartitioned(root);  // review-and-fix as required by the lifecycle
+  const metadata = resolveFileSetStateMetadata(start.targetStateDir);
+  const plan = readActivePartitionedPlan(metadata);
+
+  // Record ALL units + backstops with coverage_risk:none (clean, no findings).
+  await recordCompletePartitionedCoverage(t, root, plan);
+
+  // aggregate-review reaches PASS: full coverage, no blocking findings.
+  const agg = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(agg.ok, true, JSON.stringify(agg));
+  assert.equal(agg.verdict, 'PASS', 'full coverage with clean findings earns aggregate PASS');
+
+  // Attempt finalize with Final status: pass but Mode: read-only — mismatches the manifest
+  // (Mode: review-and-fix). The mode gate (assertMatchesState ERR_FINAL_MODE_MISMATCH)
+  // must block this, returning ok:false, status:'blocked'.
+  const passReadOnlyMismatch = [
+    'Final status: pass',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Mode: read-only',   // intentional mismatch: manifest is review-and-fix
+    'Target: none',
+    'Files changed: none',
+    'Fixed issue IDs: none',
+    'Verification performed: partitioned aggregate project review',
+    'Deferrals or blockers: none',
+    'Blocking reason: none',
+    'Status reason: none',
+    'Residual risk: none identified',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: approved after aggregate coverage gate'
+  ].join('\n');
+
+  const fin = await runWorkflowCommand('finalize', [
+    start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], { cwd: root, stdin: passReadOnlyMismatch });
+
+  // The mode gate must block this: a final response claiming read-only cannot pass
+  // because the manifest mode (review-and-fix) mismatches, AND even if it did match,
+  // validatePass itself rejects read-only mode.
+  assert.notEqual(fin.status, 'pass', 'mode gate must prevent a read-only final response from ever earning workflow PASS');
+  // The finalize is expected to fail (ok:false) with a blocked status due to mode mismatch.
+  assert.equal(fin.ok, false, 'finalize with read-only mode mismatch must return ok:false (blocked)');
+  assert.match(fin.errorCode || fin.status, /mode|blocked|mismatch|read.only.pass/i, 'error must reference mode or read-only-pass gate');
+});
