@@ -2384,3 +2384,145 @@ test('non-partitioned fix round still requires DIFF-OK (no regression)', (t) => 
   assert.equal(state.requiredDiffReviewComplete, false,
     'non-partitioned fix round without DIFF-OK must yield requiredDiffReviewComplete===false');
 });
+
+// ---------------------------------------------------------------------------
+// PLAN-TASK-015: oversize_chunk units take the NORMAL bounded-review path
+//
+// Pins that a chunk unit (oversize_chunk:true) is routed through the normal
+// review path in both unitContext and recordUnitReview, while the legacy
+// oversize_file:true unit keeps its forced-high coverage-blocker behaviour.
+// ---------------------------------------------------------------------------
+
+// Build a project with a file large enough to produce oversize_chunk units when
+// partitioned with a budget that is smaller than the file but large enough per
+// chunk.  Returns { root, targetStateDir, plan, chunkUnit } where chunkUnit is
+// the first chunk unit in the plan.
+async function makeChunkUnitReviewProject(t) {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-chunk15-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  // A file with 1 200 short lines so each individual line fits the budget
+  // (~20 KB) but the whole file (~50 KB) exceeds it by 2-3x → three chunks.
+  const lines = [];
+  for (let i = 0; i < 1200; i++) lines.push(`const x${i} = ${i}; // padding comment here`);
+  fs.writeFileSync(path.join(root, 'src', 'big.js'), lines.join('\n') + '\n');
+
+  const targetStateDir = path.join(root, '.drfx', 'targets', 'whole-root');
+  fs.mkdirSync(targetStateDir, { recursive: true });
+
+  const { inventory, projectReviewFingerprint } = await resolveCodeInventory({ cwd: root, scopes: [] });
+  const bigSize = inventory.find((r) => r.path === 'src/big.js').size;
+  // Budget ≈ 40 % of the file so the file is over budget, but each of the ~800-
+  // line chunks fits comfortably.
+  const unitByteBudget = Math.floor(bigSize * 0.4);
+
+  const plan = assemblePartitionPlan({ inventory, projectReviewFingerprint, projectRoot: root, unitByteBudget });
+  writeProjectReviewPlan(targetStateDir, plan);
+
+  const chunkUnit = plan.units.find((u) => u.oversize_chunk === true);
+  assert.ok(chunkUnit, 'makeChunkUnitReviewProject: expected at least one chunk unit');
+  return { root, targetStateDir, plan, chunkUnit };
+}
+
+// Task 15 – Test 1: unitContext for an oversize_chunk unit returns oversize:false
+// (the NORMAL bounded-review branch), not the forced-high oversize_file branch.
+test('TASK-015: unitContext for oversize_chunk unit returns oversize:false (normal branch)', async (t) => {
+  const { root, targetStateDir, chunkUnit } = await makeChunkUnitReviewProject(t);
+
+  const result = unitContext({ targetStateDir, projectRoot: root, unitId: chunkUnit.unit_id });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+  // KEY assertion: chunk unit takes the NORMAL path, not the forced-high oversize_file branch.
+  assert.equal(result.oversize, false, 'oversize_chunk unit must NOT be routed to the oversize_file forced-high branch');
+  assert.ok(result.contextPackSkeleton, 'chunk unit must surface a bounded context pack');
+  assert.equal(result.contextPackSkeleton.reviewMode, 'partitioned');
+  assert.equal(result.contextPackSkeleton.unit_id, chunkUnit.unit_id);
+
+  // The member carries chunk range metadata (no body).
+  const member = result.contextPackSkeleton.fileSet.files[0];
+  assert.ok(member.chunk, 'chunk member must carry chunk metadata');
+  assert.equal(member.chunk.index, chunkUnit.chunkIndex, 'chunk.index copied from unit level');
+  assert.equal(member.chunk.count, chunkUnit.chunkCount, 'chunk.count copied from unit level');
+  assert.equal(Number.isNaN(member.chunk.index), false, 'chunk.index must not be NaN');
+  assert.equal(Number.isNaN(member.chunk.count), false, 'chunk.count must not be NaN');
+
+  // A per-unit context manifest is written (no body persisted).
+  assert.ok(result.contextManifestPath, 'context manifest path must be returned');
+  const manifest = fs.readFileSync(result.contextManifestPath, 'utf8');
+  assert.equal(manifest.includes('sliceText'), false, 'no sliceText may be persisted in the chunk unit manifest');
+});
+
+// Task 15 – Test 2: recordUnitReview for an oversize_chunk unit with a clean receipt
+// writes coverage_risk:'none' honestly and returns oversize:false — NOT forced high.
+test('TASK-015: recordUnitReview for oversize_chunk unit with clean receipt writes honest coverage_risk:none', async (t) => {
+  const { root, targetStateDir, chunkUnit } = await makeChunkUnitReviewProject(t);
+
+  const rec = await recordUnitReview({
+    targetStateDir,
+    projectRoot: root,
+    unitId: chunkUnit.unit_id,
+    coverageReceipt: unitReviewPayload({ unitId: chunkUnit.unit_id, reviewed: true, coverageRisk: 'none' }),
+    reviewerFindings: REVIEWER_PASS
+  });
+
+  assert.equal(rec.ok, true, JSON.stringify(rec));
+  assert.equal(rec.reused, false);
+  // KEY assertion: chunk unit is NOT forced to the oversize_file high-risk path.
+  assert.equal(rec.oversize, false, 'oversize_chunk unit must return oversize:false from recordUnitReview');
+  assert.equal(rec.coverageRisk, 'none', 'oversize_chunk unit with clean receipt must record honest coverage_risk:none');
+
+  // The persisted summary must carry the honest receipt values.
+  const summaryPath = path.join(targetStateDir, 'project-review', 'summaries', `${chunkUnit.unit_id}.json`);
+  const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+  assert.equal(summary.reviewed, true, 'summary.reviewed must be true');
+  assert.equal(summary.coverage_risk, 'none', 'summary.coverage_risk must be none (not forced high)');
+  assert.ok(!('skipped_reason' in summary), 'chunk unit summary must not carry skipped_reason (that is the oversize_file field)');
+});
+
+// Task 15 – Test 3 (regression): legacy oversize_file:true unit keeps forced-high
+// behaviour in both unitContext and recordUnitReview.
+test('TASK-015 regression: oversize_file:true unit is still forced high in unitContext and recordUnitReview', async (t) => {
+  // big.js content: exceeds budget but each line is long enough that
+  // computeOversizeChunks returns null → falls back to oversize_file:true.
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-ovf15-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  // A single very long line (> any reasonable budget) so splitOversizeFile returns null.
+  fs.writeFileSync(path.join(root, 'src', 'big.js'), `module.exports = ${'/* pad */ '.repeat(120000)}1;\n`);
+
+  const targetStateDir = path.join(root, '.drfx', 'targets', 'whole-root');
+  fs.mkdirSync(targetStateDir, { recursive: true });
+
+  const { inventory, projectReviewFingerprint } = await resolveCodeInventory({ cwd: root, scopes: [] });
+  // Tiny budget so big.js is over budget; splitOversizeFile returns null because the
+  // single-line file cannot satisfy the per-chunk budget → oversize_file:true.
+  const plan = assemblePartitionPlan({ inventory, projectReviewFingerprint, projectRoot: root, unitByteBudget: 70 });
+  writeProjectReviewPlan(targetStateDir, plan);
+
+  const oversizeUnit = plan.units.find((u) => u.oversize_file === true);
+  assert.ok(oversizeUnit, 'expected an oversize_file:true unit in the regression fixture');
+
+  // unitContext: must return oversize:true and the forced-high metadata.
+  const ctx = unitContext({ targetStateDir, projectRoot: root, unitId: oversizeUnit.unit_id });
+  assert.equal(ctx.oversize, true, 'oversize_file:true must return oversize:true from unitContext');
+  assert.equal(ctx.nextAction, 'record oversize coverage blocker');
+  assert.equal(ctx.coverageRisk, 'high');
+  assert.equal(ctx.contextPackSkeleton, undefined, 'oversize_file unit must produce no context pack');
+
+  // recordUnitReview: must force reviewed:false / coverage_risk:'high' and return oversize:true.
+  const rec = await recordUnitReview({
+    targetStateDir,
+    projectRoot: root,
+    unitId: oversizeUnit.unit_id
+    // No coverageReceipt / reviewerFindings — oversize path ignores them.
+  });
+  assert.equal(rec.ok, true, JSON.stringify(rec));
+  assert.equal(rec.oversize, true, 'oversize_file:true must return oversize:true from recordUnitReview');
+  assert.equal(rec.coverageRisk, 'high', 'oversize_file:true must be forced to coverageRisk:high');
+
+  const summaryPath = path.join(targetStateDir, 'project-review', 'summaries', `${oversizeUnit.unit_id}.json`);
+  const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+  assert.equal(summary.reviewed, false, 'oversize_file summary must have reviewed:false');
+  assert.equal(summary.coverage_risk, 'high', 'oversize_file summary must have coverage_risk:high');
+  assert.equal(summary.skipped_reason, 'single-file-over-budget');
+});
