@@ -197,6 +197,27 @@ function readReviewerReportJson(reportPath) {
   return JSON.parse(match[1]);
 }
 
+async function recordCompletePartitionedCoverage(t, root, plan) {
+  for (const unit of plan.units) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  for (const backstop of plan.crosscuttingBackstops) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+    const recorded = await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+    assert.equal(recorded.coverageRisk, 'none', `backstop ${backstop} must earn none`);
+  }
+}
+
 function runBin(args, { cwd, input } = {}) {
   try {
     const stdout = execFileSync('node', [BIN, ...args], {
@@ -676,6 +697,42 @@ test('aggregate-review blocks (stale) when the project tree drifts after the par
   assert.equal(fs.existsSync(path.join(start.targetStateDir, 'project-review', 'aggregate.json')), false);
 });
 
+test('aggregate-review blocks when .drfxignore rule identity drifts without inventory drift', async (t) => {
+  const root = makeOverCapRepo(t);
+  fs.writeFileSync(path.join(root, '.gitignore'), '.drfxignore\n');
+  fs.writeFileSync(path.join(root, '.drfxignore'), 'zzz-nonexistent-*.log\n');
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+  assert.equal(plan.userExcludes.length, 1, 'partition plan must store the original rule identity');
+
+  await recordCompletePartitionedCoverage(t, root, plan);
+
+  fs.writeFileSync(path.join(root, '.drfxignore'), 'yyy-nonexistent-*.log\n');
+  const liveInventory = await resolveCodeInventory({ cwd: root, scopes: [] });
+  assert.equal(
+    liveInventory.projectReviewFingerprint,
+    plan.projectReviewFingerprint,
+    'non-matching .drfxignore rule drift must not move the CODE inventory fingerprint'
+  );
+  assert.notDeepEqual(
+    liveInventory.userExcludes,
+    plan.userExcludes,
+    'live rule identity must differ from the stored partition plan identity'
+  );
+
+  const result = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(result.ok, false, JSON.stringify(result));
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.statusReason, 'stale-fingerprint-mismatch');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.notEqual(result.verdict, 'PASS');
+  assert.equal(result.reviewerReportPath, undefined);
+  assert.equal(fs.existsSync(path.join(start.targetStateDir, 'project-review', 'aggregate.json')), false);
+});
+
 test('aggregate-review blocks when a recorded extraRead changes outside the CODE inventory', async (t) => {
   const root = makeOverCapRepo(t);
   fs.writeFileSync(path.join(root, '.gitignore'), 'support.tmp\n');
@@ -1083,6 +1140,8 @@ test('--no-state aggregate-review rejects cleanly', async (t) => {
 
 test('bin no-state over-cap CODE context JSON serializes the partition plan', async (t) => {
   const root = makeOverCapRepo(t);
+  fs.writeFileSync(path.join(root, '.gitignore'), '.drfxignore\n');
+  fs.writeFileSync(path.join(root, '.drfxignore'), 'zzz-nonexistent-*.log\n');
   const out = runBin(['workflow', 'context',
     'review-fix-code', 'read-only', `root=${root}`, 'guard=snapshot',
     '--no-state',
@@ -1101,6 +1160,9 @@ test('bin no-state over-cap CODE context JSON serializes the partition plan', as
   assert.ok(Array.isArray(result.units), 'CLI JSON must include bounded units to review');
   assert.equal(result.units.length, result.unitCount);
   assert.match(result.projectReviewFingerprint, /^[0-9a-f]{64}$/);
+  assert.equal(result.userExcludes.length, 1, 'no-state partition plans carry .drfxignore identity');
+  assert.match(result.userExcludes[0], /^[0-9a-f]{64}$/, 'userExcludes expose digests, not raw rule text');
+  assert.doesNotMatch(JSON.stringify(result), /zzz-nonexistent/);
   assert.equal(fs.existsSync(path.join(root, '.drfx')), false);
 });
 
