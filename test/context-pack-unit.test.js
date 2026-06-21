@@ -233,3 +233,114 @@ test('non-partitioned output is unaffected by the new optional params being abse
   assert.equal(pack.routeKind, 'code');
   assert.equal(pack.target, 'none');
 });
+
+// ---------------------------------------------------------------------------
+// PLAN-TASK-014: chunk RANGE METADATA persistence (never body text). A
+// partitioned chunk member carries contextLineRange/primaryLineRange and the
+// unit-level chunkIndex/chunkCount copied onto the member by unitContext. The
+// persisted pack records ONLY metadata + an instruction label; the reviewer
+// reads the actual contextLineRange slice into its prompt in memory at dispatch.
+// ---------------------------------------------------------------------------
+
+// A sentinel body line that lives at line 401 of the chunked file. If the pack
+// ever persisted the file body for the [381,820] slice, this string would appear
+// in the serialized manifest. It MUST be absent.
+const CHUNK_BODY_SENTINEL = 'SENTINEL_CHUNK_BODY_LINE_401_must_never_be_persisted';
+
+function makeChunkMemberOpts() {
+  return {
+    routeKind: 'code',
+    fileSet: {
+      files: [
+        {
+          path: 'src/big.js',
+          status: 'present',
+          primaryLineRange: [401, 800],
+          contextLineRange: [381, 820],
+          chunkIndex: 0,
+          chunkCount: 2
+        }
+      ],
+      normalizedScopes: []
+    },
+    reviewMode: 'partitioned',
+    unitId: 'unit-001',
+    suggestedRefs: [],
+    strictness: 'normal',
+    mode: 'review-and-fix',
+    assurance: 'advisory',
+    runtimePlatform: 'claude',
+    phase: 'review',
+    round: 1,
+    mergedRules: { text: 'some-rules', sources: ['hard', 'built-in-code'] }
+  };
+}
+
+test('partitioned chunk member persists chunk RANGE METADATA with a concrete instruction label', () => {
+  const pack = buildFileSetContextPack(makeChunkMemberOpts());
+  assert.equal(pack.fileSet.files.length, 1);
+  const member = pack.fileSet.files[0];
+
+  assert.equal(member.path, 'src/big.js');
+  assert.equal(member.status, 'present');
+  assert.ok(member.chunk, 'chunk member must carry a chunk metadata block');
+  // Concrete numeric index/count (Number-coerced from the unit-copied member values).
+  assert.equal(member.chunk.index, 0);
+  assert.equal(member.chunk.count, 2);
+  assert.deepEqual(member.chunk.primaryLineRange, [401, 800]);
+  assert.deepEqual(member.chunk.contextLineRange, [381, 820]);
+  assert.equal(typeof member.chunk.instruction, 'string');
+
+  // The instruction label is built from the REAL values: 1-based chunk number,
+  // count, and both ranges; it carries the location convention and the
+  // overlap-is-context-only read-only-slice constraint.
+  assert.match(member.chunk.instruction, /src\/big\.js chunk 1\/2/);
+  assert.match(member.chunk.instruction, /primary lines \[401,800\]/);
+  assert.match(member.chunk.instruction, /context lines \[381,820\]/);
+  assert.match(member.chunk.instruction, /src\/big\.js:<line>/);
+  assert.match(member.chunk.instruction, /overlap before\/after the primary is context only/i);
+  assert.match(member.chunk.instruction, /do not raise duplicate findings for overlap lines/i);
+});
+
+test('partitioned chunk member persists NO body text from the contextLineRange slice', () => {
+  const opts = makeChunkMemberOpts();
+  // Whatever the reviewer reads in memory, the persisted manifest must never carry
+  // the file body. Prove it: the sentinel body line is NOT in the serialized pack.
+  const pack = buildFileSetContextPack(opts);
+  const serialized = JSON.stringify(pack);
+  assert.equal(
+    serialized.includes(CHUNK_BODY_SENTINEL),
+    false,
+    'chunk body text from lines 381-820 must never be persisted in the context pack'
+  );
+  // The chunk member must not carry any body/content/slice field.
+  const member = pack.fileSet.files[0];
+  assert.equal(Object.hasOwn(member, 'sliceText'), false, 'no sliceText may be persisted');
+  assert.equal(Object.hasOwn(member, 'body'), false, 'no body may be persisted');
+  assert.equal(Object.hasOwn(member, 'content'), false, 'no content may be persisted');
+  assert.equal(Object.hasOwn(member.chunk, 'sliceText'), false, 'chunk block must not carry sliceText');
+  assert.equal(Object.hasOwn(member.chunk, 'body'), false, 'chunk block must not carry body');
+});
+
+test('partitioned chunk member keeps contentPolicy read-in-memory-only', () => {
+  const pack = buildFileSetContextPack(makeChunkMemberOpts());
+  assert.equal(pack.contentPolicy, 'read-in-memory-only');
+});
+
+test('a member WITHOUT contextLineRange normalizes byte-identically (no chunk key)', () => {
+  // String member.
+  const stringPack = buildFileSetContextPack({
+    ...makeChunkMemberOpts(),
+    fileSet: { files: ['src/plain.js'], normalizedScopes: [] }
+  });
+  assert.deepEqual(stringPack.fileSet.files, [{ path: 'src/plain.js', status: 'present' }]);
+  assert.equal(Object.hasOwn(stringPack.fileSet.files[0], 'chunk'), false);
+
+  // Object member without contextLineRange.
+  const objectPack = buildFileSetContextPack({
+    ...makeChunkMemberOpts(),
+    fileSet: { files: [{ path: 'src/plain.js', status: 'present' }], normalizedScopes: [] }
+  });
+  assert.deepEqual(objectPack.fileSet.files, [{ path: 'src/plain.js', status: 'present' }]);
+  assert.equal(Object.hasOwn(objectPack.fileSet.files[0], 'chunk'), false);
+});

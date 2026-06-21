@@ -23,7 +23,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const { formatWorkflowJson, runWorkflowCommand } = require('../lib/workflow');
-const { readSummaryIfPresent } = require('../lib/workflow/file-set-unit-review');
+const { readSummaryIfPresent, unitContext } = require('../lib/workflow/file-set-unit-review');
 const { parseManifestV2 } = require('../lib/workflow-state');
 const { resolveCodeInventory, streamingContentId } = require('../lib/target-context');
 const { applyPartitionedIncrement } = require('../lib/workflow/file-set-partitioned-increment');
@@ -1564,4 +1564,78 @@ test('read-only partitioned run can never finalize PASS even with full unit cove
   assert.equal(fin.errorCode, 'ERR_FINAL_READ_ONLY_PASS', 'must fail on the read-only-pass gate');
   assert.notEqual(fin.status, 'pass', 'read-only final response cannot earn workflow PASS');
   assert.equal(fin.ok, false, 'finalize with read-only mode must return ok:false (blocked)');
+});
+
+// ---------------------------------------------------------------------------
+// PLAN-TASK-014: unitContext chunk-unit -> member handoff
+//
+// Task 12 stores chunkIndex/chunkCount on the UNIT (not on files[0]). unitContext
+// must copy them onto each chunk member before building the context pack, so the
+// persisted pack carries CONCRETE numeric chunk.index/chunk.count (never
+// undefined/NaN). This pins the unit-level -> member-level handoff end to end.
+// ---------------------------------------------------------------------------
+
+// Build a minimal partitioned units.json plan carrying a single oversize_chunk unit
+// whose chunkIndex/chunkCount live on the UNIT (mirroring splitOversizeFile output).
+function writeChunkUnitPlan(t) {
+  const targetStateDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-chunk-unit-')));
+  t.after(() => fs.rmSync(targetStateDir, { recursive: true, force: true }));
+  const projectReviewDir = path.join(targetStateDir, 'project-review');
+  fs.mkdirSync(projectReviewDir, { recursive: true });
+  const plan = {
+    reviewMode: 'partitioned',
+    projectReviewFingerprint: 'fp-not-checked-by-unitContext',
+    units: [
+      {
+        unit_id: 'unit-001',
+        oversize_chunk: true,
+        sourcePath: 'src/big.js',
+        sourceContentId: 'a'.repeat(64),
+        files: [
+          {
+            path: 'src/big.js',
+            primaryLineRange: [401, 800],
+            contextLineRange: [381, 820],
+            size: 4096,
+            contentId: 'b'.repeat(64)
+          }
+        ],
+        chunkIndex: 0,
+        chunkCount: 2,
+        member_count: 1,
+        member_bytes: 4096,
+        member_digest: 'c'.repeat(64),
+        suggestedRefs: []
+      }
+    ]
+  };
+  fs.writeFileSync(path.join(projectReviewDir, 'units.json'), JSON.stringify(plan, null, 2));
+  return { targetStateDir, projectRoot: targetStateDir };
+}
+
+test('unitContext copies unit-level chunkIndex/chunkCount onto the chunk member (concrete chunk.index/count)', (t) => {
+  const { targetStateDir, projectRoot } = writeChunkUnitPlan(t);
+
+  const result = unitContext({ targetStateDir, projectRoot, unitId: 'unit-001' });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  // A chunk unit takes the NORMAL review branch (a context pack), NOT the
+  // oversize_file forced-high branch.
+  assert.equal(result.oversize, false, 'a chunk unit is not the metadata-only oversize_file branch');
+  assert.ok(result.contextPackSkeleton, 'must surface the bounded context pack');
+
+  const member = result.contextPackSkeleton.fileSet.files[0];
+  assert.ok(member.chunk, 'chunk member must carry chunk range metadata');
+  // CONCRETE numeric values copied from the UNIT — never undefined/NaN.
+  assert.equal(member.chunk.index, 0);
+  assert.equal(member.chunk.count, 2);
+  assert.equal(Number.isNaN(member.chunk.index), false, 'chunk.index must not be NaN');
+  assert.equal(Number.isNaN(member.chunk.count), false, 'chunk.count must not be NaN');
+  assert.deepEqual(member.chunk.primaryLineRange, [401, 800]);
+  assert.deepEqual(member.chunk.contextLineRange, [381, 820]);
+  assert.match(member.chunk.instruction, /chunk 1\/2/);
+
+  // No body persisted in the durable per-unit context manifest.
+  const manifest = fs.readFileSync(result.contextManifestPath, 'utf8');
+  assert.equal(manifest.includes('sliceText'), false, 'no sliceText may be persisted in the unit manifest');
+  assert.match(manifest, /read-in-memory-only/, 'manifest keeps the in-memory-only content policy');
 });
