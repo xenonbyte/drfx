@@ -12,6 +12,9 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const os = require('node:os');
+const fs = require('node:fs');
+const pathMod = require('node:path');
 
 const {
   partitionInventory,
@@ -23,6 +26,11 @@ const {
   MAX_UNIT_BYTES,
   CONTRACT_READ_BUDGET,
 } = require('../lib/project-review');
+
+const {
+  invalidateUnitReviews,
+  invalidateAllBackstopReviews,
+} = require('../lib/workflow/file-set-unit-review');
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -763,4 +771,45 @@ test('refreshPartitionPlanContent throws REFS_CHANGED when a non-chunk unit has 
     () => refreshPartitionPlanContent(basePlan(), newInventory, { nextSuggestedRefsByUnit: { 'unit-001': [] /* unit-002 missing */ }, projectReviewFingerprint: 'FP1' }),
     (e) => e.code === 'ERR_PARTITION_REFS_CHANGED'
   );
+});
+
+// ---------------------------------------------------------------------------
+// invalidateUnitReviews / invalidateAllBackstopReviews
+// ---------------------------------------------------------------------------
+
+function tmpTargetWithReviews() {
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'drfx-inval-'));
+  const pr = pathMod.join(dir, 'project-review');
+  fs.mkdirSync(pathMod.join(pr, 'summaries'), { recursive: true });
+  fs.mkdirSync(pathMod.join(pr, 'findings'), { recursive: true });
+  for (const id of ['unit-001', 'unit-002', 'backstop-security-redaction']) {
+    fs.writeFileSync(pathMod.join(pr, 'summaries', `${id}.json`), '{}\n');
+    fs.writeFileSync(pathMod.join(pr, 'findings', `${id}.json`), '{}\n');
+  }
+  return dir;
+}
+
+test('invalidateUnitReviews removes summary+findings for the named units only', () => {
+  const dir = tmpTargetWithReviews();
+  const removed = invalidateUnitReviews(dir, ['unit-001']);
+  assert.deepEqual(removed, ['unit-001']);
+  assert.ok(!fs.existsSync(pathMod.join(dir, 'project-review', 'summaries', 'unit-001.json')));
+  assert.ok(!fs.existsSync(pathMod.join(dir, 'project-review', 'findings', 'unit-001.json')));
+  assert.ok(fs.existsSync(pathMod.join(dir, 'project-review', 'summaries', 'unit-002.json')));
+});
+
+test('invalidateAllBackstopReviews clears every backstop summary+findings', () => {
+  const dir = tmpTargetWithReviews();
+  const cleared = invalidateAllBackstopReviews(dir);
+  assert.ok(cleared.includes('security-redaction'));
+  assert.ok(!fs.existsSync(pathMod.join(dir, 'project-review', 'summaries', 'backstop-security-redaction.json')));
+});
+
+test('invalidateUnitReviews fails loudly when a review artifact cannot be removed', () => {
+  const dir = tmpTargetWithReviews();
+  const badPath = pathMod.join(dir, 'project-review', 'summaries', 'unit-001.json');
+  fs.rmSync(badPath);
+  fs.mkdirSync(badPath);
+  fs.writeFileSync(pathMod.join(badPath, 'nested'), '{}\n');
+  assert.throws(() => invalidateUnitReviews(dir, ['unit-001']));
 });
