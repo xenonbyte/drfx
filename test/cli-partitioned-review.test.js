@@ -1535,8 +1535,8 @@ test('read-only partitioned run can never finalize PASS even with full unit cove
   assert.equal(agg.verdict, 'PASS', 'full coverage with clean findings earns aggregate PASS');
 
   // Attempt finalize with Final status: pass but Mode: read-only — mismatches the manifest
-  // (Mode: review-and-fix). The mode gate (assertMatchesState ERR_FINAL_MODE_MISMATCH)
-  // must block this, returning ok:false, status:'blocked'.
+  // (Mode: review-and-fix). validatePass (before assertMatchesState) rejects read-only
+  // with ERR_FINAL_READ_ONLY_PASS, returning ok:false, status:'blocked'.
   const passReadOnlyMismatch = [
     'Final status: pass',
     'Assurance: practical',
@@ -1560,11 +1560,8 @@ test('read-only partitioned run can never finalize PASS even with full unit cove
     '--json'
   ], { cwd: root, stdin: passReadOnlyMismatch });
 
-  // The mode gate must block this: a final response claiming read-only cannot pass
-  // because the manifest mode (review-and-fix) mismatches, AND even if it did match,
-  // validatePass itself rejects read-only mode.
-  assert.notEqual(fin.status, 'pass', 'mode gate must prevent a read-only final response from ever earning workflow PASS');
-  // The finalize is expected to fail (ok:false) with a blocked status due to mode mismatch.
-  assert.equal(fin.ok, false, 'finalize with read-only mode mismatch must return ok:false (blocked)');
-  assert.match(fin.errorCode || fin.status, /mode|blocked|mismatch|read.only.pass/i, 'error must reference mode or read-only-pass gate');
+  // validatePass rejects read-only mode with ERR_FINAL_READ_ONLY_PASS.
+  assert.equal(fin.errorCode, 'ERR_FINAL_READ_ONLY_PASS', 'must fail on the read-only-pass gate');
+  assert.notEqual(fin.status, 'pass', 'read-only final response cannot earn workflow PASS');
+  assert.equal(fin.ok, false, 'finalize with read-only mode must return ok:false (blocked)');
 });
