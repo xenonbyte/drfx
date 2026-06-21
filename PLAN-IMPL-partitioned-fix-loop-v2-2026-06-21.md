@@ -24,6 +24,7 @@ Every task implicitly includes these. Values are copied verbatim from the bluepr
 - **Phase independence (`/think` red line):** Part 1 and Part 2 are TWO independent merge points. After Part 1 (Tasks 1–10) the system is complete and usable; Part 2 (Tasks 11–18) is an independent increment on top. Commit/merge granularity is split — if Part 2 stalls, Part 1 ships alone.
 - **Repo conventions:** commit messages, code comments, and in-repo docs are **English** (match the repo). Each commit message ends with:
   `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`
+- **Git safety:** all task commit steps are optional and require explicit user approval. Before any staging, run `git status --short`; stage only the files listed in that task's `git add ...` command; never use `git add -A` or stage unrelated local changes.
 - **Module size:** prefer keeping handwritten files under ~500 lines. `lib/workflow/file-set-fix.js` is already 979 lines — do NOT pile the increment logic into it; the increment lives in a new `lib/workflow/file-set-partitioned-increment.js`.
 
 ---
@@ -36,6 +37,7 @@ Every task implicitly includes these. Values are copied verbatim from the bluepr
 |---|---|---|
 | `lib/project-review.js` | Modify | Add pure `refreshPartitionPlanContent` + the three `ERR_PARTITION_*` constants. |
 | `lib/workflow/file-set-unit-review.js` | Modify | Add exported `invalidateUnitReviews` / `invalidateAllBackstopReviews` (delete summaries + findings = mark for re-review). |
+| `lib/workflow/file-set-context.js` | Modify | Export `readMemberTextForRefs` so the increment module can re-resolve refs without duplicating IO logic. |
 | `lib/workflow/file-set-partitioned-increment.js` | **Create** | `applyPartitionedIncrement({metadata, declaredFiles, fixReport, ledger, options})` — the end-fix partitioned exit orchestration. |
 | `lib/workflow/file-set-fix.js` | Modify | `runEndFix` fork on `readActivePartitionedPlan`; delete the `partitionedPlanFreshness` stale-block (815–833) and the now-dead function; remove the ②′ begin-fix read-only guard (370–386). |
 | `lib/workflow/file-set-finalize.js` | Modify | `buildFileSetFinalValidationState`: partitioned active + fixRound ⇒ `requiredDiffReviewComplete = true` (rely on `requiredFullReReviewComplete`). |
@@ -51,7 +53,7 @@ Every task implicitly includes these. Values are copied verbatim from the bluepr
 |---|---|---|
 | `lib/project-review.js` | Modify | Add pure `computeOversizeChunks` (line+byte windowing) + `CHUNK_LINES`/`CHUNK_OVERLAP_LINES`; extend `refreshPartitionPlanContent` for chunk units. |
 | `lib/workflow/file-set-context.js` | Modify | Add `splitOversizeFile` (IO: read text → chunk-units); call it inside `assemblePartitionPlan`; keep `inventoryRows` file-level. |
-| `lib/context-pack.js` | Modify | `buildFileSetContextPack`: load only `contextLineRange` slice for chunk members. |
+| `lib/context-pack.js` | Modify | `buildFileSetContextPack`: persist chunk range metadata only; reviewer slice text stays in memory. |
 | `lib/workflow/file-set-unit-review.js` | Modify | `unitContext` + `recordUnitReview` `oversize_chunk` branches (normal bounded review, not forced-high). |
 | `lib/workflow/partitioned-review.js` | Modify | Chunk-aware finding dedup/normalization in the aggregate path. |
 | Docs + fixtures | Modify | Oversize note in route-contract; regenerate fixtures; design §8 fulfilled. |
@@ -114,7 +116,22 @@ test('refreshPartitionPlanContent refreshes content fields and stamps the new fi
   assert.equal(refreshedPlan.units[0].files[0].size, 11);
   assert.notEqual(refreshedPlan.units[0].member_digest, 'OLD1'); // recomputed to a real sha256
   assert.notEqual(refreshedPlan.units[1].member_digest, 'OLD2'); // recomputed (was a placeholder digest)
-  // unit-002's suggestedRef contentId moved a.js -> ca1, so its refs topology "changed".
+  // unit-002's suggestedRef still points to a.js; only the contentId refreshed.
+  // refsChangedUnitIds is reserved for ref PATH topology changes. The end-fix
+  // caller still invalidates unit-002 through unitsToReReview(declaredFiles, oldPlan).
+  assert.equal(refreshedPlan.units[1].suggestedRefs[0].contentId, 'ca1');
+  assert.deepEqual(refsChangedUnitIds, []);
+});
+
+test('refreshPartitionPlanContent reports refsChangedUnitIds when ref path topology changes', () => {
+  const newInventory = [
+    { path: 'a.js', size: 10, ext: '.js', contentId: 'ca0' },
+    { path: 'b.js', size: 20, ext: '.js', contentId: 'cb0' },
+  ];
+  const { refsChangedUnitIds } = refreshPartitionPlanContent(basePlan(), newInventory, {
+    nextSuggestedRefsByUnit: { 'unit-001': [], 'unit-002': [] }, // unit-002 dropped ref path a.js
+    projectReviewFingerprint: 'FP1',
+  });
   assert.deepEqual(refsChangedUnitIds, ['unit-002']);
 });
 
@@ -270,7 +287,10 @@ function refreshPartitionPlanContent(oldPlan, newInventory, { nextSuggestedRefsB
   // inventory.jsonl stays file-level. unit_id is looked up from refreshed units.
   const pathToUnit = new Map();
   for (const unit of units) {
-    if (unit.oversize_chunk === true) { pathToUnit.set(unit.sourcePath, unit.unit_id); continue; }
+    if (unit.oversize_chunk === true) {
+      if (!pathToUnit.has(unit.sourcePath)) pathToUnit.set(unit.sourcePath, unit.unit_id);
+      continue;
+    }
     for (const file of unit.files) pathToUnit.set(file.path, unit.unit_id);
   }
   const inventoryRows = inventory
@@ -299,11 +319,12 @@ Add to `module.exports` (the object near line 424):
 - [ ] **Step 4: Run the tests to confirm they pass**
 
 Run: `node --test --test-name-pattern="refreshPartitionPlanContent" test/project-review.test.js`
-Expected: PASS (4/4 new tests).
+Expected: PASS (5/5 new tests).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add lib/project-review.js test/project-review.test.js
 git commit -m "$(cat <<'EOF'
 feat(partitioned): add pure refreshPartitionPlanContent primitive
@@ -368,6 +389,15 @@ test('invalidateAllBackstopReviews clears every backstop summary+findings', () =
   assert.ok(cleared.includes('security-redaction'));
   assert.ok(!fs.existsSync(pathMod.join(dir, 'project-review', 'summaries', 'backstop-security-redaction.json')));
 });
+
+test('invalidateUnitReviews fails loudly when a review artifact cannot be removed', () => {
+  const dir = tmpTargetWithReviews();
+  const badPath = pathMod.join(dir, 'project-review', 'summaries', 'unit-001.json');
+  fs.rmSync(badPath);
+  fs.mkdirSync(badPath);
+  fs.writeFileSync(pathMod.join(badPath, 'nested'), '{}\n');
+  assert.throws(() => invalidateUnitReviews(dir, ['unit-001']));
+});
 ```
 
 - [ ] **Step 2: Run to confirm failure**
@@ -390,8 +420,9 @@ function removeIfPresent(filePath) {
   try {
     fs.rmSync(filePath);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return false;
+    throw error;
   }
 }
 
@@ -421,11 +452,12 @@ Add `invalidateUnitReviews` and `invalidateAllBackstopReviews` to `module.export
 - [ ] **Step 4: Run to confirm pass**
 
 Run: `node --test --test-name-pattern="invalidate" test/project-review.test.js`
-Expected: PASS (2/2).
+Expected: PASS (3/3).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add lib/workflow/file-set-unit-review.js test/project-review.test.js
 git commit -m "$(cat <<'EOF'
 feat(partitioned): add unit/backstop review invalidation helpers
@@ -535,7 +567,8 @@ const { writeProjectReviewPlan, readMemberTextForRefs } = require('./file-set-co
 
 function endFixIncrementBlocked(metadata, fixReport, declaredFiles, summary, nextAction) {
   // Mirrors endFixBlocked from file-set-fix.js but is reused here to keep the
-  // increment self-contained. The lease is released by the caller's quiet release.
+  // increment self-contained. The caller releases the lease after this function
+  // returns, so blocked-state persistence still happens under the active lease.
   try {
     writeFixReceipt(metadata, {
       status: 'blocked',
@@ -655,16 +688,33 @@ module.exports = { applyPartitionedIncrement };
 ```
 
 > If `writeNormalizedFixReport`, `updateFixedIssues`, `formatLedger`, or `describeCodeBlock` are not exported from `./helpers` / `../target-context`, import them from the same module `file-set-fix.js` imports them from (it imports all of these — copy its import lines).
+> Also export `readMemberTextForRefs` from `lib/workflow/file-set-context.js` in this task; the new increment module imports it directly and must not receive `undefined`.
+
+- [ ] **Step 3a: Pin the whole-root scope invariant (do NOT thread scopes)**
+
+A partitioned target is ALWAYS whole-root: `file-set-too-large` only fires for whole-root (`start.js:128-129`, the cap is null-guarded for scoped runs) and the partitioned checkpoint manifest is written with `normalizedScopes:[]` (`start.js:263`). So `applyPartitionedIncrement` resolving inventory with `metadata.manifest.normalizedScopes || []` is correct today (reads `[]`) AND future-proof (reads real scopes the day scoped partitioning is added). The whole-root freshness/fingerprint sites (`readUnitsPlanWithLiveFingerprint`, `activePartitionedPlanFreshness`, `runAggregateReview`) keep their existing `scopes:[]` — do **not** thread a `scopes` param through `nextUnit` / `recordUnitReview` / aggregate; that would churn the working hot path for a state the system cannot produce. Pin the invariant with a test instead:
+
+```js
+test('partitioned start writes a whole-root manifest (normalizedScopes is empty)', async (t) => {
+  const root = makeOverCapRepo(t);
+  const start = await startPartitioned(root);
+  const manifest = parseManifestV2(fs.readFileSync(path.join(start.targetStateDir, 'MANIFEST.md'), 'utf8'));
+  assert.deepEqual(manifest.normalizedScopes || [], []);
+});
+```
+
+If scoped partitioning is ever added (a scoped over-cap run that partitions instead of blocking), THIS test breaks first — that is the signal to thread `metadata.manifest.normalizedScopes` through the four whole-root fingerprint sites.
 
 - [ ] **Step 4: Run to confirm pass**
 
-Run: `node --test --test-name-pattern="applyPartitionedIncrement" test/cli-partitioned-review.test.js`
-Expected: PASS.
+Run: `node --test --test-name-pattern="applyPartitionedIncrement|whole-root manifest" test/cli-partitioned-review.test.js`
+Expected: PASS — the increment test and the whole-root scope-invariant test pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
-git add lib/workflow/file-set-partitioned-increment.js test/cli-partitioned-review.test.js
+git status --short
+git add lib/workflow/file-set-partitioned-increment.js lib/workflow/file-set-context.js test/cli-partitioned-review.test.js
 git commit -m "$(cat <<'EOF'
 feat(partitioned): add end-fix incremental exit orchestration
 
@@ -731,19 +781,22 @@ const { applyPartitionedIncrement } = require('./file-set-partitioned-increment'
   // falls through to the unchanged diff-review transition below.
   const activePartitionPlan = readActivePartitionedPlan(metadata);
   if (activePartitionPlan) {
-    releaseLeaseQuietly(metadata);
-    return await applyPartitionedIncrement({
-      metadata,
-      declaredFiles,
-      fixReport,
-      ledger,
-      options,
-      oldPlan: activePartitionPlan,
-    });
+    try {
+      return await applyPartitionedIncrement({
+        metadata,
+        declaredFiles,
+        fixReport,
+        ledger,
+        options,
+        oldPlan: activePartitionPlan,
+      });
+    } finally {
+      releaseLeaseQuietly(metadata);
+    }
   }
 ```
 
-> The increment writes the normalized fix report itself; the non-partitioned branch below keeps doing its own `writeNormalizedFixReport`. Do not double-write — the partitioned branch returns before reaching the non-partitioned report write.
+> The increment writes the normalized fix report itself; the non-partitioned branch below keeps doing its own `writeNormalizedFixReport`. Do not double-write — the partitioned branch returns before reaching the non-partitioned report write. Keep the lease held until `applyPartitionedIncrement` has either persisted the checkpoint/review state or persisted a blocked state; release in `finally`.
 
 3. **Delete** the now-dead `async function partitionedPlanFreshness(metadata, options) { … }` (current lines 645–671) and its `resolveCodeInventory`/`readUnitsPlan` imports IF they become unused (check: `resolveCodeInventory` and `readUnitsPlan` are also used elsewhere in the file via `resolveLiveFileSet`/imports — keep any still referenced).
 
@@ -755,9 +808,10 @@ node --test test/cli-partitioned-review.test.js test/workflow-fileset-lifecycle.
 ```
 Expected: PASS — partitioned end-fix takes the increment; non-partitioned end-fix still reaches `diff-review`.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add lib/workflow/file-set-fix.js test/cli-partitioned-review.test.js test/workflow-fileset-lifecycle.test.js
 git commit -m "$(cat <<'EOF'
 feat(partitioned): route active-plan end-fix to the incremental exit
@@ -819,9 +873,10 @@ If `readActivePartitionedPlan` is now unused in this file (Task 4 still uses it)
 Run: `node --test test/cli-partitioned-review.test.js`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add lib/workflow/file-set-fix.js test/cli-partitioned-review.test.js
 git commit -m "$(cat <<'EOF'
 feat(partitioned): allow begin-fix for an active partition plan (revert v1 read-only guard)
@@ -908,9 +963,10 @@ with:
 Run: `node --test test/workflow-fileset-lifecycle.test.js`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add lib/workflow/file-set-finalize.js test/workflow-fileset-lifecycle.test.js
 git commit -m "$(cat <<'EOF'
 feat(partitioned): accept full-re-review as the diff-review equivalent for fix rounds
@@ -976,9 +1032,10 @@ with:
 Run: `node --test test/cli-partitioned-review.test.js`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add lib/workflow/partitioned-review.js test/cli-partitioned-review.test.js
 git commit -m "$(cat <<'EOF'
 feat(partitioned): aggregate FAIL points back to the triage/fix loop
@@ -1058,9 +1115,10 @@ Expected: the `code-route generated shells equal golden snapshots byte-for-byte`
 Run: `node --test test/shared-assets.test.js`
 Expected: PASS (all snapshot + content assertions, including the flipped one and `coverage-incomplete` checks at lines ~296–326 which remain true).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add lib/generator.js templates/fragments/route-contract.code.claude.md templates/fragments/route-contract.code.codex.md test/fixtures/generated/claude/review-fix-code.md test/fixtures/generated/codex/review-fix-code.md test/shared-assets.test.js
 git commit -m "$(cat <<'EOF'
 feat(partitioned): restore the fix-loop guidance in generated code routes
@@ -1088,9 +1146,10 @@ Mark Plan B as implemented: the over-cap partitioned run now supports an in-plac
 Run: `grep -n "read-only in this version\|begin-fix read-only" design/OPTIMIZATION-2026-06-20-partitioned-code-review.md`
 Expected: only historical/changelog mentions remain (no live claim that the loop is read-only).
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add design/OPTIMIZATION-2026-06-20-partitioned-code-review.md
 git commit -m "$(cat <<'EOF'
 docs(design): record Plan B partitioned fix loop as implemented
@@ -1168,9 +1227,10 @@ npm test
 ```
 Expected: all green. This is the **Part 1 DoD gate** — Part 1 is independently mergeable here.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add test/cli-partitioned-review.test.js
 git commit -m "$(cat <<'EOF'
 test(partitioned): cover the end-to-end incremental fix loop earning PASS
@@ -1207,7 +1267,9 @@ test('computeOversizeChunks splits by line window with overlap, deterministicall
   const chunks = computeOversizeChunks({ text, chunkLines: 400, overlapLines: 20, chunkByteBudget: 1_000_000 });
   assert.ok(Array.isArray(chunks) && chunks.length >= 2);
   assert.deepEqual(chunks[0].primaryLineRange, [1, 400]);
-  // overlap: chunk 2's context starts 20 lines before its primary start.
+  // bidirectional overlap: chunk 1's context extends 20 lines after its primary;
+  // chunk 2's context starts 20 lines before its primary start.
+  assert.equal(chunks[0].contextLineRange[1], 420);
   assert.equal(chunks[1].primaryLineRange[0], 401);
   assert.equal(chunks[1].contextLineRange[0], 381);
   // every chunk's context slice is within budget.
@@ -1217,9 +1279,10 @@ test('computeOversizeChunks splits by line window with overlap, deterministicall
   assert.deepEqual(again.map((c) => c.primaryLineRange), chunks.map((c) => c.primaryLineRange));
 });
 
-test('computeOversizeChunks shrinks overlap before primary to honor the byte budget', () => {
-  // Build text whose 400-line primary is ~900KB and full overlap would exceed 1MB.
-  const big = 'x'.repeat(2000);
+test('computeOversizeChunks shrinks context overlap to honor the byte budget', () => {
+  // Build text whose 400-line primary is ~960KB and whose full bidirectional
+  // 40-line overlap would push the context slice over 1MB unless overlap shrinks.
+  const big = 'x'.repeat(2400);
   const text = Array.from({ length: 800 }, () => big).join('\n') + '\n';
   const chunks = computeOversizeChunks({ text, chunkLines: 400, overlapLines: 40, chunkByteBudget: 1_000_000 });
   assert.ok(chunks.every((c) => c.byteLength <= 1_000_000));
@@ -1249,11 +1312,11 @@ Add the function (after `refreshPartitionPlanContent`):
 
 ```js
 // Deterministic line-window chunking for an oversize TEXT file. Primary windows of
-// chunkLines, each prefixed by up to overlapLines of context. The HARD constraint is
-// the UTF-8 byte length of the contextLineRange slice (<= chunkByteBudget): overlap is
-// shrunk (never the primary) to fit; a primary window is also byte-capped by ending it
-// early when the next line would cross the budget. If any single line alone exceeds the
-// budget the file is unsplittable -> null (caller keeps the legacy oversize blocker).
+// chunkLines get up to overlapLines of context before AND after the primary. The HARD
+// constraint is the UTF-8 byte length of the contextLineRange slice (<= chunkByteBudget):
+// overlap is shrunk (never the primary) to fit; a primary window is also byte-capped by
+// ending it early when the next line would cross the budget. If any single line alone
+// exceeds the budget the file is unsplittable -> null (caller keeps the legacy oversize blocker).
 function computeOversizeChunks({ text, chunkLines = CHUNK_LINES, overlapLines = CHUNK_OVERLAP_LINES, chunkByteBudget = MAX_UNIT_BYTES }) {
   const lines = String(text).split('\n');
   // Preserve trailing newline semantics: split keeps a trailing '' for a final '\n'.
@@ -1277,16 +1340,25 @@ function computeOversizeChunks({ text, chunkLines = CHUNK_LINES, overlapLines = 
     ) {
       primaryEnd += 1;
     }
-    // Add overlap before primaryStart, shrinking it until the context slice fits.
+    // Add bidirectional overlap around the primary, shrinking only overlap until
+    // the context slice fits. Prefer dropping forward context first so each
+    // chunk still retains preceding context when budget pressure is tight.
     let contextStart = Math.max(1, primaryStart - overlapLines);
-    while (contextStart < primaryStart && sliceBytes(contextStart, primaryEnd) > chunkByteBudget) {
-      contextStart += 1;
+    let contextEnd = Math.min(total, primaryEnd + overlapLines);
+    while (sliceBytes(contextStart, contextEnd) > chunkByteBudget) {
+      if (contextEnd > primaryEnd) {
+        contextEnd -= 1;
+      } else if (contextStart < primaryStart) {
+        contextStart += 1;
+      } else {
+        break;
+      }
     }
     chunks.push({
       primaryLineRange: [primaryStart, primaryEnd],
-      contextLineRange: [contextStart, primaryEnd],
-      sliceText: sliceText(contextStart, primaryEnd),
-      byteLength: sliceBytes(contextStart, primaryEnd),
+      contextLineRange: [contextStart, contextEnd],
+      sliceText: sliceText(contextStart, contextEnd),
+      byteLength: sliceBytes(contextStart, contextEnd),
     });
     if (primaryEnd >= total) break;
     primaryStart = primaryEnd + 1;
@@ -1302,9 +1374,10 @@ Export `computeOversizeChunks`, `CHUNK_LINES`, `CHUNK_OVERLAP_LINES`.
 Run: `node --test --test-name-pattern="computeOversizeChunks" test/project-review.test.js`
 Expected: PASS (3/3).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add lib/project-review.js test/project-review.test.js
 git commit -m "$(cat <<'EOF'
 feat(partitioned): add deterministic oversize line-window chunking
@@ -1364,10 +1437,9 @@ Expected: FAIL — not a function.
 
 - [ ] **Step 3: Implement**
 
-In `lib/workflow/file-set-context.js`, add (near `readMemberTextForRefs`, the IO boundary):
+In `lib/workflow/file-set-context.js`, add (near `readMemberTextForRefs`, the IO boundary). The file already imports `crypto` from `./helpers`; do not add a second `const crypto = require('node:crypto')` binding.
 
 ```js
-const crypto = require('node:crypto');
 const { computeOversizeChunks } = require('../project-review');
 
 function sha256hex(text) {
@@ -1424,9 +1496,10 @@ Export `splitOversizeFile`.
 Run: `node --test --test-name-pattern="splitOversizeFile" test/project-review.test.js`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add lib/workflow/file-set-context.js test/project-review.test.js
 git commit -m "$(cat <<'EOF'
 feat(partitioned): expand oversize text files into chunk sub-units
@@ -1557,9 +1630,10 @@ node --test test/cli-partitioned-review.test.js
 ```
 Expected: PASS — chunk expansion works; existing non-oversize partition plans are byte-stable (the `inventoryRows` change is equivalent for non-chunk inventories: same rows, same sort).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add lib/workflow/file-set-context.js test/project-review.test.js
 git commit -m "$(cat <<'EOF'
 feat(partitioned): assemble chunk units for oversize files, file-level inventoryRows
@@ -1571,27 +1645,49 @@ EOF
 
 ---
 
-### Task 14: `buildFileSetContextPack` line-slice loading for chunk members
+### Task 14: chunk metadata + in-memory line-slice handoff
 
 **Files:**
 - Modify: `lib/context-pack.js` (`buildFileSetContextPack` / its member normalization)
-- Test: `test/context-pack` test (or wherever `buildFileSetContextPack` is unit-tested) + a partitioned slice assertion
+- Modify: `lib/workflow/file-set-unit-review.js` (`unitContext` chunk member handoff)
+- Modify: generated CODE route guidance / route-contract fragments so reviewers read only the declared slice for chunk units.
+- Test: `test/context-pack` test (or wherever `buildFileSetContextPack` is unit-tested) + a partitioned chunk metadata assertion
 
 **Interfaces:**
-- Consumes: a unit member carrying `contextLineRange:[cs,ce]`.
-- Produces: when a member has `contextLineRange`, the pack loads ONLY that line slice (not the whole file) and labels it as the k/N chunk with primary vs. overlap lines. Members without `contextLineRange` are unchanged (byte-for-byte).
+- Consumes: a unit member carrying `contextLineRange:[cs,ce]`, `primaryLineRange:[s,e]`, `chunkIndex`, and `chunkCount`. Task 12 stores `chunkIndex`/`chunkCount` on the chunk unit, so `unitContext` must copy that unit-level chunk metadata onto the file member descriptor before calling `buildFileSetContextPack`.
+- Produces: when a member has `contextLineRange`, the persisted context pack records ONLY metadata: path, `primaryLineRange`, `contextLineRange`, `chunkIndex`, `chunkCount`, and an instruction label. **It must not persist `sliceText`, file body text, or raw source lines.** The route/coordinator reads the slice into the reviewer prompt in memory immediately before reviewer dispatch. Members without `contextLineRange` are unchanged (byte-for-byte).
 
 - [ ] **Step 1: Write the failing test**
 
-Assert that `buildFileSetContextPack` for a partitioned chunk unit (member has `contextLineRange:[381,800]`) includes only lines 381–800 of the source and annotates the primary range, and that a non-chunk member still loads the whole file unchanged.
+Assert that `buildFileSetContextPack` for a partitioned chunk member (member has `contextLineRange:[381,820]`, `primaryLineRange:[401,800]`, `chunkIndex:0`, `chunkCount:2`) persists the chunk metadata and label, does **not** contain body text from lines 381–820, and includes a constraint telling the reviewer/coordinator to read only that slice in memory. Also assert a non-chunk member descriptor stays byte-identical.
+
+Add an integration assertion through `unitContext`: construct an `oversize_chunk` unit whose `chunkIndex`/`chunkCount` live on the unit, not on `files[0]`, then assert the generated context pack still contains concrete chunk index/count values. This pins the unit-level-to-member-level handoff and prevents `undefined` / `NaN` labels.
 
 - [ ] **Step 2: Run to confirm failure**
 
-Expected: FAIL — the pack loads the whole file (no slice support).
+Expected: FAIL — the pack drops chunk range metadata, so the route cannot know which slice to read.
 
 - [ ] **Step 3: Implement**
 
-In `lib/context-pack.js`, where file member bodies are read for the pack (`normalizeFileSetMembers` / the partitioned reader), branch: if `member.contextLineRange` is present, read the file, `split('\n')`, take `slice(cs-1, ce)`, and attach the slice plus a label `"<path> chunk <chunkIndex+1>/<chunkCount>, primary lines [s,e], context lines [cs,ce]; overlap is context only — do not raise duplicate findings for overlap lines."` Keep the no-`contextLineRange` path exactly as-is so non-chunk packs stay byte-identical.
+In `lib/workflow/file-set-unit-review.js`, update `unitContext` so when `unit.oversize_chunk === true`, it builds the member array passed to `buildFileSetContextPack` by copying `unit.chunkIndex` and `unit.chunkCount` onto each chunk member that already carries `contextLineRange` / `primaryLineRange`. Keep the non-chunk member array byte-identical.
+
+In `lib/context-pack.js`, extend `normalizeFileSetMembers` metadata only. If `member.contextLineRange` is present, read `member.chunkIndex` / `member.chunkCount` from the normalized member descriptor and add:
+
+```js
+{
+  path,
+  status: 'present',
+  chunk: {
+    index: Number(member.chunkIndex),
+    count: Number(member.chunkCount),
+    primaryLineRange: member.primaryLineRange,
+    contextLineRange: member.contextLineRange,
+    instruction: '<path> chunk <index+1>/<count>, primary lines [s,e], context lines [cs,ce]; use location <path>:<line> for line-specific findings; overlap before/after the primary is context only — do not raise duplicate findings for overlap lines.'
+  }
+}
+```
+
+Do **not** read the file body in `buildFileSetContextPack`; context manifests are durable state and must keep `contentPolicy:'read-in-memory-only'`. Update the generated CODE route guidance so the coordinator, when dispatching a chunk unit reviewer, reads exactly `contextLineRange` from disk into the reviewer prompt in memory and never asks the reviewer to read the whole file. Keep the no-`contextLineRange` path exactly as-is so non-chunk packs stay byte-identical.
 
 - [ ] **Step 4: Run to confirm pass + byte-stable regression**
 
@@ -1599,14 +1695,15 @@ Run:
 ```bash
 node --test test/context-pack*.test.js test/shared-assets.test.js
 ```
-Expected: PASS — slice loading works; non-partitioned packs unchanged.
+Expected: PASS — chunk metadata is persisted without body text; route guidance covers in-memory slice handoff; non-partitioned packs unchanged.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
-git add lib/context-pack.js test/context-pack*.test.js
+git status --short
+git add lib/context-pack.js lib/workflow/file-set-unit-review.js test/context-pack*.test.js test/cli-partitioned-review.test.js lib/generator.js templates/fragments/route-contract.code.claude.md templates/fragments/route-contract.code.codex.md test/fixtures/generated/claude/review-fix-code.md test/fixtures/generated/codex/review-fix-code.md
 git commit -m "$(cat <<'EOF'
-feat(partitioned): load only the chunk line slice into the reviewer context
+feat(partitioned): describe chunk slices without persisting file bodies
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 EOF
@@ -1627,7 +1724,7 @@ EOF
 
 - [ ] **Step 1: Write the failing test**
 
-Assert: `unitContext` for an `oversize_chunk` unit returns `oversize:false` with a context manifest (it loads the slice), and `recordUnitReview` for that unit with a clean receipt writes `coverage_risk:'none'` (not forced high). Assert a legacy `oversize_file:true` unit still forces `reviewed:false, coverage_risk:'high'`.
+Assert: `unitContext` for an `oversize_chunk` unit returns `oversize:false` with a context manifest carrying chunk range metadata (no body text), including concrete `chunk.index` and `chunk.count` copied from unit-level `chunkIndex` / `chunkCount`, and `recordUnitReview` for that unit with a clean receipt writes `coverage_risk:'none'` (not forced high). Assert a legacy `oversize_file:true` unit still forces `reviewed:false, coverage_risk:'high'`.
 
 - [ ] **Step 2: Run to confirm failure**
 
@@ -1635,16 +1732,17 @@ Expected: FAIL — `unitContext`/`recordUnitReview` currently treat any non-norm
 
 - [ ] **Step 3: Implement**
 
-In `unitContext` (line 264) and `recordUnitReview` (line 378): the `oversize_file === true` branch stays as the forced-high blocker. A unit with `oversize_chunk === true` must take the **normal** branch (it has real `files[]` with `contextLineRange`, so `buildFileSetContextPack` loads the slice). Confirm the normal branch already handles a chunk unit (its `files` carry `contextLineRange` consumed by Task 14); if any code assumes whole-file members, adjust to pass `contextLineRange` through. No forced-high for chunk units.
+In `unitContext` (line 264) and `recordUnitReview` (line 378): the `oversize_file === true` branch stays as the forced-high blocker. A unit with `oversize_chunk === true` must take the **normal** branch (it has real `files[]` with `contextLineRange`, so `buildFileSetContextPack` emits chunk metadata and the route reads the slice in memory before reviewer dispatch). Confirm the normal branch already passes a chunk member's `contextLineRange` through. No forced-high for chunk units.
 
 - [ ] **Step 4: Run to confirm pass**
 
 Run: `node --test test/cli-partitioned-review.test.js`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add lib/workflow/file-set-unit-review.js test/cli-partitioned-review.test.js
 git commit -m "$(cat <<'EOF'
 feat(partitioned): review oversize chunks through the normal bounded path
@@ -1663,12 +1761,12 @@ EOF
 - Test: `test/project-review.test.js` + `test/cli-partitioned-review.test.js`
 
 **Interfaces:**
-- Consumes: chunk findings carry a `location`/`path` + a line; overlap lines mean two adjacent chunks may report the same defect.
-- Produces: a stable dedup key `(path + canonical primaryLineRange + issue class)` collapses overlap duplicates. **No new reviewer schema field** — `issue class` is derived internally from existing fields (e.g. `severity` + a normalized hash of `issue`/`suggested_fix` text), since `parseReviewerResult` accepts only fixed fields.
+- Consumes: chunk findings use the existing reviewer `location` field with a parseable line anchor: `<path>:<line>` or `<path>:L<line>`. The chunk context prompt must instruct reviewers to use that format for line-specific chunk findings. Overlap lines mean two adjacent chunks may report the same defect.
+- Produces: a stable dedup key `(path + canonical owner primaryLineRange + issue class)` collapses overlap duplicates. **No new reviewer schema field** — `issue class` is derived internally from existing fields (e.g. `severity` + a normalized hash of `issue`/`suggested_fix` text), since `parseReviewerResult` accepts only fixed fields. If `location` is missing or unparsable, do not drop the finding; keep it under the reporting chunk's own primary range so PASS is not earned by an unparsed overlap heuristic.
 
 - [ ] **Step 1: Write the failing test**
 
-Assert: two findings for the same path with the same severity + normalized text, one located in chunk-1's overlap and one in chunk-2's primary (same underlying line), dedup to ONE finding in the aggregate. Two genuinely different findings (different normalized text) stay distinct.
+Assert: under the bidirectional overlap model from Task 11, two findings for the same path with the same severity + normalized text and parseable `location` values, one reported by chunk 1 against its forward overlap and one reported by chunk 2 against that same line in chunk 2's primary, dedup to ONE finding in the aggregate. Two genuinely different findings (different normalized text) stay distinct. Add a fallback test proving an unparsable `location` is retained under the reporting chunk instead of being dropped.
 
 - [ ] **Step 2: Run to confirm failure**
 
@@ -1676,16 +1774,17 @@ Expected: FAIL — the current `findingDedupKey` is a full-object key, so overla
 
 - [ ] **Step 3: Implement**
 
-Add a chunk-aware normalization that, before dedup, maps a finding's reported line into the owning chunk's `primaryLineRange` (drop findings whose line is only in the overlap region of a non-owning chunk, OR canonicalize to the primary owner), and builds the dedup key from `path + canonicalPrimaryRange + sha256(normalize(issue)+severity)`. Apply it in the partitioned aggregate path only (guard on `reviewMode === 'partitioned'` / presence of chunk units) so non-chunk aggregation is unchanged.
+Add a chunk-aware normalization that, before dedup, parses `finding.location` with the grammar above, maps the reported line into the owning chunk's `primaryLineRange`, and canonicalizes overlap-only findings to the primary owner when a matching owner exists. With bidirectional overlap, the owner is the chunk whose `primaryLineRange` contains the parsed line; an overlap report from either adjacent chunk uses that owner's primary range in the key. Build the dedup key from `path + canonicalOwnerPrimaryRange + sha256(normalize(issue)+severity)`. If the line cannot be parsed, keep the original finding with a key based on the reporting chunk's own primary range; never discard it. Apply this in the partitioned aggregate path only (guard on `reviewMode === 'partitioned'` / presence of chunk units) so non-chunk aggregation is unchanged.
 
 - [ ] **Step 4: Run to confirm pass**
 
 Run: `node --test test/project-review.test.js test/cli-partitioned-review.test.js`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add lib/project-review.js lib/workflow/partitioned-review.js test/project-review.test.js test/cli-partitioned-review.test.js
 git commit -m "$(cat <<'EOF'
 feat(partitioned): dedup overlap findings across oversize chunks
@@ -1714,6 +1813,7 @@ test('refreshPartitionPlanContent keeps chunk units intact when the parent conte
   // plan with one chunk unit (sourcePath 'big.js', sourceContentId 'B0') + one normal unit 'a.js'.
   // newInventory: a.js changed, big.js unchanged (contentId still 'B0').
   // assert refreshedPlan chunk unit's files[0].contentId is preserved (not overwritten by file-level contentId).
+  // assert inventoryRows still contains big.js once and maps it to the first chunk unit_id, not the last.
 });
 
 test('refreshPartitionPlanContent throws when the oversize parent content changed', () => {
@@ -1721,7 +1821,7 @@ test('refreshPartitionPlanContent throws when the oversize parent content change
 });
 ```
 
-> Task 1 already added the chunk branch (`oversize_chunk` → compare `sourceContentId`, throw on mismatch, else `{...unit}`). This task adds the explicit tests and, if Task 1's branch overwrote chunk content fields, fixes it to PRESERVE chunk `contentId/size/member_digest` (never overwrite with file-level `contentId`). Also ensure `planFilePathSet` counts `sourcePath` once (already done in Task 1) so membership equality holds for a chunked file.
+> Task 1 already added the chunk branch (`oversize_chunk` → compare `sourceContentId`, throw on mismatch, else `{...unit}`). This task adds the explicit tests and, if Task 1's branch overwrote chunk content fields, fixes it to PRESERVE chunk `contentId/size/member_digest` (never overwrite with file-level `contentId`). Also ensure `planFilePathSet` counts `sourcePath` once (already done in Task 1) and `inventoryRows` preserves the first chunk `unit_id` for that source path so membership identity stays file-level and stable for a chunked file.
 
 - [ ] **Step 2: Run to confirm failure (or confirm Task 1 already passes)**
 
@@ -1737,9 +1837,10 @@ Confirm the `oversize_chunk` branch in `refreshPartitionPlanContent` returns `{ 
 Run: `node --test test/project-review.test.js`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
+git status --short
 git add lib/project-review.js test/project-review.test.js
 git commit -m "$(cat <<'EOF'
 feat(partitioned): preserve chunk content across incremental refresh, reset on parent change
@@ -1797,10 +1898,11 @@ npm test
 ```
 Expected: all green. **Part 2 DoD gate.**
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Optional commit (only with explicit user approval)**
 
 ```bash
-git add -A
+git status --short
+git add test/cli-partitioned-review.test.js templates/fragments/route-contract.code.claude.md templates/fragments/route-contract.code.codex.md test/fixtures/generated/claude/review-fix-code.md test/fixtures/generated/codex/review-fix-code.md design/OPTIMIZATION-2026-06-20-partitioned-code-review.md
 git commit -m "$(cat <<'EOF'
 test(partitioned): oversize chunk coverage earns PASS; docs and fixtures
 
@@ -1834,4 +1936,4 @@ npm test
 
 - **Spec coverage:** Blueprint Part 1 steps 1–6 → Tasks 1–9; Part 1 DoD/test-matrix → Task 10. Blueprint Part 2 P2.2–P2.4 → Tasks 11–17; P2 DoD/test-matrix → Task 18. G.1 edge cases (illegal `currentPhase:'unit-review'`, scoped-not-whole-root, refs-changed, finalize partitioned-vs-non-partitioned, chunk byte budget, inventoryRows file-level, single-huge-line fallback) are each pinned to a task's tests.
 - **Type/name consistency:** `refreshPartitionPlanContent(oldPlan, newInventory, { nextSuggestedRefsByUnit, projectReviewFingerprint }) → { refreshedPlan, refsChangedUnitIds }` used identically in Tasks 1, 3, 17. `applyPartitionedIncrement({ metadata, declaredFiles, fixReport, ledger, options, oldPlan })` consistent in Tasks 3, 4. `invalidateUnitReviews`/`invalidateAllBackstopReviews` consistent in Tasks 2, 3. `computeOversizeChunks`/`splitOversizeFile` chunk schema (`primaryLineRange`/`contextLineRange`/`sourceContentId`/`member_digest`) consistent in Tasks 11–15, 17.
-- **Known soft spots flagged for the implementer (not placeholders — real verification points):** (a) confirm `writeNormalizedFixReport`/`updateFixedIssues`/`formatLedger`/`describeCodeBlock` export paths before Task 3 (copy `file-set-fix.js`'s import lines); (b) confirm the manifest filename used by `parseManifestV2` callers in the test files (Task 3 setup); (c) `formatUnitId` is private to `project-review.js` — export it or inline the pad (Task 13); (d) Task 14 is the one genuinely new mechanism (line-slice context loading) — keep the non-slice path byte-identical or the `code-route … byte-for-byte` snapshot test fails.
+- **Known soft spots flagged for the implementer (not placeholders — real verification points):** (a) confirm `writeNormalizedFixReport`/`updateFixedIssues`/`formatLedger`/`describeCodeBlock` export paths before Task 3 (copy `file-set-fix.js`'s import lines); (b) confirm the manifest filename used by `parseManifestV2` callers in the test files (Task 3 setup); (c) `formatUnitId` is private to `project-review.js` — export it or inline the pad (Task 13); (d) Task 14 is the one genuinely new mechanism (chunk metadata in persistent context, slice text only in reviewer handoff memory) — keep the non-slice path byte-identical or the `code-route … byte-for-byte` snapshot test fails.
