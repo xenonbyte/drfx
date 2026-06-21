@@ -1020,6 +1020,42 @@ test('begin-fix is allowed for an active partition plan after triage', async (t)
   assert.equal(beginFix.status, 'begin-fix');
 });
 
+test('aggregate FAIL with a reviewer report directs the triage/fix loop', async (t) => {
+  const root = makeMultiUnitRepo(t);
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+
+  let first = true;
+  for (const unit of plan.units) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: first ? REVIEWER_FAIL_HIGH : REVIEWER_PASS });
+    first = false;
+  }
+
+  for (const backstop of plan.crosscuttingBackstops) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  const result = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.verdict, 'stopped-with-deferrals');
+  assert.ok(result.reviewerReportPath, 'must have a reviewer report path when FAIL');
+  assert.match(result.nextAction, /triage|begin-fix|fix loop/i);
+  assert.doesNotMatch(result.nextAction, /read-only in this version/);
+});
+
 test('aggregate-review rewrites duplicate partition reviewer ids before triage report output', async (t) => {
   const root = makeMultiUnitRepo(t);
   const start = await startPartitioned(root);
