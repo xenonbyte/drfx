@@ -28,6 +28,8 @@ const {
   CONTRACT_READ_BUDGET,
 } = require('../lib/project-review');
 
+const { assemblePartitionPlan } = require('../lib/workflow/file-set-context');
+
 const {
   invalidateUnitReviews,
   invalidateAllBackstopReviews,
@@ -891,4 +893,27 @@ test('splitOversizeFile returns null for an unsplittable (single huge line) file
   fs.writeFileSync(pathMod.join(dir, 'min.js'), 'a'.repeat(2_000_000) + '\n');
   const file = { path: 'min.js', size: 2_000_001, ext: '.js', contentId: 'cid' };
   assert.equal(splitOversizeFile({ projectRoot: dir, file, chunkByteBudget: 1_000_000 }), null);
+});
+
+// --- assemblePartitionPlan (Task 13) ---
+
+test('assemblePartitionPlan expands a splittable oversize file into chunk units, inventoryRows stay file-level', () => {
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'drfx-assemble-'));
+  const big = Array.from({ length: 1500 }, (_, i) => `let v${i} = ${i};`).join('\n') + '\n';
+  fs.writeFileSync(pathMod.join(dir, 'big.js'), big);
+  fs.writeFileSync(pathMod.join(dir, 'small.js'), 'module.exports = 1;\n');
+  const inventory = [
+    { path: 'big.js', size: 1_200_000, ext: '.js', contentId: 'bigCID' }, // > MAX_UNIT_BYTES
+    { path: 'small.js', size: 20, ext: '.js', contentId: 'smallCID' },
+  ];
+  const plan = assemblePartitionPlan({ inventory, projectReviewFingerprint: 'FP', projectRoot: dir });
+  const chunkUnits = plan.units.filter((u) => u.oversize_chunk === true);
+  assert.ok(chunkUnits.length >= 2, 'big.js expanded into chunks');
+  assert.ok(!plan.units.some((u) => u.oversize_file === true), 'no legacy oversize unit remains');
+  // unit_ids are contiguous unit-NNN.
+  assert.ok(plan.units.every((u) => /^unit-\d{3,}$/.test(u.unit_id)));
+  // inventoryRows: big.js appears EXACTLY once (file-level), not once per chunk.
+  const bigRows = plan.inventoryRows.filter((r) => r.path === 'big.js');
+  assert.equal(bigRows.length, 1);
+  assert.equal(bigRows[0].contentId, 'bigCID'); // file-level contentId preserved
 });
