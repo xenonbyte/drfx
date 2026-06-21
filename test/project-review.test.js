@@ -22,6 +22,7 @@ const {
   reviewCacheKey,
   aggregate,
   refreshPartitionPlanContent,
+  computeOversizeChunks,
   CROSSCUTTING_BACKSTOPS,
   MAX_UNIT_BYTES,
   CONTRACT_READ_BUDGET,
@@ -664,6 +665,37 @@ test('aggregate: PASS requires every high-risk unit to be body-reviewed', () => 
   ];
   const result = aggregate(summaries, []);
   assert.equal(result.verdict, 'PASS');
+});
+
+test('computeOversizeChunks splits by line window with overlap, deterministically', () => {
+  const text = Array.from({ length: 1000 }, (_, i) => `line ${i + 1}`).join('\n') + '\n';
+  const chunks = computeOversizeChunks({ text, chunkLines: 400, overlapLines: 20, chunkByteBudget: 1_000_000 });
+  assert.ok(Array.isArray(chunks) && chunks.length >= 2);
+  assert.deepEqual(chunks[0].primaryLineRange, [1, 400]);
+  // bidirectional overlap: chunk 1's context extends 20 lines after its primary;
+  // chunk 2's context starts 20 lines before its primary start.
+  assert.equal(chunks[0].contextLineRange[1], 420);
+  assert.equal(chunks[1].primaryLineRange[0], 401);
+  assert.equal(chunks[1].contextLineRange[0], 381);
+  // every chunk's context slice is within budget.
+  for (const c of chunks) assert.ok(c.byteLength <= 1_000_000);
+  // determinism.
+  const again = computeOversizeChunks({ text, chunkLines: 400, overlapLines: 20, chunkByteBudget: 1_000_000 });
+  assert.deepEqual(again.map((c) => c.primaryLineRange), chunks.map((c) => c.primaryLineRange));
+});
+
+test('computeOversizeChunks shrinks context overlap to honor the byte budget', () => {
+  // Build text whose 400-line primary is ~960KB and whose full bidirectional
+  // 40-line overlap would push the context slice over 1MB unless overlap shrinks.
+  const big = 'x'.repeat(2400);
+  const text = Array.from({ length: 800 }, () => big).join('\n') + '\n';
+  const chunks = computeOversizeChunks({ text, chunkLines: 400, overlapLines: 40, chunkByteBudget: 1_000_000 });
+  assert.ok(chunks.every((c) => c.byteLength <= 1_000_000));
+});
+
+test('computeOversizeChunks returns null when a single line exceeds the byte budget', () => {
+  const text = 'a'.repeat(2_000_000) + '\nshort\n';
+  assert.equal(computeOversizeChunks({ text, chunkLines: 400, overlapLines: 40, chunkByteBudget: 1_000_000 }), null);
 });
 
 test('aggregate: residualRisk is "none" when PASS, "present" otherwise', () => {
