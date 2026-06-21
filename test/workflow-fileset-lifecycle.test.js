@@ -15,6 +15,7 @@ const test = require('node:test');
 const { runWorkflowCommand } = require('../lib/workflow');
 const { formatManifestV2, parseManifestV2 } = require('../lib/workflow-state');
 const { parseLedger } = require('../lib/ledger');
+const { buildFileSetFinalValidationState } = require('../lib/workflow/file-set-finalize');
 
 function git(cwd, args) {
   return execFileSync('git', args, {
@@ -2267,4 +2268,119 @@ test('non-partitioned CODE end-fix is byte-identical: no affected units, unchang
   assert.equal(endFix.affectedUnits, undefined);
   assert.equal(endFix.reReviewScope, undefined);
   assert.equal(endFix.nextAction, 'run record-diff-review');
+});
+
+// ---------------------------------------------------------------------------
+// Task 6: partitioned fix rounds skip the diff-review requirement.
+//
+// buildFileSetFinalValidationState must return requiredDiffReviewComplete===true
+// for a partitioned active target with a fix round, because the aggregate
+// full-re-review PASS is the coverage proof (requiredFullReReviewComplete gates
+// PASS instead). Non-partitioned fix rounds are unchanged: they still require a
+// DIFF-OK diff-review report.
+// ---------------------------------------------------------------------------
+
+// Build a minimal in-memory metadata fixture for buildFileSetFinalValidationState.
+// All report files are written to a real temp dir so readManifestReport can read them.
+function makeFinalizeFxture(t, { withActivePlan }) {
+  const tmpDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-finalize-t6-')));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  // reports/ must exist so validateTargetStateOwnedPath resolves correctly.
+  const reportsDir = path.join(tmpDir, 'reports');
+  fs.mkdirSync(reportsDir, { recursive: true });
+
+  const FINGERPRINT = 'fp-task6-match';
+  const ROUND = 1;
+
+  // Write a full-re-review PASS report (what recordAggregatePassAsFullReview produces).
+  const reviewerReportName = 'full-review-round-001.md';
+  const reviewerReportJson = JSON.stringify({
+    normalized: { result: 'PASS', summary: 'All units PASS.', findings: [], warnings: [] },
+    phase: 'full-re-review',
+    producer: 'reviewer-subagent',
+    round: ROUND
+  }, null, 2);
+  fs.writeFileSync(
+    path.join(reportsDir, reviewerReportName),
+    `# Reviewer Report\n\nRound: ${ROUND}\nPhase: full-re-review\nProducer: reviewer-subagent\nResult: PASS\n\n\`\`\`json\n${reviewerReportJson}\n\`\`\`\n`
+  );
+
+  // Write a fix report so hasFixRound is true (round matches currentRound).
+  const fixReportName = 'fix-round-001.md';
+  const fixReportJson = JSON.stringify({
+    round: ROUND,
+    normalized: { issueIds: [], filesChanged: [], verification: 'node --check: passed' }
+  }, null, 2);
+  fs.writeFileSync(
+    path.join(reportsDir, fixReportName),
+    `# Fix Report\n\nRound: ${ROUND}\n\n\`\`\`json\n${fixReportJson}\n\`\`\`\n`
+  );
+
+  if (withActivePlan) {
+    // Write an ACTIVE partitioned units.json: projectReviewFingerprint must equal
+    // manifest.fileSetFingerprint for readActivePartitionedPlan to return non-null.
+    const planDir = path.join(tmpDir, 'project-review');
+    fs.mkdirSync(planDir, { recursive: true });
+    const plan = {
+      reviewMode: 'partitioned',
+      unitByteBudget: 4096,
+      units: [
+        {
+          unit_id: 'unit-001',
+          files: [{ path: 'src/a.js', size: 1, ext: '.js', contentId: 'sha256:a', unit_id: 'unit-001' }],
+          member_digest: 'digest-001',
+          suggestedRefs: [],
+          oversize_file: false
+        }
+      ],
+      crosscuttingBackstops: [],
+      projectReviewFingerprint: FINGERPRINT
+    };
+    fs.writeFileSync(path.join(planDir, 'units.json'), `${JSON.stringify(plan, null, 2)}\n`);
+  }
+
+  const manifest = {
+    currentRound: String(ROUND),
+    fileSetFingerprint: FINGERPRINT,
+    mode: 'review-and-fix',
+    assurance: 'practical',
+    runtimePlatform: 'claude',
+    strictness: 'normal',
+    lastFixReportPath: `reports/${fixReportName}`,
+    lastReviewerReportPath: `reports/${reviewerReportName}`,
+    lastDiffReviewReportPath: 'none'
+  };
+
+  const metadata = {
+    targetStateDir: tmpDir,
+    ledgerPath: path.join(tmpDir, 'ISSUES.md'), // does not exist → readLedgerIfPresent returns { issues: [] }
+    routeKind: 'code',
+    manifest
+  };
+
+  return metadata;
+}
+
+test('partitioned fix round finalizes without a diff-review report', (t) => {
+  // Fixture A: active partitioned plan (fingerprint matches), fix report present,
+  // full-re-review PASS report at currentRound. No DIFF-OK diff-review report.
+  // Expected: requiredDiffReviewComplete===true (plan presence satisfies the requirement)
+  //           requiredFullReReviewComplete===true (full-re-review PASS at round 1).
+  const metadata = makeFinalizeFxture(t, { withActivePlan: true });
+  const state = buildFileSetFinalValidationState(metadata);
+  assert.equal(state.requiredDiffReviewComplete, true,
+    'partitioned active plan must satisfy diff-review without a DIFF-OK report');
+  assert.equal(state.requiredFullReReviewComplete, true,
+    'full-re-review PASS at currentRound must satisfy requiredFullReReviewComplete');
+});
+
+test('non-partitioned fix round still requires DIFF-OK (no regression)', (t) => {
+  // Fixture B: NO partitioned plan, fix report present, full-re-review PASS present,
+  // but NO diff-review report. Non-partitioned path must still require DIFF-OK.
+  // Expected: requiredDiffReviewComplete===false (unchanged behaviour).
+  const metadata = makeFinalizeFxture(t, { withActivePlan: false });
+  const state = buildFileSetFinalValidationState(metadata);
+  assert.equal(state.requiredDiffReviewComplete, false,
+    'non-partitioned fix round without DIFF-OK must yield requiredDiffReviewComplete===false');
 });
