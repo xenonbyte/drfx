@@ -2095,14 +2095,13 @@ test('unitsToReReview: changed ∪ suggestedRefs-hit ∪ extraReads-hit, determi
 });
 
 // ---------------------------------------------------------------------------
-// PLAN-TASK-011: post-fix integration for a PARTITIONED CODE target.
+// PLAN-TASK-011 / Task 4 fork: post-fix integration for a PARTITIONED CODE target.
 //
-// After end-fix on a partitioned target (project-review/units.json present), changed
-// source content makes the persisted plan's member contentIds/projectReviewFingerprint
-// stale. The workflow must block and require a fresh partition plan instead of
-// returning bounded re-review instructions from old unit bytes. The pure
-// unitsToReReview helper still covers changed ∪ suggestedRefs-hit ∪ extraReads-hit
-// selection above; a non-partitioned CODE fix flow is unchanged.
+// After end-fix on a partitioned target (project-review/units.json present), the Task 4
+// fork routes to applyPartitionedIncrement, which re-resolves the inventory, refreshes
+// stale contentIds/projectReviewFingerprint, invalidates affected units, and transitions
+// to checkpoint/review (not diff-review). A non-partitioned CODE fix flow is unchanged
+// (falls through to diff-review as before).
 // ---------------------------------------------------------------------------
 
 // Write a deterministic, hand-crafted partitioned units.json under a resolved CODE
@@ -2153,12 +2152,12 @@ async function reachCodeFixStageWithBeginFix(t, { writePlan = false } = {}) {
   return { root, args, start, plan };
 }
 
-test('partitioned CODE end-fix blocks instead of returning bounded units from a stale plan', async (t) => {
+test('partitioned CODE end-fix with an INACTIVE plan falls through to diff-review (not fork)', async (t) => {
   const { root, start } = await reachCodeFixStageWithBeginFix(t, { writePlan: true });
 
-  // The fixer edits src/a.js — a member of unit-001 AND a suggestedRef of unit-002.
-  // The old units.json contentIds are now stale, so end-fix must not direct a --unit
-  // re-review from that plan.
+  // writePartitionPlanForCodeTarget writes a plan with projectReviewFingerprint:'fp-test' which
+  // does NOT match the manifest fileSetFingerprint set by start. readActivePartitionedPlan
+  // returns null → fork does not fire → falls through to the non-partitioned diff-review path.
   fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
   const endFix = await runWorkflowCommand('end-fix', [
     start.targetStateDir,
@@ -2166,16 +2165,13 @@ test('partitioned CODE end-fix blocks instead of returning bounded units from a 
     '--json'
   ], { cwd: root, stdin: FIX_REPORT_FILESET });
 
-  assert.equal(endFix.ok, false);
-  assert.equal(endFix.status, 'blocked');
-  assert.equal(endFix.blockingReason, 'state-validation-failed');
-  assert.equal(endFix.affectedUnits, undefined);
-  assert.equal(endFix.reReviewScope, undefined);
-  assert.match(endFix.nextAction, /partition/i);
-  assert.notEqual(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'diff-review');
+  // Inactive (fingerprint-mismatched) plan → non-partitioned path → ok:true, diff-review.
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+  assert.equal(endFix.reviewMode, undefined, 'inactive plan must not surface partitioned reviewMode');
+  assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'diff-review');
 });
 
-test('partitioned CODE end-fix blocks before using stale extraReads-hit data', async (t) => {
+test('partitioned CODE end-fix with an INACTIVE plan ignores extraReads-hit (falls through to diff-review)', async (t) => {
   const { root, start } = await reachCodeFixStageWithBeginFix(t, { writePlan: true });
   // Record a summary for unit-002 whose extraReads hit src/a.js (the changed file).
   const summariesDir = path.join(start.targetStateDir, 'project-review', 'summaries');
@@ -2194,11 +2190,11 @@ test('partitioned CODE end-fix blocks before using stale extraReads-hit data', a
     '--json'
   ], { cwd: root, stdin: FIX_REPORT_FILESET });
 
-  assert.equal(endFix.ok, false);
-  assert.equal(endFix.status, 'blocked');
-  assert.equal(endFix.blockingReason, 'state-validation-failed');
-  assert.equal(endFix.affectedUnits, undefined);
-  assert.match(endFix.nextAction, /partition/i);
+  // The plan is inactive (fingerprint mismatch) → fork returns null → non-partitioned diff-review path.
+  // Before Task 4 the stale-freshness check blocked this. Now an inactive plan simply falls through.
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+  assert.equal(endFix.reviewMode, undefined, 'inactive plan must not surface partitioned reviewMode');
+  assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'diff-review');
 });
 
 test('partitioned CODE end-fix still blocks a fix that writes outside the recorded file set', async (t) => {
@@ -2248,9 +2244,10 @@ test('partitioned CODE begin-fix counting is unchanged: fixAttemptCount incremen
     '--fix-report-stdin',
     '--json'
   ], { cwd: root, stdin: FIX_REPORT_FILESET });
-  assert.equal(endFix.ok, false);
-  assert.equal(endFix.status, 'blocked');
-  // A stale-plan block still does not burn another fix attempt (counting lives in begin-fix only).
+  // The plan written by writePartitionPlanForCodeTarget has a mismatched fingerprint (inactive).
+  // readActivePartitionedPlan returns null → fork does not fire → non-partitioned diff-review.
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+  // end-fix never burns fix attempts (counting lives in begin-fix only); fixAttemptCount stays at 1.
   assert.equal(Number(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).fixAttemptCount), 1);
 });
 

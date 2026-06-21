@@ -1246,3 +1246,81 @@ test('partitioned start writes a whole-root manifest (normalizedScopes is empty)
   const manifest = parseManifestV2(fs.readFileSync(path.join(start.targetStateDir, 'MANIFEST.md'), 'utf8'));
   assert.deepEqual(manifest.normalizedScopes || [], []);
 });
+
+// ---------------------------------------------------------------------------
+// Task 4: runEndFix fork — active partition plan takes the incremental exit
+// ---------------------------------------------------------------------------
+
+const FIX_REPORT_PARTITIONED = [
+  'Fixed:',
+  '- ISSUE-001: Restored the error handling around the call.',
+  '',
+  'Files changed:',
+  '- src/a.js',
+  '',
+  'Not fixed:',
+  '- none',
+  '',
+  'Verification:',
+  '- node --check src/a.js: passed',
+  '',
+  'Residual risk:',
+  '- none identified'
+].join('\n');
+
+test('end-fix on an active partition plan takes the incremental exit (checkpoint/review)', async (t) => {
+  const root = makeMultiUnitRepo(t);
+  const start = await startPartitioned(root);
+  const metadata = resolveFileSetStateMetadata(start.targetStateDir);
+  const plan = readActivePartitionedPlan(metadata);
+
+  // Record all units (first gets REVIEWER_FAIL_HIGH, rest REVIEWER_PASS) + all backstops REVIEWER_PASS.
+  let first = true;
+  for (const unit of plan.units) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: first ? REVIEWER_FAIL_HIGH : REVIEWER_PASS });
+    first = false;
+  }
+  for (const backstop of plan.crosscuttingBackstops) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  const aggregate = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(aggregate.ok, true, JSON.stringify(aggregate));
+  assert.equal(aggregate.verdict, 'stopped-with-deferrals');
+
+  const triage = await runWorkflowCommand('record-triage', [
+    ...practicalArgs(['review-fix-code']),
+    '--triage-stdin'
+  ], { cwd: root, stdin: TRIAGE_ACCEPT_PARTITIONED });
+  assert.equal(triage.ok, true, JSON.stringify(triage));
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+  assert.equal(beginFix.status, 'begin-fix');
+
+  // Edit src/a.js (a real in-set member of the multiunit repo).
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { try { return 2; } catch { return 0; } };\n');
+
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: FIX_REPORT_PARTITIONED });
+
+  // The fork must route to the incremental exit, not the diff-review transition.
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+  assert.equal(endFix.reviewMode, 'partitioned', 'end-fix must take the partitioned incremental exit');
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'checkpoint', 'manifest must advance to checkpoint, not diff-review');
+  assert.equal(manifest.currentPhase, 'review', 'manifest currentPhase must be review');
+});
