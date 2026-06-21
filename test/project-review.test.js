@@ -867,3 +867,28 @@ test('invalidateUnitReviews fails loudly when a review artifact cannot be remove
   fs.writeFileSync(pathMod.join(badPath, 'nested'), '{}\n');
   assert.throws(() => invalidateUnitReviews(dir, ['unit-001']));
 });
+
+// --- splitOversizeFile ---
+
+const { splitOversizeFile } = require('../lib/workflow/file-set-context');
+
+test('splitOversizeFile expands a text oversize file into chunk-units with stable contentIds', () => {
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'drfx-split-'));
+  const body = Array.from({ length: 1200 }, (_, i) => `const x${i} = ${i};`).join('\n') + '\n';
+  fs.writeFileSync(pathMod.join(dir, 'big.js'), body);
+  const file = { path: 'big.js', size: Buffer.byteLength(body), ext: '.js', contentId: 'srcCID' };
+  const chunks = splitOversizeFile({ projectRoot: dir, file, chunkLines: 500, overlapLines: 20, chunkByteBudget: 1_000_000 });
+  assert.ok(Array.isArray(chunks) && chunks.length >= 2);
+  assert.ok(chunks.every((c) => c.oversize_chunk === true && c.sourcePath === 'big.js' && c.sourceContentId === 'srcCID'));
+  assert.equal(chunks[0].files[0].path, 'big.js');
+  assert.equal(chunks[0].chunkCount, chunks.length);
+  // member_digest = sha256(chunkContentId); distinct per chunk.
+  assert.notEqual(chunks[0].member_digest, chunks[1].member_digest);
+});
+
+test('splitOversizeFile returns null for an unsplittable (single huge line) file', () => {
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'drfx-split2-'));
+  fs.writeFileSync(pathMod.join(dir, 'min.js'), 'a'.repeat(2_000_000) + '\n');
+  const file = { path: 'min.js', size: 2_000_001, ext: '.js', contentId: 'cid' };
+  assert.equal(splitOversizeFile({ projectRoot: dir, file, chunkByteBudget: 1_000_000 }), null);
+});
