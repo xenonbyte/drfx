@@ -1124,6 +1124,86 @@ test('refreshPartitionPlanContent refreshes oversize chunks when the parent cont
   assert.equal(bigJsRows[0].unit_id, 'unit-001');
 });
 
+test('refreshPartitionPlanContent converts a changed legacy oversize blocker into chunk units when re-split succeeds', () => {
+  const oldPlan = {
+    reviewMode: 'partitioned',
+    unitByteBudget: 1_000_000,
+    units: [
+      {
+        unit_id: 'unit-001',
+        oversize_file: true,
+        member_count: 1,
+        member_bytes: 1_500_000,
+        member_digest: 'OLD_BIG',
+        files: [{ path: 'big.js', size: 1_500_000, ext: '.js', contentId: 'B0', unit_id: 'unit-001' }],
+        suggestedRefs: [],
+      },
+      {
+        unit_id: 'unit-002',
+        member_count: 1,
+        member_bytes: 10,
+        member_digest: 'OLD_A',
+        files: [{ path: 'a.js', size: 10, ext: '.js', contentId: 'ca0', unit_id: 'unit-002' }],
+        suggestedRefs: [],
+      },
+    ],
+    crosscuttingBackstops: ['security-redaction'],
+    projectReviewFingerprint: 'FP0',
+    userExcludes: [],
+    inventoryRows: [],
+  };
+  const newInventory = [
+    { path: 'a.js', size: 10, ext: '.js', contentId: 'ca0' },
+    { path: 'big.js', size: 1_600_000, ext: '.js', contentId: 'B1' },
+  ];
+  const nextChunks = [
+    {
+      oversize_chunk: true,
+      sourcePath: 'big.js',
+      sourceContentId: 'B1',
+      chunkIndex: 0,
+      chunkCount: 2,
+      files: [{ path: 'big.js', primaryLineRange: [1, 800], contextLineRange: [1, 820], size: 900_000, contentId: 'CHUNK_CID_1A' }],
+      member_count: 1,
+      member_bytes: 900_000,
+      member_digest: 'NEXT0',
+      suggestedRefs: [],
+    },
+    {
+      oversize_chunk: true,
+      sourcePath: 'big.js',
+      sourceContentId: 'B1',
+      chunkIndex: 1,
+      chunkCount: 2,
+      files: [{ path: 'big.js', primaryLineRange: [801, 1600], contextLineRange: [781, 1600], size: 700_000, contentId: 'CHUNK_CID_1B' }],
+      member_count: 1,
+      member_bytes: 700_000,
+      member_digest: 'NEXT1',
+      suggestedRefs: [],
+    },
+  ];
+
+  const { refreshedPlan } = refreshPartitionPlanContent(oldPlan, newInventory, {
+    nextSuggestedRefsByUnit: { 'unit-002': [] },
+    nextOversizeChunksByPath: new Map([['big.js', nextChunks]]),
+    projectReviewFingerprint: 'FP1',
+  });
+
+  assert.equal(refreshedPlan.units.some((unit) => unit.oversize_file === true), false);
+  const chunkUnits = refreshedPlan.units.filter((unit) => unit.oversize_chunk === true);
+  assert.deepEqual(chunkUnits.map((unit) => unit.unit_id), ['unit-001', 'unit-003']);
+  assert.deepEqual(chunkUnits.map((unit) => unit.sourceContentId), ['B1', 'B1']);
+  assert.deepEqual(chunkUnits.map((unit) => unit.chunkCount), [2, 2]);
+  assert.equal(chunkUnits[0].files[0].unit_id, 'unit-001');
+  assert.equal(chunkUnits[1].files[0].unit_id, 'unit-003');
+  assert.equal(refreshedPlan.units.find((unit) => unit.files.some((file) => file.path === 'a.js')).unit_id, 'unit-002');
+
+  const bigJsRows = refreshedPlan.inventoryRows.filter((row) => row.path === 'big.js');
+  assert.equal(bigJsRows.length, 1);
+  assert.equal(bigJsRows[0].contentId, 'B1');
+  assert.equal(bigJsRows[0].unit_id, 'unit-001');
+});
+
 // ---------------------------------------------------------------------------
 // invalidateUnitReviews / invalidateAllBackstopReviews
 // ---------------------------------------------------------------------------

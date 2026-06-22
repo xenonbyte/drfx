@@ -1581,6 +1581,57 @@ test('applyPartitionedIncrement refreshes units.json, invalidates affected units
   assert.notEqual(readSummaryIfPresent(start.targetStateDir, survivor.unit_id), null);
 });
 
+test('applyPartitionedIncrement re-splits a changed legacy oversize blocker when it becomes chunkable', async (t) => {
+  const root = makeUnsplittableOversizeRepo(t);
+  const start = await startPartitioned(root);
+  const metadata = resolveFileSetStateMetadata(start.targetStateDir);
+  const oldPlan = readActivePartitionedPlan(metadata);
+  const blocker = oldPlan.units.find((unit) =>
+    unit.oversize_file === true && unit.files[0].path === 'min.js'
+  );
+  assert.ok(blocker, 'fixture must start with min.js as a legacy oversize_file blocker');
+
+  const line = '// ' + 'x'.repeat(700);
+  fs.writeFileSync(
+    path.join(root, 'min.js'),
+    Array.from({ length: 2000 }, () => line).join('\n') + '\n'
+  );
+
+  const result = await applyPartitionedIncrement({
+    metadata,
+    declaredFiles: ['min.js'],
+    fixReport: {
+      fixed: [{ issue_id: 'ISSUE-001', summary: 'Split min.js into chunkable lines.' }],
+      filesChanged: ['min.js'],
+      verification: ['node --check min.js: passed']
+    },
+    ledger: {
+      issues: [{
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'accepted',
+        location: 'min.js',
+        summary: 'Unreviewable minified file blocks PASS.',
+        resolution: ''
+      }]
+    },
+    options: {},
+    oldPlan,
+  });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+  const refreshedPlan = readActivePartitionedPlan(metadata);
+  assert.equal(
+    refreshedPlan.units.some((unit) => unit.oversize_file === true && unit.files[0].path === 'min.js'),
+    false,
+    'the changed min.js blocker must not remain on the forced-high oversize_file path'
+  );
+  const chunkUnits = refreshedPlan.units.filter((unit) => unit.oversize_chunk === true && unit.sourcePath === 'min.js');
+  assert.ok(chunkUnits.length >= 2, 'the changed min.js source must be re-split into chunk units');
+  assert.equal(chunkUnits[0].unit_id, blocker.unit_id, 'the first replacement chunk reuses the old blocker unit id');
+  assert.ok(chunkUnits.every((unit) => unit.sourceContentId === chunkUnits[0].sourceContentId));
+});
+
 test('applyPartitionedIncrement validates persisted member paths before reading bodies', async (t) => {
   const root = makeMultiUnitRepo(t);
   const start = await startPartitioned(root);
