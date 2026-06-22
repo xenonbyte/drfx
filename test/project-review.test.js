@@ -725,6 +725,21 @@ test('computeOversizeChunks returns null when a single line exceeds the byte bud
   assert.equal(computeOversizeChunks({ text, chunkLines: 400, overlapLines: 40, chunkByteBudget: 1_000_000 }), null);
 });
 
+test('computeOversizeChunks returns null as soon as the chunk count cap is exceeded', () => {
+  const text = Array.from({ length: 81 }, () => 'x').join('\n') + '\n';
+
+  assert.equal(
+    computeOversizeChunks({
+      text,
+      chunkLines: 10,
+      overlapLines: 0,
+      chunkByteBudget: 1_000_000,
+      maxChunks: 8,
+    }),
+    null
+  );
+});
+
 test('splitOversizeFile: files beyond the chunkable byte cap stay legacy oversize blockers', () => {
   const root = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'drfx-chunk-cap-'));
   try {

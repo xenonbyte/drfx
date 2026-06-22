@@ -125,8 +125,13 @@ test('Claude and Codex partitioned CODE flow gates aggregate FAIL fix instructio
     );
     assert.match(
       rendered,
-      /active mode is `read-only`[^\n]*do not run `record-triage` or `begin-fix`[^\n]*finalize/i,
-      `${platform}:review-fix-code must keep read-only partitioned findings out of the fix loop`
+      /active mode is `read-only`[^\n]*stopped-with-deferrals[^\n]*`reviewerReportPath`[^\n]*run `record-triage`[^\n]*ledger issue ids[^\n]*finalize the read-only findings[^\n]*do not run `begin-fix`/i,
+      `${platform}:review-fix-code must triage read-only partitioned findings before finalization without entering the fix loop`
+    );
+    assert.match(
+      rendered,
+      /reason: coverage-incomplete[^\n]*review the uncovered units\/backstops[^\n]*do not run `record-triage` or `begin-fix`/i,
+      `${platform}:review-fix-code may skip triage only for pure coverage-incomplete deferrals`
     );
     assert.match(
       rendered,
