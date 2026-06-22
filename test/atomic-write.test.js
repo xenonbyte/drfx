@@ -44,6 +44,19 @@ test('atomicWriteFile atomically replaces an existing file', (t) => {
   assert.deepEqual(tempSiblings(target), []);
 });
 
+test('atomicWriteFile preserves existing file mode when replacing content', { skip: process.platform === 'win32' }, (t) => {
+  const root = makeSandbox(t);
+  const target = path.join(root, 'manifest');
+  fs.writeFileSync(target, 'old\n', { mode: 0o600 });
+  fs.chmodSync(target, 0o600);
+
+  atomicWriteFile(target, 'new\n');
+
+  assert.equal(fs.readFileSync(target, 'utf8'), 'new\n');
+  assert.equal(fs.statSync(target).mode & 0o777, 0o600);
+  assert.deepEqual(tempSiblings(target), []);
+});
+
 test('atomicWriteFile preserves raw bytes for Buffer content (no normalization)', (t) => {
   const root = makeSandbox(t);
   const target = path.join(root, 'body.bin');
@@ -70,6 +83,31 @@ test('atomicWriteFile leaves no partial file and no temp when beforeRename throw
   );
 
   assert.equal(fs.existsSync(target), false);
+  assert.deepEqual(tempSiblings(target), []);
+});
+
+test('atomicWriteFile refuses to replace a directory target and leaves no temp', (t) => {
+  const root = makeSandbox(t);
+  const target = path.join(root, 'state');
+  fs.mkdirSync(target);
+
+  assert.throws(() => atomicWriteFile(target, 'new\n'), /non-regular/);
+
+  assert.equal(fs.lstatSync(target).isDirectory(), true);
+  assert.deepEqual(tempSiblings(target), []);
+});
+
+test('atomicWriteFile refuses to replace a symlink target and leaves no temp', { skip: process.platform === 'win32' }, (t) => {
+  const root = makeSandbox(t);
+  const linked = path.join(root, 'linked.txt');
+  const target = path.join(root, 'descriptor.json');
+  fs.writeFileSync(linked, 'linked\n');
+  fs.symlinkSync(linked, target);
+
+  assert.throws(() => atomicWriteFile(target, 'new\n'), /non-regular/);
+
+  assert.equal(fs.lstatSync(target).isSymbolicLink(), true);
+  assert.equal(fs.readFileSync(linked, 'utf8'), 'linked\n');
   assert.deepEqual(tempSiblings(target), []);
 });
 

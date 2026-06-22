@@ -14,11 +14,11 @@ function makeSandbox(t) {
   return root;
 }
 
-function stagingSiblings(dir, targetPath) {
+function tempSiblings(dir, targetPath) {
   const basename = path.basename(targetPath);
   return fs
     .readdirSync(dir)
-    .filter((name) => name.startsWith(`.${basename}.`) && name.endsWith('.staging'));
+    .filter((name) => name.startsWith(`.${basename}.`) && name.endsWith('.tmp'));
 }
 
 test('writeGeneratedFile writes content and creates parent directories', (t) => {
@@ -28,8 +28,8 @@ test('writeGeneratedFile writes content and creates parent directories', (t) => 
   writeGeneratedFile(target, 'hello world\n');
 
   assert.equal(fs.readFileSync(target, 'utf8'), 'hello world\n');
-  // No staging sibling is left behind on success.
-  assert.deepEqual(stagingSiblings(path.dirname(target), target), []);
+  // No temp sibling is left behind on success.
+  assert.deepEqual(tempSiblings(path.dirname(target), target), []);
 });
 
 test('writeGeneratedFile atomically replaces an existing file', (t) => {
@@ -40,18 +40,18 @@ test('writeGeneratedFile atomically replaces an existing file', (t) => {
   writeGeneratedFile(target, 'new content\n');
 
   assert.equal(fs.readFileSync(target, 'utf8'), 'new content\n');
-  assert.deepEqual(stagingSiblings(root, target), []);
+  assert.deepEqual(tempSiblings(root, target), []);
 });
 
-test('writeGeneratedFile cleans up the staging file when the rename fails', (t) => {
+test('writeGeneratedFile refuses a directory target and leaves it untouched with no temp', (t) => {
   const root = makeSandbox(t);
-  // Target path is an existing directory, so renaming a file onto it fails (EISDIR).
+  // A non-regular target (here a directory) is rejected before any temp is staged.
   const target = path.join(root, 'command.md');
   fs.mkdirSync(target);
 
-  assert.throws(() => writeGeneratedFile(target, 'content\n'));
+  assert.throws(() => writeGeneratedFile(target, 'content\n'), /non-regular/);
 
-  // The directory target is untouched, and no orphaned staging file remains.
+  // The directory target is untouched, and no orphaned temp remains.
   assert.equal(fs.statSync(target).isDirectory(), true);
-  assert.deepEqual(stagingSiblings(root, target), []);
+  assert.deepEqual(tempSiblings(root, target), []);
 });
