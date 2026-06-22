@@ -6,7 +6,7 @@ English | [简体中文](README.zh-CN.md)
 [![node](https://img.shields.io/node/v/@xenonbyte/drfx.svg)](https://nodejs.org)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-> Install document and code review-fix routes into Claude Code, Codex, and Gemini.
+> Install document and code review-fix routes into Claude Code, Codex, Gemini, and opencode.
 
 ## Introduction
 
@@ -29,13 +29,14 @@ It is built for repeatable, auditable review: every fix is confined to a declare
 | Claude Code | command file | Yes |
 | Codex | skill directory | Yes |
 | Gemini | TOML command | No — advisory read-only only |
+| opencode | command file | Yes |
 
 > [!WARNING]
-> Gemini routes are advisory read-only on every route: they never edit files, never run `review-and-fix`, and never claim a passing result. Use Claude Code or Codex for automatic fixing.
+> Gemini routes are advisory read-only on every route: they never edit files, never run `review-and-fix`, and never claim a passing result. Use Claude Code, Codex, or opencode for automatic fixing.
 
 ## Installation
 
-Requires Node.js 20 or newer and at least one supported agent platform (Claude Code, Codex, or Gemini). For automatic fixes, use `guard=git` with a tracked clean `HEAD` target, or `guard=snapshot` with a valid snapshot rollback anchor.
+Requires Node.js 20 or newer and at least one supported agent platform (Claude Code, Codex, Gemini, or opencode). For automatic fixes, use `guard=git` with a tracked clean `HEAD` target, or `guard=snapshot` with a valid snapshot rollback anchor.
 
 Install the package globally:
 
@@ -51,11 +52,11 @@ drfx help
 drfx doctor
 ```
 
-Install generated routes. `--platform` is optional — omit it to target all platforms (Claude, Codex, Gemini):
+Install generated routes. `--platform` is optional — omit it to target all platforms (Claude, Codex, Gemini, opencode):
 
 ```bash
 drfx install                                  # all platforms
-drfx install --platform claude,codex,gemini   # explicit list
+drfx install --platform claude,codex,gemini,opencode # explicit list
 drfx install --platform claude                # a single platform
 ```
 
@@ -100,7 +101,7 @@ The route name selects the review target. Document routes: do not pass `type=`. 
 
 ## Quick Start
 
-Review and automatically fix a SPEC document on Codex or Claude Code:
+Review and automatically fix a SPEC document on Codex, Claude Code, or opencode:
 
 ```text
 review-fix-spec docs/spec.md
@@ -159,7 +160,7 @@ Supported tokens:
 - `review-and-fix` reviews, triages, fixes accepted issues, checks the diff, and re-reviews.
 - `normal` uses default strictness.
 - `strict` makes low-severity findings blocking unless they are explicitly accepted as non-blocking.
-- `assurance=practical` uses live platform checks suitable for normal automatic fixing on Codex and Claude Code.
+- `assurance=practical` uses live platform checks suitable for normal automatic fixing on Codex, Claude Code, and opencode.
 - `assurance=strict-verified` requires same-flow `drfx doctor --platform <platform> --json` proof.
 - `assurance=advisory` allows read-only advisory review only.
 - `resume` continues from target-local state.
@@ -179,7 +180,7 @@ review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [res
 ```
 
 - `base=<branch>` is required. The diff is `base..HEAD`, resolved locally with no fetch, push, or ref mutation.
-- `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code and Codex; advisory read-only on Gemini).
+- `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code, Codex, and opencode; advisory read-only on Gemini).
 - `guard=git` is the default; use `guard=snapshot` when a Git rollback anchor is unavailable. The route never silently switches guard modes.
 - `resume` explicitly continues from saved state. Stale state is refused; there is no silent reuse.
 - `reset` archives the existing target state (moved to `.drfx/archived/`, never deleted) and starts a fresh review. It is the explicit escape when stale state can no longer be resumed (for example after an exclusion-policy change shifted the file set). `resume` and `reset` are mutually exclusive.
@@ -201,7 +202,7 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 - Version-control-ignored files are excluded automatically: one local read-only git query (`git ls-files --others --ignored --exclude-standard`) captures the full gitignore stack — nested `.gitignore` files, the global excludes file, and `.git/info/exclude` — with git's own semantics, so tracked files are never version-ignored. In a non-git root this source is simply absent and only the built-in and `.drfxignore` exclusions apply. The two ignore sources are independent: a `.drfxignore` negation cannot re-include a version-ignored path — use an explicit `scope=` for that.
 - A project-root `.drfxignore` file adds user-level exclusions using `.gitignore` syntax: `#` comments, blank lines, `!` negation with last-match-wins, leading-`/` anchoring, trailing-`/` directory-only patterns, and `*` / `?` / `[...]` / `**` globs. Only the root file is read (no nested ignore files), and it must be a regular file (a symlinked `.drfxignore` is refused). The pattern lines — order included, since negation is last-match-wins — are part of the review-target identity: editing `.drfxignore` produces a different review target, so existing state cannot be resumed across the change — start fresh (or `reset`). Raw pattern text is not stored in workflow state; ordered digests carry identity and user-facing output uses redacted pattern text.
 - Explicit `scope=` always wins: a scoped directory or file is reviewed even when an ignore source covers it (the override is reported, never silent). Inside a scoped directory, independently matching ignore rules still apply.
-- `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code and Codex; advisory read-only on Gemini).
+- `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code, Codex, and opencode; advisory read-only on Gemini).
 - `guard=git` is the default; use `guard=snapshot` when a Git rollback anchor is unavailable. The route never silently switches guard modes.
 - `resume` explicitly continues from saved state. Stale state is refused; there is no silent reuse.
 - `reset` archives the existing target state (moved to `.drfx/archived/`, never deleted) and starts a fresh review. It is the explicit escape when stale state can no longer be resumed (for example after an exclusion-policy change shifted the file set). `resume` and `reset` are mutually exclusive.
@@ -227,7 +228,7 @@ Parsing is strict:
 - Paths with spaces must be passed as one shell-quoted token.
 - Natural-language input is accepted only when target and reference roles are unambiguous.
 
-For valid target invocations, Codex and Claude Code routes default missing mode to `review-and-fix` and missing assurance to `practical`. Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code. Gemini routes default missing mode to `read-only` and missing assurance to `advisory`.
+For valid target invocations, Codex, Claude Code, and opencode routes default missing mode to `review-and-fix` and missing assurance to `practical`. Explicit `assurance=advisory` without mode selects `read-only` on Codex, Claude Code, and opencode. Gemini routes default missing mode to `read-only` and missing assurance to `advisory`.
 
 Help-style or invalid invocations explain usage only and must not read files, run `drfx workflow`, create state, run probes, or declare review results.
 
@@ -251,7 +252,7 @@ Help-style or invalid invocations explain usage only and must not read files, ru
 
 Gemini supports advisory read-only review. Gemini does not support `review-and-fix` or `assurance=strict-verified`.
 
-Code routes (`review-fix-pr`, `review-fix-code`) on Gemini are advisory-only: `review-and-fix` is unsupported, `rounds=<n>` is not accepted, workflow PASS is unavailable, and automatic fixing never runs. Use Claude Code or Codex for automatic code fixing.
+Code routes (`review-fix-pr`, `review-fix-code`) on Gemini are advisory-only: `review-and-fix` is unsupported, `rounds=<n>` is not accepted, workflow PASS is unavailable, and automatic fixing never runs. Use Claude Code, Codex, or opencode for automatic code fixing.
 
 `read-only` paths never claim PASS and create no auto-fix state, on any platform.
 
@@ -273,7 +274,7 @@ Issues:
   Problem: The acceptance criteria do not define the empty-state behavior.
   Why it matters: Implementers can ship incompatible behavior.
   Suggested fix: Add explicit empty-state acceptance criteria.
-Next: Apply fixes manually or rerun on Codex/Claude Code in review-and-fix mode.
+Next: Apply fixes manually or rerun on Codex/Claude Code/opencode in review-and-fix mode.
 ```
 
 Successful review-and-fix:
@@ -487,7 +488,7 @@ Remove stale `RULE.md` files. Unknown Markdown files under `.drfx/rules/` and `~
 
 `Unsupported: review-and-fix or strict-verified is unavailable on Gemini.`
 
-Use Gemini for advisory read-only review, or use Codex/Claude Code for automatic fixing. For code routes (`review-fix-pr`, `review-fix-code`), Gemini is advisory-only on all platforms: `review-and-fix` is unsupported, workflow PASS is unavailable, and no files are edited. Use Claude Code or Codex for code route automatic fixing.
+Use Gemini for advisory read-only review, or use Codex/Claude Code/opencode for automatic fixing. For code routes (`review-fix-pr`, `review-fix-code`), Gemini is advisory-only on all platforms: `review-and-fix` is unsupported, workflow PASS is unavailable, and no files are edited. Use Claude Code, Codex, or opencode for code route automatic fixing.
 
 `Unfixed:` appears after review-and-fix.
 

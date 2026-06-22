@@ -18,7 +18,7 @@ The fix loop is bounded: after a deterministic fix-attempt cap (default 5 fixes 
 
 The generated route coordinates host LLM work with deterministic `drfx workflow ...` commands. The CLI validates inputs, guards, state, tokens, and machine payload shapes. It does not perform semantic review, semantic triage, target edits, diff judgment, or final coordinator agreement.
 
-Generated Codex and Claude Code routes default a valid target invocation to `review-and-fix assurance=practical` when mode and assurance are omitted. Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code. Generated Gemini routes default a valid target invocation to `read-only assurance=advisory`. Help-style or invalid invocations explain usage only and must not read target/reference bodies, run workflow commands, run probes, create state, or declare a review result.
+Generated Codex, Claude Code, and opencode routes default a valid target invocation to `review-and-fix assurance=practical` when mode and assurance are omitted. Explicit `assurance=advisory` without mode selects `read-only` on Codex, Claude Code, and opencode. Generated Gemini routes default a valid target invocation to `read-only assurance=advisory`. Help-style or invalid invocations explain usage only and must not read target/reference bodies, run workflow commands, run probes, create state, or declare a review result.
 
 Usage prefers a bare path target: `review-fix-spec docs/spec.md`. The full form `target=<path>` remains supported; a bare path is shorthand for `target=<path>`. `guard=git|snapshot` selects the rollback and target-only guard family. `guard=snapshot` monitors the target, explicit `ref=` documents, ordinary project files, and unrelated file symlinks as opaque entries. Well-known infrastructure directories (`.git`, `node_modules`, `.pnpm-store`, `.yarn`, `.cache`, `dist`, `build`, `coverage`) are excluded from monitoring unless the target or a reference lives inside one; when any directory is excluded the guard reports `monitorScope: project-tree-files-and-references-excluding-infrastructure`. Directory symlinks are not supported and block the guard. Opaque file-symlink entries are checked by symlink metadata and `readlink` target text, but they do not detect writes made through the symlink to its resolved target; directory symlinks remain unsupported for that reason.
 
@@ -203,7 +203,7 @@ Internal workflow final-response payload machine block:
 ```text
 Final status: pass | read-only-clean | read-only-findings | stopped-with-deferrals | stopped-no-progress | blocked | unsupported | externally-changed | possible-target-replacement | checkpoint
 Assurance: practical | strict-verified | advisory
-Runtime platform: codex | claude-code | gemini | manual
+Runtime platform: codex | claude-code | gemini | opencode | manual
 Mode: review-and-fix | read-only
 Target: <target path for document routes, or none for PR/CODE file-set routes>
 Files changed: <none, the exact target path for document routes, or comma-separated in-set relative paths for PR/CODE file-set routes>
@@ -223,7 +223,7 @@ Default user output uses concise Route Output after workflow finalization. It mu
 
 ## Read-Only Behavior
 
-In `read-only` mode, review and triage only. Do not modify the target document, resolved file set, or reference documents. If blocking findings remain, stop as `read-only-findings`. Codex and Claude Code routes may tell users to rerun the same route with `review-and-fix`; Gemini routes must tell users to apply fixes manually or rerun with a Codex/Claude Code review-and-fix route.
+In `read-only` mode, review and triage only. Do not modify the target document, resolved file set, or reference documents. If blocking findings remain, stop as `read-only-findings`. Codex, Claude Code, and opencode routes may tell users to rerun the same route with `review-and-fix`; Gemini routes must tell users to apply fixes manually or rerun with a Codex/Claude Code/opencode review-and-fix route.
 
 One-shot `read-only` without `ledger=`, without `resume`, and without `reset` must not create `.drfx`, `MANIFEST.md`, `ISSUES.md`, `CONTINUITY.md`, `SUMMARY.md`, or `rounds/`. Keep fingerprints in memory unless a guard failure must be reported.
 

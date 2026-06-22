@@ -38,7 +38,7 @@ Full form: review-fix-pr base=<branch> ... . base=<branch> is required and names
 
 This route accepts only base=<branch>, optional read-only, optional guard=git|snapshot, optional root=<project-root>, and optional debug. It does not accept ref=, strict, normal, assurance=, ledger=, or rounds=. Explicit review-and-fix is unsupported on Gemini and must render the unsupported result instead of starting a fix loop.
 
-This is a Gemini code route and is advisory-only. When no mode token is present, materialize read-only. When no assurance token is present, materialize advisory. Use Claude Code or Codex for review-and-fix. workflow PASS is unavailable; Gemini must not claim workflow PASS and must not run automatic fixes.
+This is a Gemini code route and is advisory-only. When no mode token is present, materialize read-only. When no assurance token is present, materialize advisory. Use Claude Code, Codex, or opencode for review-and-fix. workflow PASS is unavailable; Gemini must not claim workflow PASS and must not run automatic fixes.
 
 Help-style or invalid invocations explain usage only. Do not read changed files, do not run workflow commands, do not run probes, do not create state, and do not declare a review result.
 
@@ -62,7 +62,7 @@ Issues:
   Problem: <specific problem>
   Fix: <suggested correction>
 
-Next: apply fixes manually, or rerun with a Codex/Claude Code review-and-fix route.
+Next: apply fixes manually, or rerun with a Codex/Claude Code/opencode review-and-fix route.
 ```
 
 For clean read-only runs:
@@ -79,7 +79,7 @@ For unsupported review-and-fix or strict-verified requests:
 Unsupported: <target> requested a mode or assurance unavailable on Gemini.
 
 Reason: review-and-fix or strict-verified is unavailable on Gemini.
-Next: rerun with Codex or Claude Code for review-and-fix, or use read-only advisory review.
+Next: rerun with Codex, Claude Code, or opencode for review-and-fix, or use read-only advisory review.
 ```
 
 For blocked advisory runs:

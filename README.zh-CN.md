@@ -6,7 +6,7 @@
 [![node](https://img.shields.io/node/v/@xenonbyte/drfx.svg)](https://nodejs.org)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-> 把 document 和 code review-fix routes 安装进 Claude Code、Codex 和 Gemini。
+> 把 document 和 code review-fix routes 安装进 Claude Code、Codex、Gemini 和 opencode。
 
 ## Introduction
 
@@ -29,13 +29,14 @@
 | Claude Code | command file | 支持 |
 | Codex | skill directory | 支持 |
 | Gemini | TOML command | 不支持 —— 仅 advisory read-only |
+| opencode | command file | 支持 |
 
 > [!WARNING]
-> Gemini 在所有 route 上都是 advisory read-only：从不编辑文件、从不运行 `review-and-fix`、也从不声称通过结果。需要自动修复请用 Claude Code 或 Codex。
+> Gemini 在所有 route 上都是 advisory read-only：从不编辑文件、从不运行 `review-and-fix`、也从不声称通过结果。需要自动修复请用 Claude Code、Codex 或 opencode。
 
 ## Installation
 
-需要 Node.js 20 或更新版本，以及至少一个支持的平台（Claude Code、Codex 或 Gemini）。自动修复可使用 `guard=git` 搭配 tracked、clean、由 `HEAD` 支撑的目标文件，或使用 `guard=snapshot` 搭配 valid snapshot rollback anchor。
+需要 Node.js 20 或更新版本，以及至少一个支持的平台（Claude Code、Codex、Gemini 或 opencode）。自动修复可使用 `guard=git` 搭配 tracked、clean、由 `HEAD` 支撑的目标文件，或使用 `guard=snapshot` 搭配 valid snapshot rollback anchor。
 
 全局安装 package：
 
@@ -51,11 +52,11 @@ drfx help
 drfx doctor
 ```
 
-安装 generated routes。`--platform` 可选 —— 省略即面向全部平台（Claude、Codex、Gemini）：
+安装 generated routes。`--platform` 可选 —— 省略即面向全部平台（Claude、Codex、Gemini、opencode）：
 
 ```bash
 drfx install                                  # 全部平台
-drfx install --platform claude,codex,gemini   # 显式列表
+drfx install --platform claude,codex,gemini,opencode # 显式列表
 drfx install --platform claude                # 单个平台
 ```
 
@@ -100,7 +101,7 @@ review-fix-code   source scope file set
 
 ## Quick Start
 
-在 Codex 或 Claude Code 上 review 并自动修复 SPEC 文档：
+在 Codex、Claude Code 或 opencode 上 review 并自动修复 SPEC 文档：
 
 ```text
 review-fix-spec docs/spec.md
@@ -159,7 +160,7 @@ Supported tokens:
 - `review-and-fix` 执行 review、triage、fix、diff review 和 full re-review。
 - `normal` 使用默认 strictness。
 - `strict` 让 low-severity findings 阻断，除非它们被显式接受为 non-blocking。
-- `assurance=practical` 使用适合 Codex 和 Claude Code 常规自动修复的 live platform checks。
+- `assurance=practical` 使用适合 Codex、Claude Code 和 opencode 常规自动修复的 live platform checks。
 - `assurance=strict-verified` 要求 same-flow `drfx doctor --platform <platform> --json` proof。
 - `assurance=advisory` 仅允许 read-only advisory review。
 - `resume` 从 target-local state 继续。
@@ -179,7 +180,7 @@ review-fix-pr base=<branch> [read-only|review-and-fix] [guard=git|snapshot] [res
 ```
 
 - `base=<branch>` 为必填。diff 为 `base..HEAD`，使用本地 git 解析，no fetch、push 或 ref mutation。
-- `read-only` 或 `review-and-fix`（Claude Code 和 Codex 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
+- `read-only` 或 `review-and-fix`（Claude Code、Codex 和 opencode 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
 - `guard=git` 为默认值；Git rollback anchor 不可用时使用 `guard=snapshot`。路由永远不会静默切换 guard mode。
 - `resume` 显式从已保存的 state 继续。拒绝 stale state，不存在静默复用。
 - `reset` 归档现有 target state（移到 `.drfx/archived/`，绝不删除）并全新开始 review。当 stale state 已无法 resume 时（例如排除策略变化改变了 file set），这是显式的逃生口。`resume` 与 `reset` 互斥。
@@ -201,7 +202,7 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 - 版本忽略的文件自动排除：通过一次本地只读 git 查询（`git ls-files --others --ignored --exclude-standard`）捕获完整的 gitignore 体系——嵌套 `.gitignore`、全局 excludes 文件、`.git/info/exclude`——并沿用 git 自身语义，因此 **tracked 文件永远不会被版本忽略**。非 git 根目录下该来源自然缺位，仅内置排除与 `.drfxignore` 生效。两个忽略来源相互独立：`.drfxignore` 的 `!` 否定无法复活被版本忽略的路径——需要时请用显式 `scope=`。
 - 项目根的 `.drfxignore` 文件提供用户级排除，**语法与 `.gitignore` 一致**：`#` 注释、空行、`!` 否定（后匹配规则胜出）、前导 `/` 锚定、尾随 `/` 仅匹配目录，以及 `*` / `?` / `[...]` / `**` glob。仅读取根目录这一个文件（不支持嵌套 ignore 文件），且必须是常规文件（符号链接形式的 `.drfxignore` 会被拒绝）。pattern 行（包含顺序——否定是后匹配胜出）参与 review-target 身份：修改 `.drfxignore` 即产生不同的 review target，旧状态无法跨该变更 resume——请全新开始（或 `reset`）。Raw pattern text 不会写入 workflow state；身份由有序 digest 承载，用户可见输出使用 redacted pattern text。
 - 显式 `scope=` 永远优先：被 scope 指定的目录或文件即使被忽略来源覆盖也会纳入审查（覆盖会被报告，绝不静默）。scope 目录内部独立命中的忽略规则仍然生效。
-- `read-only` 或 `review-and-fix`（Claude Code 和 Codex 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
+- `read-only` 或 `review-and-fix`（Claude Code、Codex 和 opencode 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
 - `guard=git` 为默认值；Git rollback anchor 不可用时使用 `guard=snapshot`。路由永远不会静默切换 guard mode。
 - `resume` 显式从已保存的 state 继续。拒绝 stale state，不存在静默复用。
 - `reset` 归档现有 target state（移到 `.drfx/archived/`，绝不删除）并全新开始 review。当 stale state 已无法 resume 时（例如排除策略变化改变了 file set），这是显式的逃生口。`resume` 与 `reset` 互斥。
@@ -227,7 +228,7 @@ Parsing 是 strict 的：
 - 含空格的 paths 必须作为一个 shell-quoted token 传入。
 - Natural-language input 只有在 target 和 reference roles 明确时才被接受。
 
-对 valid target invocations，Codex 和 Claude Code routes 会把缺失的 mode 默认为 `review-and-fix`，把缺失的 assurance 默认为 `practical`。显式 `assurance=advisory` 且未传 mode 时，在 Codex 和 Claude Code 上选择 `read-only`。Gemini routes 默认缺失 mode 为 `read-only`，缺失 assurance 为 `advisory`。
+对 valid target invocations，Codex、Claude Code 和 opencode routes 会把缺失的 mode 默认为 `review-and-fix`，把缺失的 assurance 默认为 `practical`。显式 `assurance=advisory` 且未传 mode 时，在 Codex、Claude Code 和 opencode 上选择 `read-only`。Gemini routes 默认缺失 mode 为 `read-only`，缺失 assurance 为 `advisory`。
 
 Help-style 或 invalid invocations 只解释用法，不得读取文件、运行 `drfx workflow`、创建 state、运行 probes，或声明 review results。
 
@@ -251,7 +252,7 @@ Help-style 或 invalid invocations 只解释用法，不得读取文件、运行
 
 Gemini 支持 advisory read-only review。Gemini 不支持 `review-and-fix` 或 `assurance=strict-verified`。
 
-Code routes（`review-fix-pr`、`review-fix-code`）在 Gemini 上为 advisory-only：`review-and-fix` 不支持，`rounds=<n>` 不接受，workflow PASS 不可用，自动修复永远不会运行。如需 code route 自动修复，请使用 Claude Code 或 Codex。
+Code routes（`review-fix-pr`、`review-fix-code`）在 Gemini 上为 advisory-only：`review-and-fix` 不支持，`rounds=<n>` 不接受，workflow PASS 不可用，自动修复永远不会运行。如需 code route 自动修复，请使用 Claude Code、Codex 或 opencode。
 
 `read-only` 路径在任何平台上都不声明 PASS，也不创建 auto-fix state。
 
@@ -273,7 +274,7 @@ Issues:
   Problem: The acceptance criteria do not define the empty-state behavior.
   Why it matters: Implementers can ship incompatible behavior.
   Suggested fix: Add explicit empty-state acceptance criteria.
-Next: Apply fixes manually or rerun on Codex/Claude Code in review-and-fix mode.
+Next: Apply fixes manually or rerun on Codex/Claude Code/opencode in review-and-fix mode.
 ```
 
 Successful review-and-fix:
@@ -487,7 +488,7 @@ Guard blocker wording:
 
 `Unsupported: review-and-fix or strict-verified is unavailable on Gemini.`
 
-使用 Gemini 进行 advisory read-only review，或使用 Codex/Claude Code 自动修复。对于 code routes（`review-fix-pr`、`review-fix-code`），Gemini 在所有平台上均为 advisory-only：`review-and-fix` 不支持，workflow PASS 不可用，不会编辑任何文件。如需 code route 自动修复，请使用 Claude Code 或 Codex。
+使用 Gemini 进行 advisory read-only review，或使用 Codex/Claude Code/opencode 自动修复。对于 code routes（`review-fix-pr`、`review-fix-code`），Gemini 在所有平台上均为 advisory-only：`review-and-fix` 不支持，workflow PASS 不可用，不会编辑任何文件。如需 code route 自动修复，请使用 Claude Code、Codex 或 opencode。
 
 `Unfixed:` appears after review-and-fix.
 

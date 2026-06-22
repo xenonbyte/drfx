@@ -51,7 +51,7 @@ Shared fields (all kinds):
 - Strictness: `normal` or `strict`.
 - Mode: `review-and-fix` or `read-only`.
 - Assurance: `practical`, `strict-verified`, or `advisory`.
-- Runtime platform: `codex`, `claude-code`, `gemini`, or `manual`.
+- Runtime platform: `codex`, `claude-code`, `gemini`, `opencode`, or `manual`.
 - Runtime subagent probe, stdin handoff, fingerprint guard, downgrade reason, assurance proof, blocking reason, and status reason.
 - Target key.
 - Ledger path, defaulting to `.drfx/targets/<target-key>/ISSUES.md`.

@@ -154,6 +154,43 @@ test('shared core contains canonical loop and no runtime memory dependency', () 
   assert.match(core, /must not depend/i);
 });
 
+test('shared platform contract includes opencode in source and generated opencode routes', () => {
+  const core = read('shared/core.md');
+  const longTask = read('shared/long-task.md');
+
+  assert.match(
+    core,
+    /Generated Codex, Claude Code, and opencode routes default a valid target invocation to `review-and-fix assurance=practical`/
+  );
+  assert.match(
+    core,
+    /Explicit `assurance=advisory` without mode selects `read-only` on Codex, Claude Code, and opencode/
+  );
+  assert.match(core, /Runtime platform: codex \| claude-code \| gemini \| opencode \| manual/);
+  assert.match(longTask, /Runtime platform: `codex`, `claude-code`, `gemini`, `opencode`, or `manual`/);
+
+  for (const route of listRoutes()) {
+    const rendered = renderPlatformRoute('opencode', route.routeName, { packageVersion: '0.0.0-test' });
+    const embedded = extractEmbeddedSharedContent('opencode', rendered);
+
+    assert.match(
+      embedded,
+      /Generated Codex, Claude Code, and opencode routes default a valid target invocation/,
+      `opencode:${route.routeName} embedded core default policy must include opencode`
+    );
+    assert.match(
+      embedded,
+      /Runtime platform: codex \| claude-code \| gemini \| opencode \| manual/,
+      `opencode:${route.routeName} embedded final-response platform enum must include opencode`
+    );
+    assert.match(
+      embedded,
+      /Runtime platform: `codex`, `claude-code`, `gemini`, `opencode`, or `manual`/,
+      `opencode:${route.routeName} embedded manifest platform enum must include opencode`
+    );
+  }
+});
+
 test('shared core specifies reviewer mutation detection without requiring a second reviewer', () => {
   const core = read('shared/core.md');
 
@@ -772,7 +809,7 @@ test('gemini route output stays advisory-only concise', () => {
   assert.match(geminiTemplate, /Unsupported:/);
   assert.match(geminiTemplate, /Blocked:/);
   assert.match(geminiTemplate, /apply fixes manually/i);
-  assert.match(geminiTemplate, /Codex\/Claude Code review-and-fix route/i);
+  assert.match(geminiTemplate, /Codex\/Claude Code\/opencode review-and-fix route/i);
   assert.match(geminiTemplate, /review-and-fix or strict-verified is unavailable on Gemini/i);
   assert.doesNotMatch(geminiTemplate, /Next: rerun with review-and-fix to apply fixes/i);
   assert.doesNotMatch(geminiTemplate, /For fixed findings/i);
@@ -886,13 +923,14 @@ test('rendered route text omits stale missing-mode explain-only contract', () =>
   const renderedRoutes = [
     renderPlatformRoute('codex', 'review-fix-spec', { packageVersion: '0.0.0-test' }),
     renderPlatformRoute('claude', 'review-fix-spec', { packageVersion: '0.0.0-test' }),
+    renderPlatformRoute('opencode', 'review-fix-spec', { packageVersion: '0.0.0-test' }),
     renderPlatformRoute('gemini', 'review-fix-spec', { packageVersion: '0.0.0-test' })
   ].join('\n\n--- rendered route boundary ---\n\n');
 
   assert.doesNotMatch(renderedRoutes, /omits `?read-only`? and `?review-and-fix`?[^.]*explains usage only/i);
   assert.doesNotMatch(renderedRoutes, new RegExp('Without an explicit mode token' + ', explain usage only', 'i'));
-  assert.match(renderedRoutes, /Codex and Claude Code routes default a valid target invocation to `review-and-fix assurance=practical`/);
-  assert.match(renderedRoutes, /Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code/);
+  assert.match(renderedRoutes, /Codex, Claude Code, and opencode routes default a valid target invocation to `review-and-fix assurance=practical`/);
+  assert.match(renderedRoutes, /Explicit `assurance=advisory` without mode selects `read-only` on Codex, Claude Code, and opencode/);
   assert.match(renderedRoutes, /Gemini routes default a valid target invocation to `read-only assurance=advisory`/);
   assert.match(renderedRoutes, /Help-style or invalid invocations explain usage only and must not read target\/reference bodies, run workflow commands, run probes, create state, or declare a review result/);
 });
@@ -920,7 +958,7 @@ test('rendered gemini route keeps advisory next actions reachable', () => {
   const geminiRoute = renderPlatformRoute('gemini', 'review-fix-spec', { packageVersion: '0.0.0-test' });
 
   assert.match(geminiRoute, /apply fixes manually/i);
-  assert.match(geminiRoute, /Codex\/Claude Code review-and-fix route/i);
+  assert.match(geminiRoute, /Codex\/Claude Code\/opencode review-and-fix route/i);
   assert.match(geminiRoute, /review-and-fix or strict-verified is unavailable on Gemini/i);
   assert.doesNotMatch(geminiRoute, /Next: rerun with review-and-fix to apply fixes/i);
   assert.doesNotMatch(geminiRoute, /rerun in `review-and-fix` mode/i);
@@ -1025,8 +1063,8 @@ test('public docs no longer teach legacy RULE.md as supported configuration', ()
 test('README documents v3 invocation defaults and explain-only boundary', () => {
   const readme = read('README.md');
 
-  assert.match(readme, /Codex and Claude Code routes default missing mode to `review-and-fix` and missing assurance to `practical`/);
-  assert.match(readme, /Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code/);
+  assert.match(readme, /Codex, Claude Code, and opencode routes default missing mode to `review-and-fix` and missing assurance to `practical`/);
+  assert.match(readme, /Explicit `assurance=advisory` without mode selects `read-only` on Codex, Claude Code, and opencode/);
   assert.match(readme, /Gemini routes default missing mode to `read-only` and missing assurance to `advisory`/);
   assert.match(readme, /Help-style or invalid invocations[\s\S]*explain usage only[\s\S]*must not read files[\s\S]*run `drfx workflow`[\s\S]*create state[\s\S]*run probes[\s\S]*declare review results/);
 });
@@ -1087,7 +1125,7 @@ test('source skills individually document v3 defaults and concise debug output',
     assert.match(skill, /Valid target invocations may omit mode/, relativePath);
     assert.match(skill, /select `review-and-fix assurance=practical` by default when mode and assurance are omitted/, relativePath);
     assert.match(skill, /missing mode selects `review-and-fix` and missing assurance selects `practical`/, relativePath);
-    assert.match(skill, /Explicit `assurance=advisory` without mode selects `read-only` on Codex and Claude Code/, relativePath);
+    assert.match(skill, /Explicit `assurance=advisory` without mode selects `read-only` on Codex, Claude Code, and opencode/, relativePath);
     assert.match(skill, /Gemini generated routes select `read-only assurance=advisory` by default/, relativePath);
     assert.match(skill, /Help-style or invalid invocations explain usage only and do not read files, run workflow commands, run probes, create state, or declare review results/, relativePath);
     assert.match(skill, /Pass `debug` to print redacted workflow audit details/, relativePath);
