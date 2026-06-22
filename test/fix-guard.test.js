@@ -13,7 +13,8 @@ const {
   formatFixGuardReport,
   parsePorcelainStatus,
   classifyFileSetChanges,
-  checkFileSetWorktree
+  checkFileSetWorktree,
+  runGit
 } = require('../lib/fix-guard');
 const { formatLedger, parseLedger } = require('../lib/ledger');
 const { readLease } = require('../lib/lock');
@@ -219,6 +220,40 @@ test('git rollback anchor blocks tracked symlink target as rollback-unavailable'
   assert.throws(
     () => checkGitRollbackAnchor({ projectRoot: root, targetPath: target }),
     (error) => error.blockingReason === 'rollback-unavailable'
+  );
+});
+
+for (const subcommand of ['fetch', 'push', 'remote', 'branch', 'checkout', 'reset', 'commit']) {
+  test(`runGit refuses non-read-only git subcommand: ${subcommand}`, () => {
+    assert.throws(
+      () => runGit(os.tmpdir(), [subcommand, '--anything'], 'rollback-unavailable'),
+      (error) =>
+        error.blockingReason === 'rollback-unavailable' &&
+        error.code === 'ERR_ROLLBACK_UNAVAILABLE' &&
+        new RegExp(`non-read-only git subcommand: ${subcommand}`).test(error.message)
+    );
+  });
+}
+
+test('runGit propagates the caller blocking reason for a rejected subcommand', () => {
+  assert.throws(
+    () => runGit(os.tmpdir(), ['push'], 'target-only-guard-unavailable'),
+    (error) =>
+      error.blockingReason === 'target-only-guard-unavailable' &&
+      error.code === 'ERR_TARGET_ONLY_GUARD_UNAVAILABLE'
+  );
+});
+
+test('runGit allows whitelisted read-only subcommands to run', (t) => {
+  const { root } = makeGitRepo(t);
+  assert.equal(
+    runGit(root, ['rev-parse', '--is-inside-work-tree'], 'rollback-unavailable').trim(),
+    'true'
+  );
+  // ls-files and status are also on the allowlist and must not be rejected by the guard.
+  assert.doesNotThrow(() => runGit(root, ['ls-files'], 'rollback-unavailable'));
+  assert.doesNotThrow(() =>
+    runGit(root, ['status', '--porcelain=v1', '--untracked-files=all'], 'rollback-unavailable')
   );
 });
 

@@ -40,7 +40,7 @@ const {
   installPlatform,
   uninstallPlatform
 } = require('../lib/install');
-const { runCheck, formatCheckReport } = require('../lib/check');
+const { runCheck, formatCheckReport, sweepStaleDoctorTempDirs } = require('../lib/check');
 
 const PACKAGE_VERSION = '0.1.1';
 const FIXTURE_DIR = path.join(__dirname, 'fixtures', 'descriptors');
@@ -1123,6 +1123,79 @@ test('runCheck json mode returns current-run descriptor metadata', async (t) => 
     assert.equal(report.descriptor.provenance.runId, result.runId);
     assert.equal(report.validation.passCapable, false);
   }
+});
+
+test('sweepStaleDoctorTempDirs removes only stale drfx-doctor dirs and preserves active dirs', (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-sweep-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  const staleTime = new Date(Date.now() - 25 * 60 * 60 * 1000);
+
+  // Stale descriptor temp dirs (with content) left by prior --json doctor runs.
+  const staleA = path.join(tmpDir, 'drfx-doctor-aaaaaa');
+  const staleB = path.join(tmpDir, 'drfx-doctor-bbbbbb');
+  fs.mkdirSync(staleA);
+  fs.mkdirSync(staleB);
+  fs.writeFileSync(path.join(staleA, 'claude.json'), '{}');
+  fs.utimesSync(staleA, staleTime, staleTime);
+  fs.utimesSync(staleB, staleTime, staleTime);
+
+  // A recent descriptor temp dir may belong to another active strict proof flow.
+  const active = path.join(tmpDir, 'drfx-doctor-active');
+  fs.mkdirSync(active);
+  fs.writeFileSync(path.join(active, 'codex.json'), '{}');
+
+  // Unrelated siblings that must survive the sweep.
+  const otherDir = path.join(tmpDir, 'drfx-capability-probe-keep');
+  fs.mkdirSync(otherDir);
+  const namesakeFile = path.join(tmpDir, 'drfx-doctor-not-a-dir');
+  fs.writeFileSync(namesakeFile, 'a regular file, not a temp dir');
+
+  sweepStaleDoctorTempDirs(tmpDir);
+
+  assert.equal(fs.existsSync(staleA), false);
+  assert.equal(fs.existsSync(staleB), false);
+  assert.equal(fs.existsSync(active), true);
+  assert.equal(fs.existsSync(otherDir), true);
+  assert.equal(fs.existsSync(namesakeFile), true);
+});
+
+test('sweepStaleDoctorTempDirs is a no-op on a missing tmpDir', () => {
+  const missing = path.join(os.tmpdir(), `drfx-sweep-missing-${process.pid}-${Date.now()}`);
+  assert.doesNotThrow(() => sweepStaleDoctorTempDirs(missing));
+});
+
+test('runCheck json mode sweeps stale descriptor dirs without deleting active proof dirs', async (t) => {
+  const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-doctor-tmp-'));
+  t.after(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  const staleTime = new Date(Date.now() - 25 * 60 * 60 * 1000);
+  const stale = path.join(tmpDir, 'drfx-doctor-stale-run');
+  fs.mkdirSync(stale);
+  fs.writeFileSync(path.join(stale, 'claude.json'), '{}');
+  fs.utimesSync(stale, staleTime, staleTime);
+
+  const active = path.join(tmpDir, 'drfx-doctor-active-run');
+  fs.mkdirSync(active);
+  fs.writeFileSync(path.join(active, 'codex.json'), '{}');
+
+  const result = await runCheck({
+    homeDir,
+    platformRoots,
+    cwd,
+    packageVersion: PACKAGE_VERSION,
+    platforms: ['claude'],
+    json: true,
+    tmpDir
+  });
+
+  assert.equal(fs.existsSync(stale), false);
+  assert.equal(fs.existsSync(active), true);
+  assert.equal(path.dirname(result.descriptorDirectory), tmpDir);
+  assert.equal(path.basename(result.descriptorDirectory).startsWith('drfx-doctor-'), true);
+  assert.notEqual(result.descriptorDirectory, stale);
+  assert.notEqual(result.descriptorDirectory, active);
 });
 
 test('generator exposes fixed route to document type mapping', () => {
