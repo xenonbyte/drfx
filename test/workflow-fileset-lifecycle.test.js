@@ -48,6 +48,18 @@ function makePrRepo(t) {
   return root;
 }
 
+function makeCodeRepoWithChunkedFile(t) {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-fs-chunk-fix-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  git(root, ['init', '-b', 'main']);
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 1;\n');
+  fs.writeFileSync(path.join(root, 'src', 'big.js'), Array.from({ length: 80 }, () => 'x').join('\n') + '\n');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'init']);
+  return root;
+}
+
 function makePrRepoWithDeletedFile(t) {
   const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-fs-delete-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -2139,6 +2151,20 @@ function writePartitionPlanForCodeTarget(targetStateDir) {
   return plan;
 }
 
+async function writeActiveChunkPartitionPlanForCodeTarget(root, targetStateDir) {
+  const inventoryResult = await resolveCodeInventory({ cwd: root, scopes: ['src'] });
+  const plan = assemblePartitionPlan({
+    inventory: inventoryResult.inventory,
+    projectReviewFingerprint: inventoryResult.projectReviewFingerprint,
+    userExcludes: inventoryResult.userExcludes,
+    projectRoot: root,
+    unitByteBudget: 100
+  });
+  assert.ok(plan.units.some((unit) => unit.oversize_chunk === true), 'test fixture must contain chunk units');
+  writeProjectReviewPlan(targetStateDir, plan);
+  return plan;
+}
+
 async function reachCodeFixStageWithBeginFix(t, { writePlan = false } = {}) {
   const root = makePrRepo(t);
   const args = practicalArgs(['review-fix-code', 'scope=src']);
@@ -2196,6 +2222,69 @@ test('partitioned CODE end-fix with an INACTIVE plan ignores extraReads-hit (fal
   assert.equal(endFix.ok, true, JSON.stringify(endFix));
   assert.equal(endFix.reviewMode, undefined, 'inactive plan must not surface partitioned reviewMode');
   assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'diff-review');
+});
+
+test('partitioned CODE end-fix re-splits a changed oversize chunk file', async (t) => {
+  const root = makeCodeRepoWithChunkedFile(t);
+  const args = practicalArgs(['review-fix-code', 'scope=src']);
+  const start = await reachFileSetFixStage(root, args);
+  const oldPlan = await writeActiveChunkPartitionPlanForCodeTarget(root, start.targetStateDir);
+  const manifestBeforeFix = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  manifestBeforeFix.fileSetFingerprint = oldPlan.projectReviewFingerprint;
+  fs.writeFileSync(start.manifestPath, formatManifestV2(manifestBeforeFix));
+  const oldChunkIds = oldPlan.units
+    .filter((unit) => unit.oversize_chunk === true && unit.sourcePath === 'src/big.js')
+    .map((unit) => unit.unit_id);
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    cwd: root,
+    now: new Date('2026-06-03T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  fs.writeFileSync(path.join(root, 'src', 'big.js'), Array.from({ length: 90 }, () => 'y').join('\n') + '\n');
+  const fixReport = [
+    'Fixed:',
+    '- ISSUE-001: Updated the chunked implementation.',
+    '',
+    'Files changed:',
+    '- src/big.js',
+    '',
+    'Not fixed:',
+    '- none',
+    '',
+    'Verification:',
+    '- node --check src/big.js: passed',
+    '',
+    'Residual risk:',
+    '- none identified'
+  ].join('\n');
+
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { cwd: root, stdin: fixReport });
+
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+  assert.equal(endFix.status, 'end-fix');
+  assert.equal(endFix.reviewMode, 'partitioned');
+  for (const unitId of oldChunkIds) {
+    assert.ok(endFix.invalidatedUnitIds.includes(unitId), `old chunk ${unitId} must be invalidated`);
+  }
+
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'checkpoint');
+  assert.equal(manifest.currentPhase, 'review');
+
+  const refreshedPlan = JSON.parse(fs.readFileSync(path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'));
+  assert.equal(manifest.fileSetFingerprint, refreshedPlan.projectReviewFingerprint);
+  const refreshedChunks = refreshedPlan.units.filter((unit) => unit.oversize_chunk === true && unit.sourcePath === 'src/big.js');
+  assert.ok(refreshedChunks.length > 0, 'changed chunked source must remain represented as chunks');
+  assert.ok(refreshedChunks.every((unit) => unit.sourceContentId !== oldPlan.units.find((old) => old.sourcePath === 'src/big.js').sourceContentId));
+  for (const unit of refreshedChunks) {
+    assert.ok(endFix.invalidatedUnitIds.includes(unit.unit_id), `refreshed chunk ${unit.unit_id} must be invalidated`);
+  }
 });
 
 test('partitioned CODE end-fix still blocks a fix that writes outside the recorded file set', async (t) => {

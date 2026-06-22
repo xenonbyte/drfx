@@ -751,6 +751,31 @@ test('splitOversizeFile: files beyond the chunkable byte cap stay legacy oversiz
   }
 });
 
+test('splitOversizeFile: files requiring too many chunks stay legacy oversize blockers', () => {
+  const root = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'drfx-chunk-count-cap-'));
+  try {
+    const fileName = 'tiny-lines.js';
+    const text = Array.from({ length: 81 }, () => 'x').join('\n') + '\n';
+    fs.writeFileSync(pathMod.join(root, fileName), text);
+
+    const chunks = splitOversizeFile({
+      projectRoot: root,
+      file: {
+        path: fileName,
+        size: Buffer.byteLength(text, 'utf8'),
+        contentId: 'tiny-lines-content',
+      },
+      chunkLines: 10,
+      overlapLines: 0,
+      chunkByteBudget: 100,
+    });
+
+    assert.equal(chunks, null, 'oversize text requiring a ninth chunk must not expand into unbounded units');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('aggregate: residualRisk is "none" when PASS, "present" otherwise', () => {
   const passSummaries = [makeSummary('unit-001')];
   const passResult = aggregate(passSummaries, []);
@@ -1030,19 +1055,58 @@ test('refreshPartitionPlanContent keeps chunk units intact when the parent conte
   assert.strictEqual(bigJsRows[0].contentId, 'B0', 'inventoryRows big.js contentId must be the file-level one');
 });
 
-test('refreshPartitionPlanContent throws when the oversize parent content changed', () => {
-  // big.js content changed from 'B0' to 'B1' => re-split required.
+test('refreshPartitionPlanContent refreshes oversize chunks when the parent content changed', () => {
+  // big.js content changed from 'B0' to 'B1'. The workflow layer has already
+  // re-split the file and passes those new chunk units into this pure refresh.
   const newInventory = [
     { path: 'a.js', size: 10, ext: '.js', contentId: 'ca0' },
     { path: 'big.js', size: 200, ext: '.js', contentId: 'B1' },
   ];
-  assert.throws(
-    () => refreshPartitionPlanContent(chunkBasePlan(), newInventory, {
-      nextSuggestedRefsByUnit: { 'unit-002': [] },
-      projectReviewFingerprint: 'FP1',
-    }),
-    (e) => e.code === 'ERR_PARTITION_MEMBERSHIP_CHANGED'
-  );
+  const nextChunks = [
+    {
+      oversize_chunk: true,
+      sourcePath: 'big.js',
+      sourceContentId: 'B1',
+      chunkIndex: 0,
+      chunkCount: 2,
+      files: [{ path: 'big.js', primaryLineRange: [1, 100], contextLineRange: [1, 110], size: 100, contentId: 'CHUNK_CID_1A' }],
+      member_count: 1,
+      member_bytes: 100,
+      member_digest: 'NEXT0',
+      suggestedRefs: [],
+    },
+    {
+      oversize_chunk: true,
+      sourcePath: 'big.js',
+      sourceContentId: 'B1',
+      chunkIndex: 1,
+      chunkCount: 2,
+      files: [{ path: 'big.js', primaryLineRange: [101, 200], contextLineRange: [91, 200], size: 100, contentId: 'CHUNK_CID_1B' }],
+      member_count: 1,
+      member_bytes: 100,
+      member_digest: 'NEXT1',
+      suggestedRefs: [],
+    },
+  ];
+
+  const { refreshedPlan } = refreshPartitionPlanContent(chunkBasePlan(), newInventory, {
+    nextSuggestedRefsByUnit: { 'unit-002': [] },
+    nextOversizeChunksByPath: new Map([['big.js', nextChunks]]),
+    projectReviewFingerprint: 'FP1',
+  });
+
+  const chunkUnits = refreshedPlan.units.filter((unit) => unit.oversize_chunk === true);
+  assert.deepEqual(chunkUnits.map((unit) => unit.unit_id), ['unit-001', 'unit-003']);
+  assert.deepEqual(chunkUnits.map((unit) => unit.sourceContentId), ['B1', 'B1']);
+  assert.deepEqual(chunkUnits.map((unit) => unit.chunkCount), [2, 2]);
+  assert.equal(chunkUnits[0].files[0].unit_id, 'unit-001');
+  assert.equal(chunkUnits[1].files[0].unit_id, 'unit-003');
+  assert.equal(refreshedPlan.units.find((unit) => unit.files.some((file) => file.path === 'a.js')).unit_id, 'unit-002');
+
+  const bigJsRows = refreshedPlan.inventoryRows.filter((row) => row.path === 'big.js');
+  assert.equal(bigJsRows.length, 1);
+  assert.equal(bigJsRows[0].contentId, 'B1');
+  assert.equal(bigJsRows[0].unit_id, 'unit-001');
 });
 
 // ---------------------------------------------------------------------------

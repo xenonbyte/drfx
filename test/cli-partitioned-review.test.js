@@ -1569,6 +1569,7 @@ test('applyPartitionedIncrement refreshes units.json, invalidates affected units
   });
 
   assert.equal(result.ok, true);
+  assert.match(result.nextAction, /backstop/i, 'bounded re-review guidance must include invalidated backstops');
   const manifest = parseManifestV2(fs.readFileSync(path.join(start.targetStateDir, 'MANIFEST.md'), 'utf8'));
   assert.equal(manifest.status, 'checkpoint');
   assert.equal(manifest.currentPhase, 'review');         // NOT 'unit-review' (illegal)
@@ -1578,6 +1579,55 @@ test('applyPartitionedIncrement refreshes units.json, invalidates affected units
   const survivor = oldPlan.units.find((u) => !u.files.some((f) => f.path === 'src/a.js')
     && !(u.suggestedRefs || []).some((r) => r.path === 'src/a.js'));
   assert.notEqual(readSummaryIfPresent(start.targetStateDir, survivor.unit_id), null);
+});
+
+test('applyPartitionedIncrement validates persisted member paths before reading bodies', async (t) => {
+  const root = makeMultiUnitRepo(t);
+  const start = await startPartitioned(root);
+  const metadata = resolveFileSetStateMetadata(start.targetStateDir);
+  const oldPlan = readActivePartitionedPlan(metadata);
+  const corruptPlan = JSON.parse(JSON.stringify(oldPlan));
+  const victimUnit = corruptPlan.units.find((unit) =>
+    unit.oversize_chunk !== true && unit.oversize_file !== true && Array.isArray(unit.files) && unit.files.length > 0
+  );
+  assert.ok(victimUnit, 'fixture must contain a normal unit');
+
+  const outsideName = `${path.basename(root)}-outside-readable.js`;
+  const outsidePath = path.join(path.dirname(root), outsideName);
+  fs.writeFileSync(outsidePath, 'module.exports = "outside";\n');
+  t.after(() => fs.rmSync(outsidePath, { force: true }));
+  victimUnit.files[0] = { ...victimUnit.files[0], path: `../${outsideName}`, contentId: 'outside' };
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { return 13; };\n');
+
+  const originalReadFileSync = fs.readFileSync;
+  const outsideReads = [];
+  fs.readFileSync = function patchedReadFileSync(filePath, ...args) {
+    if (path.resolve(String(filePath)) === outsidePath) outsideReads.push(filePath);
+    return originalReadFileSync.call(this, filePath, ...args);
+  };
+  let result;
+  try {
+    result = await applyPartitionedIncrement({
+      metadata,
+      declaredFiles: ['src/a.js'],
+      fixReport: {
+        fixed: [{ issue_id: 'ISSUE-001', summary: 'Changed src/a.js.' }],
+        filesChanged: ['src/a.js'],
+        verification: ['node --check src/a.js: passed']
+      },
+      ledger: { issues: [] },
+      options: {},
+      oldPlan: corruptPlan,
+    });
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+  }
+
+  assert.equal(result.ok, false, JSON.stringify(result));
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.match(result.nextAction, /partitioned project review/i);
+  assert.deepEqual(outsideReads, [], 'corrupt plan member paths must be rejected before body reads');
 });
 
 test('applyPartitionedIncrement blocks on .drfxignore rule drift before writing fix state', async (t) => {
