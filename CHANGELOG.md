@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.0 - 2026-06-22
+
+Two features: a fourth platform (opencode) and partitioned project review for `review-fix-code`, which lets whole-root reviews scale past the single-pass budget instead of blocking.
+
+### Added
+
+- **opencode platform.** `drfx install --platform opencode` generates the six review-fix routes as single-file commands under `~/.config/opencode/commands/`. opencode is a full review-and-fix platform with earned PASS (parity with Claude Code and Codex, unlike advisory-only Gemini): it passes the practical and strict-verified runtime trust gates, supports strict-verified capability descriptors, and threads `--runtime-platform opencode` through the generated workflow commands. `install`, `uninstall`, `status`, and `doctor` all default to including opencode.
+- **Partitioned project review for `review-fix-code`.** A whole-root review whose file set exceeds the single-pass budget (300 files or 1,500,000 bytes) is no longer blocked as `file-set-too-large`; it runs as a deterministic, multi-phase, unit-by-unit review: a partition plan, bounded per-unit review with coverage receipts, then aggregate review → triage → fix → bounded re-review of affected units → re-aggregate. Project PASS is earned only through the aggregate coverage gate (never a single-shot full-project claim); when coverage cannot span every unit the run finalizes as `stopped-with-deferrals` with reason `coverage-incomplete`.
+- **Oversize-file chunking.** A text file too large for one unit is split into deterministic line-window chunks reviewed independently; the coordinator reads only each chunk's line range into the reviewer prompt without persisting slice bodies. A single unconfirmed chunk keeps the whole file a coverage blocker, and unsplittable files (one huge line, or binary) remain honest `oversize_file` blockers.
+
+### Fixed
+
+- The write-eligibility preflight for an over-cap whole-root CODE review now returns write-eligible (partitioning-deferred) instead of blocking, so `review-and-fix` actually reaches partitioned project review.
+- CODE exclusions are path-aware: opencode's `.config/opencode` config directory is excluded from CODE traversal and snapshot-guard monitoring (the single-name `.opencode` entry never matched the real two-segment path), while `.config` itself is still traversed.
+
 ## 0.6.4 - 2026-06-08
 
 The `reset` token (shipped in v0.4.1) is now visible at every route surface: invocation grammars, source skills, generated workflow start commands, and the shared no-state rules — and Gemini route contracts stop pointing at persistent state they never support.
