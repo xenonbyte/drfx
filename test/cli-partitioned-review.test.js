@@ -77,6 +77,24 @@ function makeMultiUnitRepo(t) {
   return root;
 }
 
+// An over-cap repo that ALSO contains one oversize (>1MB) splittable JS file, so the
+// partition plan carries oversize_chunk units (Task 11/14). big.js is ~1.4MB across
+// 2000 lines, splitting into chunkLines=800 windows with bidirectional overlap — the
+// substrate for Task 16's chunk-aware overlap dedup.
+function makeOverCapChunkRepo(t) {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-cli-chunk-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  git(root, ['init', '-b', 'main']);
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 1;\n');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'init']);
+  for (let i = 0; i < 301; i++) fs.writeFileSync(path.join(root, `oversize-${i}.js`), 'x\n');
+  const line = '// ' + 'x'.repeat(700);
+  fs.writeFileSync(path.join(root, 'big.js'), Array.from({ length: 2000 }, () => line).join('\n') + '\n');
+  return root;
+}
+
 function practicalArgs(extra) {
   return [
     ...extra,
@@ -148,6 +166,29 @@ function reviewerFailHighWithId(id, location) {
     '  confidence: confirmed',
     '  sensitive: false'
   ].join('\n');
+}
+
+// A high-severity reviewer FAIL with caller-chosen id/location/issue. Used by the
+// Task 16 chunk-overlap dedup test to vary the issue text and location precisely.
+function reviewerFailWithIssue(id, location, issue) {
+  return [
+    'FAIL',
+    'Findings:',
+    `- id: ${id}`,
+    '  severity: high',
+    `  location: ${location}`,
+    `  issue: ${issue}`,
+    '  why_it_matters: Aggregate FAIL must enter the normal triage and fix workflow.',
+    '  suggested_fix: Fix the blocking defect before finalizing.',
+    '  confidence: confirmed',
+    '  sensitive: false'
+  ].join('\n');
+}
+
+// Mirror the implementation's issue-text normalization (trim + collapse whitespace +
+// lowercase) so the test compares the same canonical form the dedup keys on.
+function normalizeForAssert(text) {
+  return String(text == null ? '' : text).trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 const TRIAGE_ACCEPT_PARTITIONED = [
@@ -1136,6 +1177,91 @@ test('aggregate-review rewrites duplicate partition reviewer ids before triage r
   });
   assert.equal(triage.ok, true, JSON.stringify(triage));
   assert.equal(triage.status, 'recorded-triage');
+});
+
+// ---------------------------------------------------------------------------
+// Task 16: chunk-aware overlap dedup in the partitioned aggregate path.
+// Two adjacent chunks of one oversize file share a bidirectional overlap; the same
+// defect reported by both must collapse to ONE finding, while an unparsable-location
+// finding is NEVER dropped (PASS is never earned by erasing a real defect).
+// ---------------------------------------------------------------------------
+
+test('aggregate-review collapses an overlap duplicate across adjacent chunks but never drops an unparsable finding', async (t) => {
+  const root = makeOverCapChunkRepo(t);
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+  const chunkUnits = plan.units.filter((u) => u.oversize_chunk === true);
+  assert.ok(chunkUnits.length >= 3, 'big.js must split into at least 3 chunk units');
+
+  // chunkUnits[0] primary [1,800], context forward-overlaps into chunkUnits[1]'s
+  // primary; the first line of chunkUnits[1]'s primary (e.g. 801) is OWNED by
+  // chunkUnits[1] yet visible to chunkUnits[0] as forward overlap.
+  const overlapLine = chunkUnits[1].files[0].primaryLineRange[0];
+  assert.ok(overlapLine <= chunkUnits[0].files[0].contextLineRange[1],
+    'overlap line must sit inside chunk 0 forward-overlap context');
+
+  const forwardOverlapUnit = chunkUnits[0].unit_id; // reports against its forward overlap
+  const owningPrimaryUnit = chunkUnits[1].unit_id;   // reports against its own primary
+  const unparsableUnit = chunkUnits[2].unit_id;      // emits a garbage-location finding
+
+  for (const unit of plan.units) {
+    let reviewerResult = REVIEWER_PASS;
+    if (unit.unit_id === forwardOverlapUnit) {
+      // Same defect, reported against chunk 0's FORWARD overlap line, with trivially
+      // different wording (extra whitespace + caps) that must still normalize-collapse.
+      reviewerResult = reviewerFailWithIssue('R001', `big.js:${overlapLine}`, 'Null   POINTER dereference here.');
+    } else if (unit.unit_id === owningPrimaryUnit) {
+      // Same defect at the SAME line, reported against chunk 1's own primary, L-form.
+      reviewerResult = reviewerFailWithIssue('R002', `big.js:L${overlapLine}`, 'null pointer dereference here.');
+    } else if (unit.unit_id === unparsableUnit) {
+      // Garbage location: no parseable <path>:<line>. MUST be retained.
+      reviewerResult = reviewerFailWithIssue('R003', 'no-line-anchor-here', 'A real defect with an unparsable location.');
+    }
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: reviewerResult });
+  }
+
+  for (const backstop of plan.crosscuttingBackstops) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  const aggregate = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(aggregate.ok, true, JSON.stringify(aggregate));
+  assert.equal(aggregate.verdict, 'stopped-with-deferrals');
+
+  const persisted = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'aggregate.json'), 'utf8'
+  ));
+
+  // Three raw findings collapse to TWO: the two overlap reports of the same defect
+  // canonicalize to chunk 1's owner primary range and merge; the unparsable one stays.
+  assert.equal(persisted.findings.length, 2, JSON.stringify(persisted.findings, null, 2));
+
+  const issues = persisted.findings.map((finding) => normalizeForAssert(finding.issue));
+  const overlapKept = persisted.findings.filter(
+    (finding) => normalizeForAssert(finding.issue) === 'null pointer dereference here.'
+  );
+  assert.equal(overlapKept.length, 1, 'the overlap duplicate must collapse to exactly one finding');
+
+  // LOAD-BEARING: the unparsable-location finding survives — never dropped.
+  const unparsableKept = persisted.findings.find(
+    (finding) => finding.location === 'no-line-anchor-here'
+  );
+  assert.ok(unparsableKept, 'the unparsable-location finding must be RETAINED in the aggregate');
+  assert.ok(issues.includes('a real defect with an unparsable location.'),
+    'the unparsable finding keeps its issue text and is not erased by the overlap heuristic');
 });
 
 // ---------------------------------------------------------------------------

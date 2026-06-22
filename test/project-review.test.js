@@ -21,6 +21,7 @@ const {
   suggestRefsFor,
   reviewCacheKey,
   aggregate,
+  dedupChunkFindings,
   refreshPartitionPlanContent,
   computeOversizeChunks,
   CROSSCUTTING_BACKSTOPS,
@@ -715,6 +716,100 @@ test('aggregate: includes crosscuttingBackstops in output', () => {
   const result = aggregate(summaries, []);
   assert.ok(Array.isArray(result.crosscuttingBackstops));
   assert.ok(result.crosscuttingBackstops.length > 0);
+});
+
+// ---------------------------------------------------------------------------
+// dedupChunkFindings (Task 16): chunk-aware overlap dedup for the partitioned
+// aggregate path. Two adjacent chunks share a bidirectional overlap region, so
+// the same defect can be reported twice (once by each chunk). The owner is the
+// chunk whose primaryLineRange CONTAINS the reported line; an overlap report from
+// either adjacent chunk canonicalizes to that owner's primary range in the key.
+// LOAD-BEARING SAFETY: a finding with a missing/unparsable location is NEVER
+// dropped — it is kept under the reporting chunk's own primary range.
+// ---------------------------------------------------------------------------
+
+// Two chunks of one oversize file, modeling bidirectional overlap:
+//   chunk 1: primary [1,10],  context [1,13]  (forward overlap covers lines 11-13)
+//   chunk 2: primary [11,20], context [8,20]  (backward overlap covers lines 8-10)
+// Owner of line 11 is chunk 2 (its primary contains 11). A finding reported by
+// chunk 1 against line 11 (its forward overlap) and one reported by chunk 2 against
+// line 11 (its primary) both canonicalize to chunk 2's owner primary range.
+function chunkPlanUnits() {
+  return [
+    {
+      unit_id: 'unit-001',
+      oversize_chunk: true,
+      sourcePath: 'big.js',
+      sourceContentId: 'srcCID',
+      chunkIndex: 0,
+      chunkCount: 2,
+      files: [{ path: 'big.js', primaryLineRange: [1, 10], contextLineRange: [1, 13], size: 100, contentId: 'c0', unit_id: 'unit-001' }],
+    },
+    {
+      unit_id: 'unit-002',
+      oversize_chunk: true,
+      sourcePath: 'big.js',
+      sourceContentId: 'srcCID',
+      chunkIndex: 1,
+      chunkCount: 2,
+      files: [{ path: 'big.js', primaryLineRange: [11, 20], contextLineRange: [8, 20], size: 100, contentId: 'c1', unit_id: 'unit-002' }],
+    },
+  ];
+}
+
+test('dedupChunkFindings: collapses an overlap duplicate reported by both adjacent chunks', () => {
+  const units = chunkPlanUnits();
+  // Both findings describe the SAME defect at line 11: chunk 1 reports it against its
+  // forward overlap (line 11 sits in chunk 1's context), chunk 2 reports it against its
+  // own primary (line 11 is in chunk 2's primary). Same path + severity + normalized text.
+  const findings = [
+    makeFinding('big.js:11', 'bug', 'high', { issue: 'Null   pointer DEREFERENCE here.' }),
+    makeFinding('big.js:L11', 'bug', 'high', { issue: 'null pointer dereference here.' }),
+  ];
+  const deduped = dedupChunkFindings(findings, units);
+  assert.equal(deduped.length, 1, 'overlap duplicate must collapse to ONE finding');
+});
+
+test('dedupChunkFindings: keeps genuinely different findings distinct', () => {
+  const units = chunkPlanUnits();
+  // Same owner line, but different normalized issue text => two distinct defects.
+  const findings = [
+    makeFinding('big.js:11', 'bug', 'high', { issue: 'Null pointer dereference.' }),
+    makeFinding('big.js:11', 'bug', 'high', { issue: 'Off-by-one loop bound.' }),
+  ];
+  const deduped = dedupChunkFindings(findings, units);
+  assert.equal(deduped.length, 2, 'different defects at the same line must NOT collapse');
+});
+
+test('dedupChunkFindings: NEVER drops a finding with an unparsable location', () => {
+  const units = chunkPlanUnits();
+  const findings = [
+    makeFinding('big.js:11', 'bug', 'high', { issue: 'Real overlap defect.', id: 'R001' }),
+    // Garbage / missing line anchor: cannot be parsed into <path>:<line>. The unparsed
+    // overlap heuristic MUST NOT erase it — keeping it ensures PASS is never earned by
+    // silently discarding a real finding.
+    makeFinding('not-a-real-location', 'bug', 'high', { issue: 'Real overlap defect.', id: 'R002' }),
+    makeFinding('', 'security', 'high', { issue: 'Hardcoded secret somewhere.', id: 'R003' }),
+  ];
+  const deduped = dedupChunkFindings(findings, units);
+  const ids = deduped.map((f) => f.id).sort();
+  assert.ok(ids.includes('R002'), 'a finding with a garbage location must be RETAINED, never dropped');
+  assert.ok(ids.includes('R003'), 'a finding with a missing location must be RETAINED, never dropped');
+  assert.equal(deduped.length, 3, 'no parseable-line match means no collapse; every finding survives');
+});
+
+test('dedupChunkFindings: non-chunk units leave findings byte-unchanged (identity passthrough)', () => {
+  // Guard: when no unit is an oversize_chunk, the function must return the findings
+  // untouched so non-chunk aggregation stays exactly as today.
+  const nonChunkUnits = [
+    { unit_id: 'unit-001', files: [{ path: 'a.js', size: 10, ext: '.js', contentId: 'ca' }] },
+  ];
+  const findings = [
+    makeFinding('a.js:10', 'bug', 'low', { issue: 'one' }),
+    makeFinding('a.js:10', 'bug', 'low', { issue: 'one' }),
+  ];
+  const deduped = dedupChunkFindings(findings, nonChunkUnits);
+  assert.strictEqual(deduped, findings, 'no chunk units => exact same array reference, no normalization');
 });
 
 // ---------------------------------------------------------------------------
