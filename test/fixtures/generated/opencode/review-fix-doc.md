@@ -149,7 +149,7 @@ When effective mode is `review-and-fix`, run write eligibility preflight before 
 drfx workflow preflight review-fix-doc target=<path> review-and-fix guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform opencode --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --json
 ```
 
-For Codex, use `--runtime-platform codex`.
+This generated opencode route uses `--runtime-platform opencode`.
 
 This command accepts `assurance=practical` and `assurance=strict-verified` before runtime probes and strict proof because it does not create target state. It returns `unsupported` for explicit `review-and-fix assurance=advisory`.
 

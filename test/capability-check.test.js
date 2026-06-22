@@ -86,7 +86,8 @@ function makeCommandSandbox(t) {
     claude: path.join(homeDir, '.claude', 'commands'),
     codexSkills: path.join(homeDir, '.codex', 'skills'),
     codexPrompts: path.join(homeDir, '.codex', 'prompts'),
-    gemini: path.join(homeDir, '.gemini', 'commands')
+    gemini: path.join(homeDir, '.gemini', 'commands'),
+    opencode: path.join(homeDir, '.config', 'opencode', 'commands')
   };
   fs.mkdirSync(homeDir, { recursive: true });
   fs.mkdirSync(cwd, { recursive: true });
@@ -398,12 +399,12 @@ test('generated-route current-check validation rejects stale descriptors before 
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
   const descriptors = await checkPlatforms({
-    platforms: ['claude', 'codex', 'gemini'],
+    platforms: ['claude', 'codex', 'gemini', 'opencode'],
     packageVersion: PACKAGE_VERSION,
     runId,
     tmpDir
   });
-  assert.deepEqual(Object.keys(descriptors).sort(), ['claude', 'codex', 'gemini']);
+  assert.deepEqual(Object.keys(descriptors).sort(), ['claude', 'codex', 'gemini', 'opencode']);
   for (const [platform, descriptor] of Object.entries(descriptors)) {
     const validation = validateCurrentDescriptor(descriptor, { packageVersion: PACKAGE_VERSION, platform, runId, requireVerified: true });
     assert.equal(validation.passCapable, false, platform);
@@ -751,7 +752,7 @@ test('Codex legacy prompt routes are removable only when manifest-recorded or ow
 });
 
 test('parsePlatformList accepts comma-separated platform lists', () => {
-  assert.deepEqual(parsePlatformList('claude,codex,gemini'), ['claude', 'codex', 'gemini']);
+  assert.deepEqual(parsePlatformList('claude,codex,gemini,opencode'), ['claude', 'codex', 'gemini', 'opencode']);
 });
 
 test('install writes manifests and installer-default descriptors into isolated home', async (t) => {
@@ -762,11 +763,11 @@ test('install writes manifests and installer-default descriptors into isolated h
     platformRoots,
     cwd,
     packageVersion: PACKAGE_VERSION,
-    platforms: parsePlatformList('claude,codex,gemini')
+    platforms: parsePlatformList('claude,codex,gemini,opencode')
   });
 
-  assert.deepEqual(Object.keys(result.platforms).sort(), ['claude', 'codex', 'gemini']);
-  for (const platform of ['claude', 'codex', 'gemini']) {
+  assert.deepEqual(Object.keys(result.platforms).sort(), ['claude', 'codex', 'gemini', 'opencode']);
+  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     const manifestRead = readInstallManifest(platform, { homeDir });
     assert.equal(manifestRead.missing, false, platform);
     assert.equal(manifestRead.manifest.platform, platform);
@@ -791,6 +792,7 @@ test('install writes manifests and installer-default descriptors into isolated h
   assert.equal(fs.existsSync(path.join(platformRoots.claude, 'review-fix-spec.md')), true);
   assert.equal(fs.existsSync(path.join(platformRoots.codexSkills, 'review-fix-spec', 'SKILL.md')), true);
   assert.equal(fs.existsSync(path.join(platformRoots.gemini, 'review-fix-spec.toml')), true);
+  assert.equal(fs.existsSync(path.join(platformRoots.opencode, 'review-fix-spec.md')), true);
 });
 
 test('install copies all shared package assets for regeneration', async (t) => {
