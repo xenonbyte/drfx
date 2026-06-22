@@ -15,7 +15,7 @@ Invocation syntax:
 review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<project-root>] [debug]
 ```
 
-`scope=<path>` names a source root to review; repeat `scope=<path>` for multiple roots. Omit `scope=` to review the whole project root, capped at 300 files or 1,500,000 bytes. Larger whole-root file sets block as `file-set-too-large` and require a narrower `scope=<path>`. There is no bare-path or `target=` form.
+`scope=<path>` names a source root to review; repeat `scope=<path>` for multiple roots. Omit `scope=` to review the whole project root within a single-pass budget of 300 files or 1,500,000 bytes; a larger whole-root file set is reviewed as a partitioned project review (a deterministic, multi-phase, unit-by-unit review) instead of blocking — narrow with `scope=<path>` to keep it a single pass. There is no bare-path or `target=` form.
 
 Valid invocations may omit mode. On Codex, Claude Code, and opencode, missing mode selects `review-and-fix`. This code route exposes no user-facing `assurance=` token; for `review-and-fix` it internally materializes `practical` assurance (or `strict-verified` only on the same-flow strict proof path), so code auto-fix is never rejected as `advisory-review-and-fix-unsupported`. Gemini generated routes are advisory-only and render `review-and-fix` as unsupported; they produce read-only findings only and must not claim workflow PASS. Help-style or invalid invocations explain usage only and do not read files, run workflow commands, run probes, create state, or declare review results.
 

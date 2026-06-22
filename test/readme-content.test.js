@@ -123,13 +123,13 @@ test('both READMEs state that version-control-ignored files are excluded via git
   assert.match(zh, /非 git 根目录/);
 });
 
-test('both READMEs state only non-root explicit scope= runs are not capped', () => {
+test('both READMEs state non-root explicit scope= runs stay single-pass regardless of size', () => {
   const en = read('README.md');
   const zh = read('README.zh-CN.md');
-  assert.match(en, /Explicit non-root directory\/file scopes are not subject to the cap/);
-  assert.match(en, /`scope=\.`[\s\S]{0,120}remain capped/);
-  assert.match(zh, /显式传入非根目录\/文件 `scope=` 的运行不受该上限约束/);
-  assert.match(zh, /`scope=\.`[\s\S]{0,120}受上限约束/);
+  assert.match(en, /Explicit non-root directory\/file scopes are reviewed in a single pass regardless of size/);
+  assert.match(en, /`scope=\.`[\s\S]{0,120}treated as whole-root/);
+  assert.match(zh, /显式传入非根目录\/文件 `scope=` 的运行无论大小都按单遍审查/);
+  assert.match(zh, /`scope=\.`[\s\S]{0,120}whole-root/);
 });
 
 test('both READMEs document the .drfxignore contract', () => {

@@ -1445,13 +1445,13 @@ test('generated review-fix-code route accepts omitted scope as whole project roo
     assert.match(body, /Omit `?scope=`? to review the whole project root/i);
     assert.match(
       body,
-      /Whole-root CODE review is capped at 300 files or 1,500,000 bytes/i,
-      `${platform}:review-fix-code must document the whole-root cap`
+      /within the single-pass budget of 300 files or 1,500,000 bytes/i,
+      `${platform}:review-fix-code must document the single-pass budget`
     );
     assert.match(
       body,
-      /file-set-too-large[\s\S]{0,120}narrower `?scope=<path>`?/i,
-      `${platform}:review-fix-code must guide users to narrow oversized whole-root reviews`
+      /partitioned project review[\s\S]{0,160}narrow with `?scope=<path>`?/i,
+      `${platform}:review-fix-code must explain partitioned review and how to keep it single-pass`
     );
     assert.match(body, /<scopeTokens>/, `${platform}:review-fix-code workflow commands must use materialized scope tokens`);
     assert.doesNotMatch(maskEmbeddedSharedContent(platform, body), /missing `scope=`|At least one `?scope=<path>`? is required/i);
@@ -1544,7 +1544,8 @@ test('PR and CODE source skills exist with code-route contract guidance', () => 
   assert.match(code, /scope=<path>/);
   assert.match(code, /review-fix-code \[scope=<path>\.\.\.\]/);
   assert.match(code, /Omit `scope=` to review the whole project root/i);
-  assert.match(code, /larger whole-root file sets block as `file-set-too-large`/i);
+  assert.match(code, /a larger whole-root file set is reviewed as a partitioned project review/i);
+  assert.doesNotMatch(code, /block as `file-set-too-large`/i);
   assert.doesNotMatch(code, /At least one `scope=<path>` is required/i);
   assert.match(code, /must not pass `target=`, `type`, `ref=`, `base=`, `assurance=`, `strict`, `normal`, or `ledger=`/);
   assert.match(code, /internally materializes `practical` assurance/i);
