@@ -95,6 +95,23 @@ function makeOverCapChunkRepo(t) {
   return root;
 }
 
+// An over-cap repo whose oversize file is a SINGLE ~2MB line (a minified bundle). One
+// line exceeds the 1MB chunk byte budget, so computeOversizeChunks declines (returns
+// null) and splitOversizeFile keeps the legacy oversize blocker: the unit stays
+// oversize_file:true with NO chunk units — the honest "unsplittable" path (Task 18 #3).
+function makeUnsplittableOversizeRepo(t) {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-cli-minjs-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  git(root, ['init', '-b', 'main']);
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = 1;\n');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'init']);
+  for (let i = 0; i < 301; i++) fs.writeFileSync(path.join(root, `oversize-${i}.js`), 'x\n');
+  fs.writeFileSync(path.join(root, 'min.js'), 'x'.repeat(2 * 1024 * 1024) + '\n');
+  return root;
+}
+
 function practicalArgs(extra) {
   return [
     ...extra,
@@ -1262,6 +1279,167 @@ test('aggregate-review collapses an overlap duplicate across adjacent chunks but
   assert.ok(unparsableKept, 'the unparsable-location finding must be RETAINED in the aggregate');
   assert.ok(issues.includes('a real defect with an unparsable location.'),
     'the unparsable finding keeps its issue text and is not erased by the overlap heuristic');
+});
+
+// ---------------------------------------------------------------------------
+// Task 18: Part 2 capstone — an over-cap project with a splittable oversize text
+// file earns PASS via per-chunk coverage; a single unconfirmed chunk keeps the
+// whole file a coverage blocker (no fake PASS); an unsplittable single-huge-line
+// file stays a legacy oversize_file high blocker.
+// ---------------------------------------------------------------------------
+
+test('oversize splittable file earns PASS via chunk coverage (file-level none == every chunk none)', async (t) => {
+  const root = makeOverCapChunkRepo(t);
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+  // The oversize big.js is covered as deterministic line-window chunk units, NOT as a
+  // single oversize_file blocker.
+  const chunkUnits = plan.units.filter((u) => u.oversize_chunk === true);
+  assert.ok(chunkUnits.length >= 2, 'big.js must split into multiple oversize_chunk units');
+  assert.ok(chunkUnits.every((u) => u.sourcePath === 'big.js'),
+    'every chunk unit points at the oversize source big.js');
+  assert.equal(plan.units.filter((u) => u.oversize_file === true).length, 0,
+    'a splittable oversize file produces NO legacy oversize_file blocker');
+
+  // Review EVERY unit — chunk units included — with coverage_risk:none, no findings.
+  for (const unit of plan.units) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    const recorded = await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+    assert.equal(recorded.ok, true, JSON.stringify(recorded));
+    assert.equal(recorded.coverageRisk, 'none', `unit ${unit.unit_id} (incl. chunks) must record none`);
+  }
+
+  // All 7 backstops earn none via positive cross-unit evidence.
+  for (const backstop of plan.crosscuttingBackstops) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+    const recorded = await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+    assert.equal(recorded.coverageRisk, 'none', `backstop ${backstop} must earn none`);
+  }
+
+  const result = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  // Every chunk none ⟺ the oversize file is none ⟺ project PASS reachable.
+  assert.equal(result.verdict, 'PASS', JSON.stringify(result));
+  assert.equal(result.coverageProof.residualRisk, 'none');
+  assert.equal(result.nextAction, 'verdict PASS earned; proceed to finalize');
+
+  const persisted = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'aggregate.json'), 'utf8'
+  ));
+  assert.equal(persisted.verdict, 'PASS');
+});
+
+test('a single chunk left unconfirmed keeps the oversize file a coverage blocker (no fake PASS)', async (t) => {
+  const root = makeOverCapChunkRepo(t);
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+  const chunkUnits = plan.units.filter((u) => u.oversize_chunk === true);
+  assert.ok(chunkUnits.length >= 2, 'big.js must split into multiple oversize_chunk units');
+
+  // Leave EXACTLY ONE chunk unit unconfirmed (reviewed:false / coverage_risk:high);
+  // everything else — every other unit AND chunk — records clean none.
+  const unconfirmedChunk = chunkUnits[chunkUnits.length - 1].unit_id;
+  for (const unit of plan.units) {
+    const high = unit.unit_id === unconfirmedChunk;
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({
+      unit: unit.unit_id,
+      reviewed: high ? 'false' : 'true',
+      coverageRisk: high ? 'high' : 'none'
+    }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  // All backstops clean — the ONLY thing standing between this project and a PASS is the
+  // one unconfirmed chunk of the oversize file.
+  for (const backstop of plan.crosscuttingBackstops) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  const result = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  // PASS-is-earned proof: a single unconfirmed chunk keeps the WHOLE file a blocker.
+  assert.notEqual(result.verdict, 'PASS', 'one unconfirmed chunk must NEVER fake a project PASS');
+  assert.equal(result.verdict, 'stopped-with-deferrals');
+  assert.equal(result.reason, 'coverage-incomplete');
+  assert.ok(result.uncoveredUnitIds.includes(unconfirmedChunk),
+    `the unconfirmed chunk ${unconfirmedChunk} must surface as an uncovered unit`);
+  assert.equal(result.coverageProof.residualRisk, 'present');
+
+  const persisted = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'aggregate.json'), 'utf8'
+  ));
+  assert.equal(persisted.verdict, 'stopped-with-deferrals');
+  assert.equal(persisted.reason, 'coverage-incomplete');
+});
+
+test('an unsplittable single-huge-line oversize file stays a legacy high blocker', async (t) => {
+  const root = makeUnsplittableOversizeRepo(t);
+  const start = await startPartitioned(root);
+
+  const plan = JSON.parse(fs.readFileSync(
+    path.join(start.targetStateDir, 'project-review', 'units.json'), 'utf8'
+  ));
+  // min.js is ONE ~2MB line: no single chunk can fit the byte budget, so it is NOT
+  // expanded into chunk units — it remains the legacy oversize_file:true blocker.
+  const oversizeFileUnits = plan.units.filter((u) => u.oversize_file === true);
+  assert.equal(oversizeFileUnits.length, 1, 'the unsplittable min.js stays a single oversize_file unit');
+  assert.equal(oversizeFileUnits[0].files[0].path, 'min.js');
+  assert.equal(plan.units.filter((u) => u.oversize_chunk === true && u.sourcePath === 'min.js').length, 0,
+    'an unsplittable file produces NO chunk units');
+  const oversizeUnitId = oversizeFileUnits[0].unit_id;
+
+  // Review EVERY OTHER unit clean none; the oversize_file unit can never earn none (its
+  // body is never read — it is a forced-high blocker).
+  for (const unit of plan.units) {
+    if (unit.unit_id === oversizeUnitId) continue;
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: unit.unit_id }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'unit-review', '--unit', unit.unit_id,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  for (const backstop of plan.crosscuttingBackstops) {
+    const receiptFile = writeReceiptTempFile(t, unitReviewReceipt({ unit: 'unit-001' }));
+    await runWorkflowCommand('record-review', [
+      ...practicalArgs(['review-fix-code']),
+      '--phase', 'crosscutting', '--backstop', backstop,
+      '--result-stdin', '--payload-file', receiptFile
+    ], { cwd: root, stdin: REVIEWER_PASS });
+  }
+
+  const result = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.notEqual(result.verdict, 'PASS', 'an unsplittable oversize file can never earn a project PASS');
+  assert.equal(result.verdict, 'stopped-with-deferrals');
+  assert.equal(result.reason, 'coverage-incomplete');
+  assert.ok(result.uncoveredUnitIds.includes(oversizeUnitId),
+    `the unsplittable oversize_file unit ${oversizeUnitId} must surface as uncovered`);
+  assert.equal(result.coverageProof.residualRisk, 'present');
 });
 
 // ---------------------------------------------------------------------------
