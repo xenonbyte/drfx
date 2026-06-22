@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.1 - 2026-06-23
+
+Internal hardening of how drfx writes its own files. Every atomic write — capability descriptors, install manifests, leases, workflow state, snapshot rollback bodies, and generated route files — now flows through one shared helper that refuses to clobber non-regular targets and preserves existing file permissions.
+
+### Changed
+
+- All atomic file writes are consolidated into a single `lib/atomic-write.js` helper, replacing several copy-pasted stage-to-temp-then-rename implementations across the installer, doctor, lock, manifest, snapshot guard, and workflow state.
+
+### Fixed
+
+- Atomic writes now refuse to replace a symlink, directory, or other non-regular file (`ERR_ATOMIC_WRITE_TARGET_KIND`) instead of silently swapping it for a regular file, reinforcing drfx's existing symlink-hostile posture. When replacing an existing file, the write now preserves that file's permission bits.
+
 ## 0.7.0 - 2026-06-22
 
 Two features: a fourth platform (opencode) and partitioned project review for `review-fix-code`, which lets whole-root reviews scale past the single-pass budget instead of blocking.
