@@ -37,6 +37,19 @@ Tests use Node's built-in `node:test` and `assert`. Name test files as `*.test.j
 
 When updating public README behavior, keep `README.md` and `README.zh-CN.md` structurally aligned. Preserve technical literals such as commands, paths, option names, payload fields, and status codes in English.
 
+## Adding a Platform
+
+A platform spans ~16 sync sites; missing one silently breaks install, the runtime trust gate, or the byte-snapshot fixtures. Update every site below and run `npm test` (snapshot tests catch most fixture drift, but the runtime allowlists and descriptor lists are only partly covered — see `test/workflow-args.test.js`).
+
+- **Decide capability first**: a full review-and-fix platform (parity with Codex/Claude Code) or an advisory-only platform (parity with Gemini). This gates the `lib/workflow/index.js` write-eligibility allowlists.
+- **CLI + adapter**: help text in `bin/drfx.js`; new `lib/adapters/<platform>.js`.
+- **Capability/install/manifest**: `PLATFORMS` and the default platform list in `lib/capability.js`; `PLATFORMS`, `ADAPTERS`, and `normalizePlatformRoots` in `lib/install.js`; `PLATFORMS`, `defaultPlatformRoots`, and `platformAllowlist` in `lib/manifest.js`.
+- **Routes/generator/templates**: `DEFAULT_PLATFORM_POLICY` in `lib/routes.js`; `PLATFORM_TEMPLATES`, `platformInvocationText`, and `codeRouteInvocationText` in `lib/generator.js`; a new `templates/<platform>-*.tmpl` plus the six `templates/fragments/{invocation-gate,route-contract}.{document,pr,code}.<platform>.md` fragments.
+- **Runtime platform + state**: `RUNTIME_PLATFORMS` in `lib/workflow/index.js`, `lib/workflow-state.js`, `lib/semantic-parsers.js`, and `lib/no-state.js`. For a full platform, also add it to the three write-eligibility allowlists in `lib/workflow/index.js` (preflight, practical, strict-verified). For strict-verified support, add it to `DESCRIPTOR_PLATFORMS` and `PROOF_PATTERN` in `lib/workflow-state.js`.
+- **Exclusions**: add the platform's home/config dir (e.g. `.opencode`) to the exclusion sets in `lib/snapshot-guard.js` and `lib/target-context.js`.
+- **Tests + fixtures**: `EXTENSION_BY_PLATFORM` and the mask/extract branches in `test/helpers/route-shell-snapshot.js`; the platform loops in `test/shared-assets.test.js`, `test/cli.test.js`, and `test/capability-check.test.js`; regenerate `test/fixtures/{generated,embedded}/<platform>/*`.
+- **Docs**: `README.md` and `README.zh-CN.md` (kept aligned), `CLAUDE.md`, and the platform list in this file.
+
 ## Commit & Pull Request Guidelines
 
 The git history uses concise conventional-style prefixes, for example `feat:` and `chore:`. Keep commits scoped and imperative, such as `feat: add workflow parser`. Pull requests should include a short problem statement, implementation summary, tests run, and any installer, filesystem, or security implications.
