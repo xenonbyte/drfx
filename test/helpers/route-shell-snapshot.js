@@ -23,7 +23,8 @@ const SENTINEL = '<<<EMBEDDED_SHARED_CONTENT_MASKED>>>';
 const EXTENSION_BY_PLATFORM = Object.freeze({
   claude: 'md',
   codex: 'md',
-  gemini: 'toml'
+  gemini: 'toml',
+  opencode: 'md'
 });
 
 /**
@@ -36,7 +37,7 @@ const EXTENSION_BY_PLATFORM = Object.freeze({
  * @returns {string} the route shell with embedded shared content masked
  */
 function maskEmbeddedSharedContent(platform, rendered) {
-  if (platform === 'claude' || platform === 'codex') {
+  if (platform === 'claude' || platform === 'codex' || platform === 'opencode') {
     const heading = '## Embedded Shared Content';
     const index = rendered.indexOf(heading);
     if (index === -1) {
@@ -103,7 +104,7 @@ function stripAdditiveRounds(text) {
  * markers and slice boundaries and MUST stay in sync — edit them together.
  */
 function extractEmbeddedSharedContent(platform, rendered) {
-  if (platform === 'claude' || platform === 'codex') {
+  if (platform === 'claude' || platform === 'codex' || platform === 'opencode') {
     const heading = '## Embedded Shared Content';
     const index = rendered.indexOf(heading);
     if (index === -1) {

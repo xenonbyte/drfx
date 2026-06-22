@@ -26,6 +26,7 @@ const {
 const claude = require('../lib/adapters/claude');
 const codex = require('../lib/adapters/codex');
 const gemini = require('../lib/adapters/gemini');
+const opencode = require('../lib/adapters/opencode');
 const {
   ROUTES,
   copySharedAssets,
@@ -324,8 +325,8 @@ test('validateCurrentDescriptor rejects missing required schema fields', () => {
   assert.match(numericCheckedAtValidation.errors.join('\n'), /checkedAt.*ISO-8601 string/i);
 });
 
-test('Claude and Codex do not claim reviewer proof without non-interactive adapter evidence', async () => {
-  for (const [name, adapter] of [['claude', claude], ['codex', codex]]) {
+test('Claude, Codex, and opencode do not claim reviewer proof without non-interactive adapter evidence', async () => {
+  for (const [name, adapter] of [['claude', claude], ['codex', codex], ['opencode', opencode]]) {
     const capabilities = await adapter.checkCapabilities({ packageVersion: PACKAGE_VERSION, runId: createRunId() });
     assert.equal(capabilities.can_spawn_isolated_reviewer.status, 'unverified', name);
     assert.equal(capabilities.can_spawn_isolated_reviewer.proof, 'none', name);

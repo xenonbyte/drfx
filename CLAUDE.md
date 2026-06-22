@@ -6,7 +6,7 @@ See AGENTS.md for project structure, build/test/lint commands, coding convention
 
 ## Architecture Overview
 
-This is a Node.js 20 CommonJS CLI package (`@xenonbyte/drfx`) that installs six review-fix routes — four document routes (SPEC, PLAN, DESIGN, COMMON) and two code routes (PR, CODE) — into AI agent platforms (Claude, Codex, Gemini). The CLI entry point is `bin/drfx.js` with user commands `version`, `help`, `doctor`, `status`, `install`, and `uninstall`, plus the internal `workflow` dispatcher invoked by generated routes.
+This is a Node.js 20 CommonJS CLI package (`@xenonbyte/drfx`) that installs six review-fix routes — four document routes (SPEC, PLAN, DESIGN, COMMON) and two code routes (PR, CODE) — into AI agent platforms (Claude, Codex, Gemini, opencode). The CLI entry point is `bin/drfx.js` with user commands `version`, `help`, `doctor`, `status`, `install`, and `uninstall`, plus the internal `workflow` dispatcher invoked by generated routes.
 
 ## Core Data Flow
 
@@ -18,7 +18,7 @@ This is a Node.js 20 CommonJS CLI package (`@xenonbyte/drfx`) that installs six 
 
 4. **Manifest** (`lib/manifest.js`) uses a custom human-readable text format (not JSON) for install manifests stored at `~/.drfx/manifests/<platform>.manifest`. Format: `key: value` scalars, `section:` with indented fields, and `- firstField: value` list entries with `    subsequentField: value`. Uninstall validates manifests strictly — refuses symlinks, requires ownership markers for directories, and checks path allowlists per platform. (Persistent workflow state uses a separate `MANIFEST.md` under `.drfx/targets/<key>/`; its V2 schema carries a `targetContextKind` discriminator — absent ⇒ single document, `pr`/`code` ⇒ file set.)
 
-5. **Platform adapters** (`lib/adapters/`) each export `checkCapabilities()`. Currently all adapters report capabilities as `unverified` (Claude/Codex) or `unsupported` (Gemini). Real verification would require runtime-provided proof.
+5. **Platform adapters** (`lib/adapters/`) each export `checkCapabilities()`. Currently all adapters report capabilities as `unverified` (Claude/Codex/opencode) or `unsupported` (Gemini). Real verification would require runtime-provided proof.
 
 6. **Input parsing** (`lib/input.js`) dispatches by route kind. Document routes accept `target=`, repeated `ref=`, `strict`/`normal`, `assurance=`, `ledger=`. PR routes require `base=`; CODE routes accept repeated `scope=` (omit ⇒ whole project). All routes share `read-only`/`review-and-fix`, `rounds=<n>`, `guard=git|snapshot`, `resume`, `root=`. Parsing is strict — duplicate tokens, unknown keys, and unlabeled paths after labeled ones are all errors.
 
@@ -30,6 +30,6 @@ This is a Node.js 20 CommonJS CLI package (`@xenonbyte/drfx`) that installs six 
 - **Atomic writes**: Install writes to staging paths, then `fs.renameSync` for atomic replacement. Failed writes restore the original.
 - **Capability proof freshness**: Every `drfx doctor` run generates a new `runId`. All capability proofs must reference the current run. Stale descriptors from previous runs are rejected.
 - **Gemini is advisory-only**: Gemini routes must not edit files or claim workflow PASS. The adapter reports both reviewer capabilities as `unsupported`, and code routes (PR/CODE) are advisory-only on every platform under Gemini.
-- **Route structure differs by platform**: Claude/Gemini install single command files; Codex installs full skill directories with embedded shared files.
+- **Route structure differs by platform**: Claude/Gemini/opencode install single command files (Claude/opencode under `commands/`, Gemini as TOML); Codex installs full skill directories with embedded shared files. opencode is a full review-and-fix platform (parity with Claude/Codex), installed to `~/.config/opencode/commands/` with `--runtime-platform opencode`.
 - **Code routes are self-contained**: PR/CODE use a no-COMMON 4-layer rule stack (hard constraints → built-in PR/CODE rubric → user-global → project-local), unlike document routes which layer COMMON first.
 - **PASS is earned, never assumed**: read-only, advisory, Gemini, diff-review-only, unverified, and stale/drifted file-set runs can never claim a workflow PASS. File-set fixes stay inside the resolved file set, guarded by git (real `git status`) or snapshot (whole-tree fingerprint) file-set guards before any write.

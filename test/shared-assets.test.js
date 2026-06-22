@@ -31,7 +31,7 @@ function renderedDocumentRoute(platform, routeName = 'review-fix-spec') {
 }
 
 function renderedDocumentTemplates() {
-  return ['codex', 'claude', 'gemini'].map((platform) => renderedDocumentRoute(platform)).join('\n\n');
+  return ['codex', 'claude', 'gemini', 'opencode'].map((platform) => renderedDocumentRoute(platform)).join('\n\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ function renderedDocumentTemplates() {
 test('document-route generated shells equal golden snapshots except additive rounds=<n>', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
-  for (const platform of ['claude', 'codex', 'gemini']) {
+  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     for (const route of listDocumentRoutes()) {
       const rendered = renderPlatformRoute(platform, route.routeName, { packageVersion: SNAPSHOT_VERSION });
       const shell = maskEmbeddedSharedContent(platform, rendered);
@@ -65,7 +65,7 @@ test('document-route generated shells equal golden snapshots except additive rou
 test('code-route generated shells equal golden snapshots byte-for-byte', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
-  for (const platform of ['claude', 'codex', 'gemini']) {
+  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     for (const route of listRoutes()) {
       if (route.routeKind === 'document') continue;
       const rendered = renderPlatformRoute(platform, route.routeName, { packageVersion: SNAPSHOT_VERSION });
@@ -80,7 +80,7 @@ test('code-route generated shells equal golden snapshots byte-for-byte', () => {
 test('Claude and Codex generated starts preserve materialized rounds and state-control tokens', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
-  for (const platform of ['claude', 'codex']) {
+  for (const platform of ['claude', 'codex', 'opencode']) {
     for (const route of listRoutes()) {
       const rendered = renderPlatformRoute(platform, route.routeName, { packageVersion: SNAPSHOT_VERSION });
       const startLines = rendered.split('\n').filter((line) => line.startsWith('drfx workflow start '));
@@ -100,7 +100,7 @@ test('Claude and Codex generated starts preserve materialized rounds and state-c
 test('Claude and Codex file-set review-and-fix routes require full re-review after initial PASS', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
-  for (const platform of ['claude', 'codex']) {
+  for (const platform of ['claude', 'codex', 'opencode']) {
     for (const routeName of ['review-fix-pr', 'review-fix-code']) {
       const rendered = renderPlatformRoute(platform, routeName, { packageVersion: SNAPSHOT_VERSION });
 
@@ -116,7 +116,7 @@ test('Claude and Codex file-set review-and-fix routes require full re-review aft
 test('Claude and Codex partitioned CODE flow gates aggregate FAIL fix instructions on write mode', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
-  for (const platform of ['claude', 'codex']) {
+  for (const platform of ['claude', 'codex', 'opencode']) {
     const rendered = renderPlatformRoute(platform, 'review-fix-code', { packageVersion: SNAPSHOT_VERSION });
     assert.match(
       rendered,
@@ -306,7 +306,7 @@ test('coverage-incomplete is consistent across core.md, generated/embedded CODE 
     'shared/core.md status-reason enum must include coverage-incomplete'
   );
 
-  for (const platform of ['claude', 'codex', 'gemini']) {
+  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     const rendered = renderPlatformRoute(platform, 'review-fix-code', { packageVersion: SNAPSHOT_VERSION });
 
     // Rendered CODE route carries coverage-incomplete in both the embedded core.md
@@ -742,7 +742,7 @@ test('generated routes surface archiveWarning in default output when finalizatio
   assert.match(core, /repair\/reset\/rerun|repair.reset.rerun|repair, reset, or rerun/i, 'shared/core.md must include repair/reset/rerun next action for archiveWarning');
 
   // Rendered routes must carry the archiveWarning output contract.
-  for (const platform of ['codex', 'claude', 'gemini']) {
+  for (const platform of ['codex', 'claude', 'gemini', 'opencode']) {
     const rendered = renderPlatformRoute(platform, 'review-fix-spec', { packageVersion: '0.0.0-test' });
     assert.match(rendered, /archiveWarning/i, `${platform} rendered route must mention archiveWarning`);
     assert.match(rendered, /archive warning/i, `${platform} rendered route must require archive warning line in default output`);
@@ -816,6 +816,19 @@ test('generated route text materializes defaults before workflow commands', () =
   }
 });
 
+test('opencode generated routes inject current slash-command arguments into the invocation gate', () => {
+  for (const route of listRoutes()) {
+    const rendered = renderPlatformRoute('opencode', route.routeName, { packageVersion: '0.0.0-test' });
+
+    assert.match(rendered, /\$ARGUMENTS/, `opencode:${route.routeName} must include the opencode argument placeholder`);
+    assert.match(
+      rendered,
+      /Current invocation arguments:[\s\S]{0,80}\$ARGUMENTS[\s\S]{0,240}Parse the current invocation arguments/i,
+      `opencode:${route.routeName} must tell the invocation gate to parse the substituted slash-command arguments`
+    );
+  }
+});
+
 test('source skills and generated routes document reference conformance behavior', () => {
   const sourceSkills = [
     'skills/review-fix-spec/SKILL.md',
@@ -823,7 +836,7 @@ test('source skills and generated routes document reference conformance behavior
     'skills/review-fix-design/SKILL.md',
     'skills/review-fix-doc/SKILL.md'
   ];
-  const platforms = ['codex', 'claude', 'gemini'];
+  const platforms = ['codex', 'claude', 'gemini', 'opencode'];
   const routeNames = ['review-fix-spec', 'review-fix-plan', 'review-fix-design', 'review-fix-doc'];
 
   for (const sourceSkill of sourceSkills) {
@@ -1222,7 +1235,7 @@ test('generatePlatformFiles generates all six routes (document + pr + code)', ()
     'review-fix-code',
   ]);
 
-  for (const platform of ['claude', 'codex', 'gemini']) {
+  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     const files = generatePlatformFiles(platform, { packageVersion: '0.0.0-test' });
     const generatedRouteNames = files.map((f) => f.routeName);
     assert.deepEqual(
@@ -1296,7 +1309,7 @@ test('code.md lists the required CODE priority-scan surfaces', () => {
 
 function generatedCodeRoutes() {
   const outputs = [];
-  for (const platform of ['claude', 'codex', 'gemini']) {
+  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     for (const routeName of ['review-fix-pr', 'review-fix-code']) {
       outputs.push({
         platform,
@@ -1375,7 +1388,7 @@ test('whole-root CODE cap wording stays bound to the target-context constants', 
   const enSurfaces = [
     ['README.md', read('README.md')],
     ['skills/review-fix-code/SKILL.md', read('skills/review-fix-code/SKILL.md')],
-    ...['claude', 'codex', 'gemini'].map((platform) => [
+    ...['claude', 'codex', 'gemini', 'opencode'].map((platform) => [
       `generated:${platform}`,
       renderPlatformRoute(platform, 'review-fix-code', { packageVersion: '0.0.0-test' })
     ])
@@ -1387,7 +1400,7 @@ test('whole-root CODE cap wording stays bound to the target-context constants', 
 });
 
 test('generated review-fix-code route accepts omitted scope as whole project root', () => {
-  for (const platform of ['claude', 'codex', 'gemini']) {
+  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     const body = renderPlatformRoute(platform, 'review-fix-code', { packageVersion: '0.0.0-test' });
     const grammar = body.match(/review-fix-code \[scope=<path>\.\.\.\][^\n`]*/);
     assert.ok(grammar, `${platform}:review-fix-code grammar must make scope optional`);
@@ -1408,7 +1421,7 @@ test('generated review-fix-code route accepts omitted scope as whole project roo
 });
 
 test('Claude and Codex code routes materialize practical assurance without exposing assurance=', () => {
-  for (const platform of ['claude', 'codex']) {
+  for (const platform of ['claude', 'codex', 'opencode']) {
     for (const routeName of ['review-fix-pr', 'review-fix-code']) {
       const body = renderPlatformRoute(platform, routeName, { packageVersion: '0.0.0-test' });
       // Internally materializes practical so auto-fix is not rejected.
@@ -1428,7 +1441,7 @@ test('Claude and Codex code routes materialize practical assurance without expos
 });
 
 test('generated Claude/Codex start commands materialize rounds token conditionally', () => {
-  for (const platform of ['claude', 'codex']) {
+  for (const platform of ['claude', 'codex', 'opencode']) {
     for (const route of listRoutes()) {
       const body = renderPlatformRoute(platform, route.routeName, { packageVersion: '0.0.0-test' });
       const startCommands = body
@@ -1585,7 +1598,7 @@ test('fixer/coordinator prompts keep undeclared dependency files read-only and r
 
 test('embedded shared content equals golden snapshots (prompts/rubrics/core)', () => {
   const routeNames = listRoutes().map((route) => route.routeName);
-  for (const platform of ['claude', 'codex', 'gemini']) {
+  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     for (const routeName of routeNames) {
       const rendered = renderPlatformRoute(platform, routeName, { packageVersion: '0.0.0-snapshot' });
       const embedded = extractEmbeddedSharedContent(platform, rendered);
@@ -1641,7 +1654,7 @@ test('codex generated skills copy shared assets byte-for-byte from source', () =
 // ---------------------------------------------------------------------------
 
 test('rendered review-fix-code route carries partitioned-review markers on every platform', () => {
-  for (const platform of ['claude', 'codex', 'gemini']) {
+  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     const body = renderPlatformRoute(platform, 'review-fix-code', { packageVersion: '0.0.0-test' });
 
     // Core partitioned-review markers (from rubric + route contract)
@@ -1659,7 +1672,7 @@ test('rendered review-fix-code route carries partitioned-review markers on every
     // PASS-is-earned reinforcement
     assert.match(body, /unit PASS is NOT a project PASS|unit PASS.*not.*project PASS/i, `${platform}:review-fix-code must assert unit PASS != project PASS`);
 
-    if (platform === 'claude' || platform === 'codex') {
+    if (platform === 'claude' || platform === 'codex' || platform === 'opencode') {
       assert.match(body, /Partitioned CODE Review Flow/, `${platform}:review-fix-code must include the executable partitioned flow`);
       assert.match(body, /--phase unit-review/, `${platform}:review-fix-code must instruct unit-review contexts`);
       assert.match(body, /--phase crosscutting/, `${platform}:review-fix-code must instruct crosscutting contexts`);

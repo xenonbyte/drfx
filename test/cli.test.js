@@ -50,6 +50,14 @@ test('drfx help and no-args print the user command list without the internal wor
     for (const fragment of ['drfx version', 'drfx doctor', 'drfx status', 'drfx install', 'drfx uninstall']) {
       assert.match(out, new RegExp(fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${args.join(' ')} missing ${fragment}`);
     }
+    for (const fragment of [
+      'drfx doctor    [--platform claude,codex,gemini,opencode] [--json]',
+      'drfx status    [--platform claude,codex,gemini,opencode] [--json]',
+      'drfx install   [--platform claude,codex,gemini,opencode]',
+      'drfx uninstall [--platform claude,codex,gemini,opencode]'
+    ]) {
+      assert.match(out, new RegExp(fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${args.join(' ')} missing ${fragment}`);
+    }
     // `workflow` is internal and must stay out of the user-facing help.
     assert.doesNotMatch(out, /drfx workflow/);
   }
@@ -107,7 +115,7 @@ test('workflow CLI forwards semantic stdin payloads to the dispatcher', (t) => {
 test('drfx status reports not installed for every platform when nothing is installed', (t) => {
   const home = tmpDir(t, 'drfx-cli-home-');
   const out = run(['status'], { home }).stdout;
-  for (const platform of ['claude', 'codex', 'gemini']) {
+  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     assert.match(out, new RegExp(`${platform}: not installed`));
   }
 });
@@ -117,13 +125,13 @@ test('install/status/uninstall default --platform to all platforms', (t) => {
   const work = tmpDir(t, 'drfx-cli-work-');
 
   const installed = run(['install'], { home, cwd: work }).stdout;
-  assert.match(installed, /installed: claude, codex, gemini/);
+  assert.match(installed, /installed: claude, codex, gemini, opencode/);
 
   const status = run(['status'], { home }).stdout;
-  for (const platform of ['claude', 'codex', 'gemini']) {
+  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     assert.match(status, new RegExp(`${platform}: installed \\(v${PKG_VERSION.replace(/\./g, '\\.')}\\)`));
   }
 
   const uninstalled = run(['uninstall'], { home }).stdout;
-  assert.match(uninstalled, /uninstalled: claude, codex, gemini/);
+  assert.match(uninstalled, /uninstalled: claude, codex, gemini, opencode/);
 });

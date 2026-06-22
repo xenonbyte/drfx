@@ -184,6 +184,22 @@ test('schema-2 manifest rejects illegal assurance proof combinations', () => {
   );
 });
 
+test('schema-2 manifest accepts a strict-verified opencode capability descriptor', () => {
+  // Regression: descriptorPlatformFor('opencode') === 'opencode', so a strict-verified
+  // opencode run writes Descriptor platform: opencode. DESCRIPTOR_PLATFORMS must allow it,
+  // or every opencode strict-verified workflow fails state validation.
+  const manifest = makeManifest({
+    assurance: 'strict-verified',
+    runtimePlatform: 'opencode',
+    descriptorPlatform: 'opencode',
+    assuranceProof: 'capability-descriptor:opencode:run-123'
+  });
+  const parsed = parseManifestV2(formatManifestV2(manifest));
+  assert.equal(parsed.descriptorPlatform, 'opencode');
+  assert.equal(parsed.runtimePlatform, 'opencode');
+  assert.equal(parsed.assuranceProof, 'capability-descriptor:opencode:run-123');
+});
+
 test('atomicWriteFile does not leave a valid-looking partial file on failure', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-atomic-'));
   const filePath = path.join(root, 'MANIFEST.md');

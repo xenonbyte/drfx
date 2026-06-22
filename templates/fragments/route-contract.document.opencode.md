@@ -1,0 +1,12 @@
+- This route has a fixed document type: `{{DOCUMENT_TYPE}}`.
+- Users must not pass `type`.
+- Must not infer type from filename or path.
+- Reference Conformance: reference documents are consistency sources, not mandatory upstream chains.
+- A `ref=design.md` does not require a SPEC target to include `Design Coverage Import`.
+- A `ref=spec.md` does not require a PLAN target to include `SPEC-to-task mapping`.
+- Missing trace tables, stable IDs, and coverage tables are not blocking by default unless the target claims complete reference coverage, custom rules require them, or the document becomes unverifiable for its stated purpose.
+- Public CLI commands are `drfx doctor`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.
+- For strict verified proof, run `drfx doctor` in the same route flow and consume only its JSON output.
+- The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, target editing, diff judgment, and final coordinator agreement are LLM work.
+- Do not trust old or stale descriptor files for automatic fixing or workflow PASS.
+- For resume, read `.drfx/targets/<target-key>/`.

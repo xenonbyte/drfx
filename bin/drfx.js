@@ -7,6 +7,7 @@ const { installPlatforms, uninstallPlatforms, parsePlatformList } = require('../
 const { runWorkflowCommand, formatWorkflowJson, formatWorkflowError } = require('../lib/workflow');
 
 const USER_COMMANDS = new Set(['version', 'help', 'doctor', 'status', 'install', 'uninstall']);
+const PLATFORM_HELP = 'claude,codex,gemini,opencode';
 const WORKFLOW_STDIN_FLAGS = new Set([
   '--result-stdin',
   '--triage-stdin',
@@ -22,15 +23,15 @@ function packageVersion() {
 
 function printHelp() {
   process.stdout.write([
-    'drfx - install and run document and code review-fix routes for Claude Code, Codex, and Gemini',
+    'drfx - install and run document and code review-fix routes for Claude Code, Codex, Gemini, and opencode',
     '',
     'Usage:',
     '  drfx version',
     '  drfx help',
-    '  drfx doctor    [--platform claude,codex,gemini] [--json]',
-    '  drfx status    [--platform claude,codex,gemini] [--json]',
-    '  drfx install   [--platform claude,codex,gemini]',
-    '  drfx uninstall [--platform claude,codex,gemini]',
+    `  drfx doctor    [--platform ${PLATFORM_HELP}] [--json]`,
+    `  drfx status    [--platform ${PLATFORM_HELP}] [--json]`,
+    `  drfx install   [--platform ${PLATFORM_HELP}]`,
+    `  drfx uninstall [--platform ${PLATFORM_HELP}]`,
     '',
     'Commands:',
     '  version      Print the installed drfx version.',

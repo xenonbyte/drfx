@@ -1,0 +1,14 @@
+- This route reviews a source scope: the file set under one or more `scope=<path>` roots, or the whole project root when `scope=` is omitted.
+- Users must not pass `target=`, `type`, `ref=`, `base=`, `assurance=`, `strict`, `normal`, or `ledger=`; this route has no document type and no reference documents.
+- The review judges the resolved source file set, not a single document. Discover the in-scope source files deterministically, then review correctness, architecture, state-and-io, safety, tests, contracts, and maintainability.
+- Code review is actionable-only: pure style preferences, no-risk refactors, and over-abstraction are not blocking.
+- Public CLI commands are `drfx doctor`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.
+- The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, code editing, diff judgment, and final coordinator agreement are LLM work.
+- Do not trust old or stale descriptor files for automatic fixing or workflow PASS.
+- For resume, read `.drfx/targets/<target-key>/`.
+- Do not call, wrap, or delegate to a platform-native code-review command; this route runs the deterministic `drfx workflow` protocol itself.
+- When the whole-root source file set exceeds the single-pass budget, the route runs as **partitioned project review** across three **independently-mergeable / independently-usable phases**: (1) a deterministic partition plan; (2) bounded per-unit review with coverage receipts; (3) aggregate review → triage → fix → bounded re-review of affected units → re-aggregate → earned PASS. Each phase leaves a usable result even if the next never runs. An over-cap partitioned fix only re-reviews the affected units and backstops before re-aggregating, so an earned project PASS stays reachable after fixes.
+- A partitioned run **never claims a single-shot full-project PASS**; project PASS is earned only through the aggregate coverage gate.
+- When the aggregate coverage gate cannot fully cover every partitioned unit, the run finalizes as `stopped-with-deferrals` with Status reason `coverage-incomplete`, recording the uncovered units in `Deferrals or blockers` with a coverage-deferral owner and next action; it never claims PASS.
+- For an oversize file split into chunk units, the persisted unit context carries only chunk range metadata; the coordinator reads exactly that chunk's `contextLineRange` slice from disk into the reviewer prompt in memory, never asking the reviewer to read the whole file and never persisting the slice text.
+- An oversize text file earns coverage through deterministic line-window chunk review — a single chunk left unconfirmed keeps the whole file a coverage blocker (no fake PASS), and unsplittable files (a single huge line, or binary) remain honest `oversize_file` blockers.
