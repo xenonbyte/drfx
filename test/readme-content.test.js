@@ -13,7 +13,11 @@ const path = require('node:path');
 const test = require('node:test');
 
 const ROOT = path.join(__dirname, '..');
-const { CODE_EXCLUDED_DIRECTORIES, DRFXIGNORE_FILENAME } = require('../lib/target-context');
+const {
+  CODE_EXCLUDED_DIRECTORIES,
+  CODE_EXCLUDED_DIRECTORY_PATHS,
+  DRFXIGNORE_FILENAME
+} = require('../lib/target-context');
 
 function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
@@ -107,6 +111,11 @@ test('both READMEs list every built-in CODE excluded directory', () => {
     const literal = `\`${directory}\``;
     assert.ok(en.includes(literal), `README.md missing built-in exclusion: ${literal}`);
     assert.ok(zh.includes(literal), `README.zh-CN.md missing built-in exclusion: ${literal}`);
+  }
+  for (const directory of CODE_EXCLUDED_DIRECTORY_PATHS) {
+    const literal = `\`${directory}\``;
+    assert.ok(en.includes(literal), `README.md missing built-in path exclusion: ${literal}`);
+    assert.ok(zh.includes(literal), `README.zh-CN.md missing built-in path exclusion: ${literal}`);
   }
 });
 

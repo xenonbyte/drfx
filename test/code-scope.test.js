@@ -40,6 +40,7 @@ function makeCodeFixture(t) {
   write('.codegraph/codegraph.db', 'sqlite bytes\n');
   write('.gemini/settings.json', '{}\n');
   write('.req-to-plan/.workflow-active', 'WF-1\n');
+  write('.config/opencode/command/review-fix-code.md', 'generated command\n');
   write('node_modules/dep/index.js', 'module.exports = {};\n');
   write('dist/bundle.js', 'bundled\n');
   write('build/out.js', 'built\n');
@@ -70,6 +71,7 @@ test('code resolver with no scope traverses the whole project root excluding non
     assert.doesNotMatch(entry.path, /^\.codegraph\//);
     assert.doesNotMatch(entry.path, /^\.gemini\//);
     assert.doesNotMatch(entry.path, /^\.req-to-plan\//);
+    assert.doesNotMatch(entry.path, /^\.config\/opencode\//);
     assert.doesNotMatch(entry.path, /^node_modules\//);
     assert.doesNotMatch(entry.path, /^dist\//);
     assert.doesNotMatch(entry.path, /^build\//);

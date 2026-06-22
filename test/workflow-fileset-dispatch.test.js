@@ -210,7 +210,7 @@ test('file-set write eligibility preflight supports bare CODE review-and-fix rou
   assert.deepEqual(result.scopes, []);
 });
 
-test('file-set write eligibility preflight reports oversized whole-root CODE as file-set-too-large', async (t) => {
+test('file-set write eligibility preflight lets oversized whole-root CODE reach partitioning', async (t) => {
   const root = freshRepo(t);
   for (let i = 0; i < 301; i++) fs.writeFileSync(path.join(root, `oversize-${i}.js`), 'x\n');
 
@@ -229,11 +229,13 @@ test('file-set write eligibility preflight reports oversized whole-root CODE as 
     '--json'
   ], { cwd: root });
 
-  assert.equal(result.ok, false);
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.blockingReason, 'state-validation-failed');
-  assert.match(String(result.message), /file-set-too-large/);
-  assert.doesNotMatch(String(result.message), /excluded-scope/);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.status, 'write-eligible');
+  assert.equal(result.routeKind, 'code');
+  assert.deepEqual(result.scopes, []);
+  assert.equal(result.targetOnlyGuard.status, 'partitioning-deferred');
+  assert.equal(result.targetOnlyGuard.reason, 'whole-root-over-cap');
+  assert.equal(result.blockingReason, 'none');
 });
 
 test('advisory review-and-fix PR start dispatches to unsupported (file-set context resolved, no crash)', async (t) => {

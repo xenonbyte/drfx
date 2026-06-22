@@ -778,6 +778,29 @@ test('file-set snapshot validate prunes .git and package-manager churn from the 
   assert.deepEqual(result.changedFiles, []);
 });
 
+test('file-set snapshot validate prunes opencode config churn from the tree walk', (t) => {
+  const fixture = makeWorkspace(t);
+  const opencodeDir = path.join(fixture.root, '.config', 'opencode', 'command');
+  fs.mkdirSync(opencodeDir, { recursive: true });
+  fs.writeFileSync(path.join(opencodeDir, 'review-fix-code.md'), 'old command\n');
+  const baseline = captureFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md']
+  });
+  assert.equal(baseline.status, 'passed');
+  assert.deepEqual(baseline.excludedDirectories, ['.config/opencode']);
+
+  fs.writeFileSync(path.join(opencodeDir, 'review-fix-code.md'), 'new command\n');
+  fs.writeFileSync(path.join(opencodeDir, 'generated.json'), '{}\n');
+  const result = validateFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: ['docs/target.md'],
+    baseline
+  });
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.deepEqual(result.changedFiles, []);
+});
+
 test('file-set snapshot validate ignores legacy monitored entries under pruned directories', (t) => {
   const fixture = makeWorkspace(t);
   fs.mkdirSync(path.join(fixture.root, '.codegraph'), { recursive: true });
