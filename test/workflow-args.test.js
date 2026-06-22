@@ -172,6 +172,53 @@ test('direct Gemini strict verified start parses for unsupported handling', () =
   assert.equal(parsed.runtimeCheck.stdinHandoff.status, 'not-required');
 });
 
+// opencode is a full review-and-fix platform: it must pass the practical and
+// strict-verified runtime trust allowlists (the "full vs advisory" switch),
+// exactly like codex/claude-code and unlike advisory-only Gemini.
+test('practical start accepts opencode as a full review-and-fix runtime platform', () => {
+  const parsed = parseWorkflowArgs('start', [
+    'review-fix-spec',
+    'target=docs/spec.md',
+    'review-and-fix',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'opencode',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready'
+  ]);
+
+  assert.equal(parsed.assurance, 'practical');
+  assert.equal(parsed.runtimePlatform, 'opencode');
+  assert.equal(parsed.runtimeCheck.subagentProbe.status, 'ready');
+  assert.equal(parsed.runtimeCheck.stdinHandoff.status, 'ready');
+});
+
+test('opencode strict verified start passes the platform allowlist and then requires descriptor and proof', () => {
+  // If opencode were dropped from the strict-verified allowlist this would throw
+  // ERR_STRICT_RUNTIME_PLATFORM ("requires runtime platform codex, claude-code, or
+  // opencode") instead of the descriptor/proof error, failing this regex.
+  assert.throws(
+    () =>
+      parseWorkflowArgs('start', [
+        'review-fix-spec',
+        'target=docs/spec.md',
+        'assurance=strict-verified',
+        '--assurance',
+        'strict-verified',
+        '--runtime-platform',
+        'opencode',
+        '--runtime-subagent-probe',
+        'ready',
+        '--runtime-stdin-handoff',
+        'ready'
+      ]),
+    /capability descriptor.*proof run id|proof run id.*capability descriptor/i
+  );
+});
+
 test('advisory review-and-fix start returns unsupported validation result', async () => {
   const result = await runWorkflowCommand('start', [
     'review-fix-spec',
