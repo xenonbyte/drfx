@@ -123,6 +123,11 @@ test('Claude and Codex partitioned CODE flow routes aggregate FAIL into the tria
       /stopped-with-deferrals[^\n]*reviewer report path[^\n]*record-triage[^\n]*begin-fix/i,
       `${platform}:review-fix-code must route partitioned aggregate FAIL into the triage/fix loop`
     );
+    assert.match(
+      rendered,
+      /after partitioned `end-fix` returns `reviewMode: partitioned`, do not run the generic `record-diff-review` step/i,
+      `${platform}:review-fix-code must keep the partitioned increment branch out of generic diff-review`
+    );
     assert.doesNotMatch(
       rendered,
       /do not invoke `begin-fix` for the active partition plan/i,

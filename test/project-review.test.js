@@ -29,7 +29,7 @@ const {
   CONTRACT_READ_BUDGET,
 } = require('../lib/project-review');
 
-const { assemblePartitionPlan } = require('../lib/workflow/file-set-context');
+const { assemblePartitionPlan, splitOversizeFile } = require('../lib/workflow/file-set-context');
 
 const {
   invalidateUnitReviews,
@@ -701,6 +701,32 @@ test('computeOversizeChunks returns null when a single line exceeds the byte bud
   assert.equal(computeOversizeChunks({ text, chunkLines: 400, overlapLines: 40, chunkByteBudget: 1_000_000 }), null);
 });
 
+test('splitOversizeFile: files beyond the chunkable byte cap stay legacy oversize blockers', () => {
+  const root = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'drfx-chunk-cap-'));
+  try {
+    const fileName = 'huge.js';
+    const line = 'x'.repeat(80);
+    const text = Array.from({ length: 120 }, () => line).join('\n') + '\n';
+    fs.writeFileSync(pathMod.join(root, fileName), text);
+
+    const chunks = splitOversizeFile({
+      projectRoot: root,
+      file: {
+        path: fileName,
+        size: Buffer.byteLength(text, 'utf8'),
+        contentId: 'huge-content',
+      },
+      chunkLines: 20,
+      overlapLines: 2,
+      chunkByteBudget: 1_000,
+    });
+
+    assert.equal(chunks, null, 'oversize text above the chunkable cap must not be fully materialized');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('aggregate: residualRisk is "none" when PASS, "present" otherwise', () => {
   const passSummaries = [makeSummary('unit-001')];
   const passResult = aggregate(passSummaries, []);
@@ -779,6 +805,16 @@ test('dedupChunkFindings: keeps genuinely different findings distinct', () => {
   ];
   const deduped = dedupChunkFindings(findings, units);
   assert.equal(deduped.length, 2, 'different defects at the same line must NOT collapse');
+});
+
+test('dedupChunkFindings: keeps same-class findings on different lines in one chunk distinct', () => {
+  const units = chunkPlanUnits();
+  const findings = [
+    makeFinding('big.js:12', 'bug', 'high', { issue: 'Repeated defect.', suggested_fix: 'Fix the repeated defect.' }),
+    makeFinding('big.js:13', 'bug', 'high', { issue: 'Repeated defect.', suggested_fix: 'Fix the repeated defect.' }),
+  ];
+  const deduped = dedupChunkFindings(findings, units);
+  assert.equal(deduped.length, 2, 'same issue class at different lines must remain two findings');
 });
 
 test('dedupChunkFindings: NEVER drops a finding with an unparsable location', () => {
@@ -1048,8 +1084,6 @@ test('invalidateUnitReviews fails loudly when a review artifact cannot be remove
 });
 
 // --- splitOversizeFile ---
-
-const { splitOversizeFile } = require('../lib/workflow/file-set-context');
 
 test('splitOversizeFile expands a text oversize file into chunk-units with stable contentIds', () => {
   const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'drfx-split-'));
