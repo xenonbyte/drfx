@@ -904,6 +904,88 @@ test('refreshPartitionPlanContent throws REFS_CHANGED when a non-chunk unit has 
 });
 
 // ---------------------------------------------------------------------------
+// refreshPartitionPlanContent — oversize_chunk unit (Task 17)
+// ---------------------------------------------------------------------------
+
+// Plan with one oversize_chunk unit (big.js) + one normal unit (a.js).
+// Chunk unit shape mirrors what splitOversizeFile/assemblePartitionPlan produce.
+function chunkBasePlan() {
+  return {
+    reviewMode: 'partitioned',
+    unitByteBudget: 1_000_000,
+    units: [
+      {
+        unit_id: 'unit-001',
+        oversize_chunk: true,
+        sourcePath: 'big.js',
+        sourceContentId: 'B0',
+        chunkIndex: 0,
+        chunkCount: 1,
+        files: [{ path: 'big.js', primaryLineRange: [1, 800], contextLineRange: [1, 820], size: 123, contentId: 'CHUNK_CID_0' }],
+        member_count: 1,
+        member_bytes: 123,
+        member_digest: 'MD0',
+        suggestedRefs: [],
+      },
+      {
+        unit_id: 'unit-002',
+        member_count: 1,
+        member_bytes: 10,
+        member_digest: 'OLD',
+        files: [{ path: 'a.js', size: 10, ext: '.js', contentId: 'ca0', unit_id: 'unit-002' }],
+        suggestedRefs: [],
+      },
+    ],
+    crosscuttingBackstops: ['security-redaction'],
+    projectReviewFingerprint: 'FP0',
+    userExcludes: [],
+    inventoryRows: [],
+  };
+}
+
+test('refreshPartitionPlanContent keeps chunk units intact when the parent content is unchanged', () => {
+  // a.js edited; big.js content UNCHANGED (sourceContentId still 'B0').
+  const newInventory = [
+    { path: 'a.js', size: 11, ext: '.js', contentId: 'ca1' },
+    { path: 'big.js', size: 123, ext: '.js', contentId: 'B0' },
+  ];
+  // Chunk unit (unit-001) must NOT appear in nextSuggestedRefsByUnit — it is
+  // skipped before the refs-contract check. Supply refs only for the normal unit.
+  const { refreshedPlan } = refreshPartitionPlanContent(chunkBasePlan(), newInventory, {
+    nextSuggestedRefsByUnit: { 'unit-002': [] },
+    projectReviewFingerprint: 'FP1',
+  });
+
+  const chunkUnit = refreshedPlan.units.find((u) => u.unit_id === 'unit-001');
+  // Chunk contentId must be preserved (not overwritten by the file-level 'B0').
+  assert.strictEqual(chunkUnit.files[0].contentId, 'CHUNK_CID_0', 'chunk files[0].contentId must be preserved');
+  // member_digest must be preserved.
+  assert.strictEqual(chunkUnit.member_digest, 'MD0', 'chunk member_digest must be preserved');
+
+  // inventoryRows: big.js appears exactly once and maps to the chunk unit_id.
+  const bigJsRows = refreshedPlan.inventoryRows.filter((r) => r.path === 'big.js');
+  assert.strictEqual(bigJsRows.length, 1, 'big.js must appear exactly once in inventoryRows');
+  assert.strictEqual(bigJsRows[0].unit_id, 'unit-001', 'inventoryRows big.js must map to chunk unit_id');
+  // The file-level contentId from inventory is preserved in inventoryRows.
+  assert.strictEqual(bigJsRows[0].contentId, 'B0', 'inventoryRows big.js contentId must be the file-level one');
+});
+
+test('refreshPartitionPlanContent throws when the oversize parent content changed', () => {
+  // big.js content changed from 'B0' to 'B1' => re-split required.
+  const newInventory = [
+    { path: 'a.js', size: 10, ext: '.js', contentId: 'ca0' },
+    { path: 'big.js', size: 200, ext: '.js', contentId: 'B1' },
+  ];
+  assert.throws(
+    () => refreshPartitionPlanContent(chunkBasePlan(), newInventory, {
+      nextSuggestedRefsByUnit: { 'unit-002': [] },
+      projectReviewFingerprint: 'FP1',
+    }),
+    (e) => e.code === 'ERR_PARTITION_MEMBERSHIP_CHANGED'
+  );
+});
+
+// ---------------------------------------------------------------------------
 // invalidateUnitReviews / invalidateAllBackstopReviews
 // ---------------------------------------------------------------------------
 
