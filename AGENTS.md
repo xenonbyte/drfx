@@ -48,7 +48,7 @@ A platform spans ~16 sync sites; missing one silently breaks install, the runtim
 - **Runtime platform + state**: `RUNTIME_PLATFORMS` in `lib/workflow/index.js`, `lib/workflow-state.js`, `lib/semantic-parsers.js`, and `lib/no-state.js`. For a full platform, also add it to the three write-eligibility allowlists in `lib/workflow/index.js` (preflight, practical, strict-verified). For strict-verified support, add it to `DESCRIPTOR_PLATFORMS` and `PROOF_PATTERN` in `lib/workflow-state.js`.
 - **Exclusions**: add the platform's home/config dir (e.g. `.opencode`) to the exclusion sets in `lib/snapshot-guard.js` and `lib/target-context.js`.
 - **Tests + fixtures**: `EXTENSION_BY_PLATFORM` and the mask/extract branches in `test/helpers/route-shell-snapshot.js`; the platform loops in `test/shared-assets.test.js`, `test/cli.test.js`, and `test/capability-check.test.js`; regenerate `test/fixtures/{generated,embedded}/<platform>/*`.
-- **Docs**: `README.md` and `README.zh-CN.md` (kept aligned), `CLAUDE.md`, and the platform list in this file.
+- **Docs + metadata**: the `description` field in `package.json`; `README.md` and `README.zh-CN.md` (kept aligned); `CLAUDE.md`; and the platform list in this file.
 
 ## Commit & Pull Request Guidelines
 
