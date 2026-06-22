@@ -1580,6 +1580,61 @@ test('applyPartitionedIncrement refreshes units.json, invalidates affected units
   assert.notEqual(readSummaryIfPresent(start.targetStateDir, survivor.unit_id), null);
 });
 
+test('applyPartitionedIncrement blocks on .drfxignore rule drift before writing fix state', async (t) => {
+  const root = makeMultiUnitRepo(t);
+  fs.writeFileSync(path.join(root, '.gitignore'), '.drfxignore\n');
+  fs.writeFileSync(path.join(root, '.drfxignore'), 'zzz-nonexistent-*.log\n');
+  const start = await startPartitioned(root);
+  const metadata = resolveFileSetStateMetadata(start.targetStateDir);
+  const oldPlan = readActivePartitionedPlan(metadata);
+  const unitsPath = path.join(start.targetStateDir, 'project-review', 'units.json');
+  const unitsBefore = fs.readFileSync(unitsPath, 'utf8');
+  const ledgerBefore = fs.existsSync(metadata.ledgerPath)
+    ? fs.readFileSync(metadata.ledgerPath, 'utf8')
+    : null;
+
+  fs.writeFileSync(path.join(root, 'src', 'a.js'), 'module.exports = function safe() { return 11; };\n');
+  fs.writeFileSync(path.join(root, '.drfxignore'), 'yyy-nonexistent-*.log\n');
+
+  const liveInventory = await resolveCodeInventory({ cwd: root, scopes: [] });
+  assert.notDeepEqual(liveInventory.userExcludes, oldPlan.userExcludes);
+
+  const result = await applyPartitionedIncrement({
+    metadata,
+    declaredFiles: ['src/a.js'],
+    fixReport: {
+      fixed: [{ issue_id: 'ISSUE-001', summary: 'Changed src/a.js.' }],
+      filesChanged: ['src/a.js'],
+      verification: ['node --check src/a.js: passed']
+    },
+    ledger: {
+      issues: [{
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'accepted',
+        location: 'src/a.js',
+        summary: 'Needs a safe implementation.',
+        resolution: ''
+      }]
+    },
+    options: {},
+    oldPlan,
+  });
+
+  assert.equal(result.ok, false, JSON.stringify(result));
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.statusReason, 'none');
+  assert.match(result.nextAction, /\.drfxignore|partitioned project review/i);
+  assert.equal(fs.readFileSync(unitsPath, 'utf8'), unitsBefore, 'units.json must not be refreshed with stale userExcludes');
+  const ledgerAfter = fs.existsSync(metadata.ledgerPath)
+    ? fs.readFileSync(metadata.ledgerPath, 'utf8')
+    : null;
+  assert.equal(ledgerAfter, ledgerBefore, 'ledger must not mark issues fixed after ignore-rule drift');
+  assert.equal(fs.existsSync(path.join(start.targetStateDir, 'reports', 'fix-round-001.md')), false);
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'blocked');
+});
+
 test('partitioned start writes a whole-root manifest (normalizedScopes is empty)', async (t) => {
   const root = makeOverCapRepo(t);
   const start = await startPartitioned(root);

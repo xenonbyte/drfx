@@ -696,6 +696,30 @@ test('computeOversizeChunks shrinks context overlap to honor the byte budget', (
   assert.ok(chunks.every((c) => c.byteLength <= 1_000_000));
 });
 
+test('computeOversizeChunks ignores the synthetic split entry from a terminal newline', () => {
+  const text = Array.from({ length: 1600 }, (_, i) => `line ${i + 1}`).join('\n') + '\n';
+  const chunks = computeOversizeChunks({ text, chunkLines: 800, overlapLines: 0, chunkByteBudget: 1_000_000 });
+
+  assert.deepEqual(chunks.map((chunk) => chunk.primaryLineRange), [
+    [1, 800],
+    [801, 1600],
+  ]);
+  assert.equal(chunks.at(-1).sliceText.endsWith('\n'), true, 'final chunk still preserves the terminal newline');
+});
+
+test('computeOversizeChunks does not charge a newline to the final unterminated line', () => {
+  const finalLine = 'x'.repeat(10);
+  const chunks = computeOversizeChunks({ text: `a\n${finalLine}`, chunkLines: 1, overlapLines: 0, chunkByteBudget: 10 });
+
+  assert.notEqual(chunks, null);
+  assert.deepEqual(chunks.map((chunk) => chunk.primaryLineRange), [
+    [1, 1],
+    [2, 2],
+  ]);
+  assert.equal(chunks[1].byteLength, 10);
+  assert.equal(chunks[1].sliceText, finalLine);
+});
+
 test('computeOversizeChunks returns null when a single line exceeds the byte budget', () => {
   const text = 'a'.repeat(2_000_000) + '\nshort\n';
   assert.equal(computeOversizeChunks({ text, chunkLines: 400, overlapLines: 40, chunkByteBudget: 1_000_000 }), null);

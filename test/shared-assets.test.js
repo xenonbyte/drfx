@@ -113,15 +113,20 @@ test('Claude and Codex file-set review-and-fix routes require full re-review aft
   }
 });
 
-test('Claude and Codex partitioned CODE flow routes aggregate FAIL into the triage/fix loop', () => {
+test('Claude and Codex partitioned CODE flow gates aggregate FAIL fix instructions on write mode', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
   for (const platform of ['claude', 'codex']) {
     const rendered = renderPlatformRoute(platform, 'review-fix-code', { packageVersion: SNAPSHOT_VERSION });
     assert.match(
       rendered,
-      /stopped-with-deferrals[^\n]*reviewer report path[^\n]*record-triage[^\n]*begin-fix/i,
-      `${platform}:review-fix-code must route partitioned aggregate FAIL into the triage/fix loop`
+      /active mode is `review-and-fix`[^\n]*stopped-with-deferrals[^\n]*reviewer report path[^\n]*record-triage[^\n]*begin-fix/i,
+      `${platform}:review-fix-code must route partitioned aggregate FAIL into the triage/fix loop only for review-and-fix`
+    );
+    assert.match(
+      rendered,
+      /active mode is `read-only`[^\n]*do not run `record-triage` or `begin-fix`[^\n]*finalize/i,
+      `${platform}:review-fix-code must keep read-only partitioned findings out of the fix loop`
     );
     assert.match(
       rendered,
