@@ -1,0 +1,2 @@
+DIFF-OK
+Summary: In-place backward edit to 06-spec.md (new SPEC-4 criterion) and 07-plan.md (step 4 now references SPEC-4) addresses ISSUE-001 within the 03–07 set.

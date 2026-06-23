@@ -1,0 +1,10 @@
+FAIL
+Findings:
+- id: R001
+  severity: high
+  location: 07-plan.md#step-4
+  issue: Step 4 caps link requests per address — an observable acceptance behavior that 06-spec.md never states as a criterion.
+  why_it_matters: The plan executes acceptance behavior with no spec backing, so the implementation can drift from intended behavior and there is no criterion to verify against.
+  suggested_fix: Add a rate-limit acceptance criterion to 06-spec.md, then reference it from 07-plan.md step 4.
+  confidence: confirmed
+  sensitive: false

@@ -1,0 +1,11 @@
+Triage:
+- reviewer_id: R001
+  issue_id: ISSUE-001
+  decision: accepted
+  severity: high
+  original_severity: high
+  rationale: Acceptance/behavior gap whose owner doc is 06-spec.md; resolvable by an in-place backward edit to 06-spec.md plus 07-plan.md.
+  merged_into: none
+  deferred_owner: none
+  deferred_next_action: none
+  non_blocking: false

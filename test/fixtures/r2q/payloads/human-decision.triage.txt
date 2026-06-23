@@ -1,0 +1,11 @@
+Triage:
+- reviewer_id: R001
+  issue_id: ISSUE-001
+  decision: deferred
+  severity: high
+  original_severity: high
+  rationale: Needs a human product/scope decision (unknown-email behavior); no in-place doc edit can resolve it.
+  merged_into: none
+  deferred_owner: user
+  deferred_next_action: decide the unknown-email behavior, then re-run r2q
+  non_blocking: false

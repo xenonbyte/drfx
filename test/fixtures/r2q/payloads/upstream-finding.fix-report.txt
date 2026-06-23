@@ -1,0 +1,15 @@
+Fixed:
+- ISSUE-001: Added the rate-limit acceptance criterion (SPEC-4) to 06-spec.md and referenced it from 07-plan.md step 4.
+
+Files changed:
+- {{OWNER_SPEC}}
+- {{PLAN}}
+
+Not fixed:
+- none
+
+Verification:
+- re-read 06-spec.md and 07-plan.md for the new SPEC-4 cross-reference: passed
+
+Residual risk:
+- none identified

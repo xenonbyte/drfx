@@ -1,0 +1,14 @@
+Final status: stopped-with-deferrals
+Assurance: practical
+Runtime platform: codex
+Mode: review-and-fix
+Target: none
+Files changed: none
+Fixed issue IDs: none
+Verification performed: full file-set review against COMMON+PLAN
+Deferrals or blockers: ISSUE-001 needs a human product decision; owner: user; next action: decide the unknown-email behavior, then re-run r2q
+Blocking reason: none
+Status reason: deferred-findings
+Residual risk: Accepted execution-state risk: r2q cannot prove the requirement was not already consumed (no r2p-execute marker).
+Redaction statement: no sensitive values persisted
+Coordinator agreement: none

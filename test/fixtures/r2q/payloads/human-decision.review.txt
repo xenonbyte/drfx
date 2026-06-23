@@ -1,0 +1,10 @@
+FAIL
+Findings:
+- id: R001
+  severity: high
+  location: 03-requirement-brief.md#scope
+  issue: The brief excludes new-account registration, but does not say whether a magic-link request for an unknown email should silently no-op or surface a sign-up nudge — a product/scope decision the documents cannot settle on their own.
+  why_it_matters: The answer changes what the plan must build (extra UX path vs none) and touches the enumeration-resistance promise; no in-place doc edit can decide it.
+  suggested_fix: Escalate the unknown-email behavior decision to the product owner before re-planning.
+  confidence: confirmed
+  sensitive: false

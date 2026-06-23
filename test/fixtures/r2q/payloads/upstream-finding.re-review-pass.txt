@@ -1,0 +1,2 @@
+PASS
+Summary: 07-plan.md step 4 now references SPEC-4 in 06-spec.md; no blocking findings remain after the backward fix.
