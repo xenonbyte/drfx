@@ -162,6 +162,13 @@ Supported tokens:
 - `strict` makes low-severity findings blocking unless they are explicitly accepted as non-blocking.
 - `assurance=practical` uses live platform checks suitable for normal automatic fixing on Codex, Claude Code, and opencode.
 - `assurance=strict-verified` requires same-flow `drfx doctor --platform <platform> --json` proof.
+
+> `assurance=strict-verified` requires a verified `drfx doctor` capability proof. No adapter currently
+> emits verified reviewer-isolation or write-blocking proof, so strict-verified PASS is presently
+> unreachable on all platforms (Claude, Codex, and opencode alike); `assurance=practical` is the
+> supported automatic-fix path. strict-verified remains wired end-to-end and will activate unchanged
+> once an adapter can supply verified proof.
+
 - `assurance=advisory` allows read-only advisory review only.
 - `resume` continues from target-local state.
 - `reset` archives the existing target state (moved to `.drfx/archived/`, never deleted) and starts a fresh review. `resume` and `reset` are mutually exclusive.

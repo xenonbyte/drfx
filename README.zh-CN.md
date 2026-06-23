@@ -162,6 +162,12 @@ Supported tokens:
 - `strict` 让 low-severity findings 阻断，除非它们被显式接受为 non-blocking。
 - `assurance=practical` 使用适合 Codex、Claude Code 和 opencode 常规自动修复的 live platform checks。
 - `assurance=strict-verified` 要求 same-flow `drfx doctor --platform <platform> --json` proof。
+
+> `assurance=strict-verified` 需要一份经过验证的 `drfx doctor` 能力证明。目前没有任何适配器能给出经过验证的
+> 审查者隔离或写入阻断证明,因此 strict-verified 的 PASS 在所有平台(Claude、Codex、opencode)上当前都不可达;
+> `assurance=practical` 才是受支持的自动修复路径。strict-verified 的端到端链路保持完好,一旦某个适配器能提供经过
+> 验证的证明即可原样启用。
+
 - `assurance=advisory` 仅允许 read-only advisory review。
 - `resume` 从 target-local state 继续。
 - `reset` 归档现有 target state（移到 `.drfx/archived/`，绝不删除）并全新开始 review。`resume` 与 `reset` 互斥。

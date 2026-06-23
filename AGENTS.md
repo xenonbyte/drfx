@@ -18,6 +18,7 @@ This repository is a Node.js 20 CommonJS package for installing document and cod
 - `npm test` runs the full `node --test` suite.
 - `npm run syntaxcheck` parse-checks (`node --check`) every `.js` file under `bin/`, `lib/`, and `test/` without executing it.
 - `node bin/drfx.js doctor` runs local capability checks and validates advisory/pass capability reporting.
+- `assurance=strict-verified` is unreachable today: all adapters report reviewer capabilities as `unverified`, so `drfx doctor` never emits a verified proof. Use `assurance=practical` for automatic fixes; strict-verified stays wired for when an adapter supplies verified proof.
 - `node bin/drfx.js status` reports which generated routes are installed per platform.
 - `node bin/drfx.js install [--platform claude,codex,gemini,opencode]` installs generated routes for local manual testing (`--platform` is optional; omit it for all platforms).
 - `node bin/drfx.js uninstall [--platform claude,codex,gemini,opencode]` removes manifest-owned generated routes.
