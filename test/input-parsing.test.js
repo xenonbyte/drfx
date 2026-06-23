@@ -378,7 +378,78 @@ test('review-fix-code with includeMetadata exposes routeKind and requestedMode',
 });
 
 // ---------------------------------------------------------------------------
-// rounds=<n> token tests (all six routes — document routes tested here)
+// review-fix-r2q parser tests
+// ---------------------------------------------------------------------------
+
+test('review-fix-r2q parses a bare requirement-directory target with document PLAN type and snapshot default guard', () => {
+  const result = parseInvocation('review-fix-r2q', ['.req-to-plan/WF-7']);
+  assert.equal(result.entrySkill, 'review-fix-r2q');
+  assert.equal(result.routeKind, 'r2q');
+  assert.equal(result.documentType, 'PLAN');
+  assert.equal(result.target, '.req-to-plan/WF-7');
+  // r2q overrides the shared git default: its file-set guard defaults to snapshot.
+  assert.equal(result.guardMode, 'snapshot');
+  assert.equal(result.mode, 'review-and-fix');
+  assert.equal(result.resume, false);
+  assert.equal(result.reset, false);
+  assert.equal(result.root, null);
+  assert.equal(result.roundLimit, null);
+});
+
+test('review-fix-r2q accepts target= form and explicit shared flags', () => {
+  const result = parseInvocation('review-fix-r2q', [
+    'target=.req-to-plan/WF-7',
+    'review-and-fix',
+    'guard=git',
+    'resume',
+    'root=/project',
+    'rounds=4'
+  ]);
+  assert.equal(result.target, '.req-to-plan/WF-7');
+  assert.equal(result.mode, 'review-and-fix');
+  assert.equal(result.guardMode, 'git');
+  assert.equal(result.resume, true);
+  assert.equal(result.root, '/project');
+  assert.equal(result.roundLimit, 4);
+});
+
+test('review-fix-r2q requires a target requirement directory', () => {
+  assert.throws(
+    () => parseInvocation('review-fix-r2q', ['review-and-fix']),
+    (error) => error.code === 'ERR_MISSING_TARGET'
+  );
+});
+
+test('review-fix-r2q rejects the document-route and file-set-route token surface', () => {
+  for (const token of ['ref=foo.md', 'strict', 'normal', 'assurance=practical', 'ledger=ISSUES.md', 'scope=src', 'base=main', 'type=PLAN']) {
+    assert.throws(
+      () => parseInvocation('review-fix-r2q', ['target=.req-to-plan/WF-7', token]),
+      /unknown token/i,
+      `r2q must reject ${token}`
+    );
+  }
+});
+
+test('review-fix-r2q rejects read-only rounds=<n> (unsupported loop semantics)', () => {
+  assert.throws(
+    () => parseInvocation('review-fix-r2q', ['target=.req-to-plan/WF-7', 'read-only', 'rounds=2']),
+    (error) => typeof error.code === 'string' && /rounds/i.test(error.message)
+  );
+});
+
+test('review-fix-r2q with includeMetadata exposes routeKind and requestedMode', () => {
+  const result = parseInvocation('review-fix-r2q', ['target=.req-to-plan/WF-7'], {
+    defaultMode: 'read-only',
+    includeMetadata: true
+  });
+  assert.equal(result.routeKind, 'r2q');
+  assert.equal(result.documentType, 'PLAN');
+  assert.equal(result.requestedMode, 'read-only');
+  assert.equal(result.modeSource, 'default');
+});
+
+// ---------------------------------------------------------------------------
+// rounds=<n> token tests (all routes — document routes tested here)
 // ---------------------------------------------------------------------------
 
 test('document routes accept valid rounds=<n> and expose roundLimit', () => {

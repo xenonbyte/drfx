@@ -53,3 +53,20 @@ test('npm pack ships the code-route skills, rubrics, and template fragments', ()
     assert.equal(files.has(required), true, `npm pack must ship ${required}`);
   }
 });
+
+test('npm pack ships the r2q skill and all four-platform r2q template fragments', () => {
+  const files = new Set(packFiles());
+  for (const required of [
+    'skills/review-fix-r2q/SKILL.md',
+    'templates/fragments/route-contract.r2q.claude.md',
+    'templates/fragments/route-contract.r2q.codex.md',
+    'templates/fragments/route-contract.r2q.gemini.md',
+    'templates/fragments/route-contract.r2q.opencode.md',
+    'templates/fragments/invocation-gate.r2q.claude.md',
+    'templates/fragments/invocation-gate.r2q.codex.md',
+    'templates/fragments/invocation-gate.r2q.gemini.md',
+    'templates/fragments/invocation-gate.r2q.opencode.md'
+  ]) {
+    assert.equal(files.has(required), true, `npm pack must ship ${required}`);
+  }
+});

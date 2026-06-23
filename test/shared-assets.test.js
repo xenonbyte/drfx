@@ -1259,10 +1259,10 @@ test('coordinator defines a recurrence + fix-attempt-cap convergence rule', () =
 });
 
 // ---------------------------------------------------------------------------
-// generatePlatformFiles must generate all SIX routes (document + pr + code)
+// generatePlatformFiles must generate all SEVEN routes (document + pr + code + r2q)
 // ---------------------------------------------------------------------------
 
-test('generatePlatformFiles generates all six routes (document + pr + code)', () => {
+test('generatePlatformFiles generates all seven routes (document + pr + code + r2q)', () => {
   const allRouteNames = listRoutes().map((r) => r.routeName);
   assert.deepEqual(allRouteNames, [
     'review-fix-spec',
@@ -1271,6 +1271,7 @@ test('generatePlatformFiles generates all six routes (document + pr + code)', ()
     'review-fix-doc',
     'review-fix-pr',
     'review-fix-code',
+    'review-fix-r2q',
   ]);
 
   for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
@@ -1279,7 +1280,7 @@ test('generatePlatformFiles generates all six routes (document + pr + code)', ()
     assert.deepEqual(
       generatedRouteNames,
       allRouteNames,
-      `${platform} must generate all six routes`
+      `${platform} must generate all seven routes`
     );
   }
 });
@@ -1657,7 +1658,8 @@ test('codex generated skills copy shared assets byte-for-byte from source', () =
 
   function expectedSharedPathsForRoute(route) {
     const paths = ['shared/core.md', 'shared/long-task.md'];
-    if (route.routeKind === 'document') paths.push('shared/rubrics/common.md');
+    // r2q layers COMMON like the document routes (it embeds COMMON + PLAN).
+    if (route.routeKind === 'document' || route.routeKind === 'r2q') paths.push('shared/rubrics/common.md');
     if (route.rubric) paths.push(`shared/rubrics/${route.rubric}.md`);
     paths.push(
       'shared/prompts/reviewer.md',

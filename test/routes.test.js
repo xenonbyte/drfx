@@ -3,12 +3,13 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { getRouteDescriptor, listRoutes, listDocumentRoutes } = require('../lib/routes');
+const { mergeRules } = require('../lib/rulebook');
 
 // ---------------------------------------------------------------------------
-// SPEC-FR-001: Six first-class routes
+// SPEC-FR-001: Seven first-class routes
 // ---------------------------------------------------------------------------
 
-test('route registry exposes six supported routes with defaults', () => {
+test('route registry exposes seven supported routes with defaults', () => {
   assert.deepEqual(listRoutes().map((route) => route.routeName), [
     'review-fix-spec',
     'review-fix-plan',
@@ -16,6 +17,7 @@ test('route registry exposes six supported routes with defaults', () => {
     'review-fix-doc',
     'review-fix-pr',
     'review-fix-code',
+    'review-fix-r2q',
   ]);
   assert.equal(getRouteDescriptor('review-fix-pr').defaultMode, 'review-and-fix');
   assert.equal(getRouteDescriptor('review-fix-pr').defaultGuard, 'git');
@@ -30,11 +32,42 @@ test('route registry exposes correct routeKind for each route', () => {
   assert.equal(getRouteDescriptor('review-fix-code').routeKind, 'code');
 });
 
-test('all routes have defaultMode review-and-fix and defaultGuard git', () => {
+test('all routes have defaultMode review-and-fix; defaultGuard git except r2q snapshot', () => {
   for (const route of listRoutes()) {
     assert.equal(route.defaultMode, 'review-and-fix', `${route.routeName}.defaultMode`);
-    assert.equal(route.defaultGuard, 'git', `${route.routeName}.defaultGuard`);
+    // r2q's file-set guard defaults to snapshot (run.md is a protected read-only
+    // dependency); every other route defaults to git.
+    const expectedGuard = route.routeName === 'review-fix-r2q' ? 'snapshot' : 'git';
+    assert.equal(route.defaultGuard, expectedGuard, `${route.routeName}.defaultGuard`);
   }
+});
+
+test('review-fix-r2q descriptor maps to the document PLAN stack via a file-set context', () => {
+  const r2q = getRouteDescriptor('review-fix-r2q');
+  assert.equal(r2q.routeKind, 'r2q');
+  assert.equal(r2q.documentType, 'PLAN');
+  assert.equal(r2q.rubric, 'plan');
+  assert.equal(r2q.targetContextKind, 'r2q');
+  assert.equal(r2q.defaultMode, 'review-and-fix');
+  assert.equal(r2q.defaultGuard, 'snapshot');
+  // r2q is NOT a single-file document route, so it is excluded from listDocumentRoutes().
+  assert.equal(listDocumentRoutes().some((route) => route.routeName === 'review-fix-r2q'), false);
+});
+
+test('review-fix-r2q merges the COMMON + PLAN document rule stack (same as review-fix-plan)', () => {
+  // r2q maps to documentType PLAN, so the merged document rule stack is identical to
+  // the PLAN document route: hard constraints + built-in COMMON + built-in PLAN.
+  const r2q = getRouteDescriptor('review-fix-r2q');
+  const plan = getRouteDescriptor('review-fix-plan');
+  assert.equal(r2q.documentType, plan.documentType);
+
+  const builtIn = { COMMON: 'common-rules', PLAN: 'plan-rules' };
+  const r2qMerged = mergeRules({ documentType: r2q.documentType, builtIn });
+  const planMerged = mergeRules({ documentType: plan.documentType, builtIn });
+
+  assert.deepEqual(r2qMerged.sources, planMerged.sources);
+  assert.deepEqual(r2qMerged.sources, ['hard', 'built-in-common', 'built-in-PLAN']);
+  assert.equal(r2qMerged.text, planMerged.text);
 });
 
 // ---------------------------------------------------------------------------

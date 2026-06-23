@@ -59,6 +59,15 @@ function parsedFor(entrySkill, tokens) {
   return { invocation };
 }
 
+// Create a shape-valid r2q requirement directory (<project>/.req-to-plan/WF-*) and
+// return the project root. Lexical shape only — enough for metadata + dispatch tests.
+function freshR2qProject(t) {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, '.req-to-plan', 'WF-1'), { recursive: true });
+  return root;
+}
+
 test('resolveRouteTargetMetadata derives a pr-<hash> file-set key, never deriveTargetKey on undefined target', (t) => {
   const root = freshRepo(t);
   const parsed = parsedFor('review-fix-pr', ['base=main', 'read-only']);
@@ -326,6 +335,77 @@ test('unavailable stdin handoff blocks a read-only PR start without crashing on 
   assert.equal(result.blockingReason, 'unsafe-handoff-file');
   assert.equal(result.routeKind, 'pr');
   assert.match(result.targetKey, /^pr-[0-9a-f]{12}$/);
+});
+
+// ---------------------------------------------------------------------------
+// review-fix-r2q route-kind dispatch (Task 6)
+//
+// r2q is a FILE-SET route (isFileSetRoute true) but a DOCUMENT-rubric route. The
+// route-kind dispatch must label it `r2q` — never collapse it to `code` the way the
+// old binary `entrySkill === 'review-fix-pr' ? 'pr' : 'code'` fallback did — and the
+// unsupported file-set lifecycle guidance must name the generic file-set loop, not
+// PR/CODE-only wording.
+// ---------------------------------------------------------------------------
+
+test('resolveRouteTargetMetadata derives an r2q-<hash> file-set key, never collapsing r2q to code', (t) => {
+  const root = freshR2qProject(t);
+  const parsed = parsedFor('review-fix-r2q', ['target=.req-to-plan/WF-1', 'read-only']);
+  assert.equal(isFileSetRoute(parsed), true);
+  const metadata = resolveRouteTargetMetadata(parsed, { cwd: root });
+  assert.equal(metadata.routeKind, 'r2q');
+  assert.match(metadata.targetKey, /^r2q-[0-9a-f]{12}$/);
+  assert.equal(metadata.normalizedTarget, null);
+  assert.equal(metadata.projectRoot, root);
+  assert.equal(metadata.requirementDir, '.req-to-plan/WF-1');
+});
+
+test('an r2q advisory review-and-fix start dispatches to unsupported with routeKind r2q (not code)', async (t) => {
+  const root = freshR2qProject(t);
+  const result = await runWorkflowCommand('start', [
+    'review-fix-r2q',
+    'target=.req-to-plan/WF-1',
+    'review-and-fix',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--json'
+  ], { cwd: root });
+  assert.equal(result.status, 'unsupported');
+  // The non-PR file-set route is labeled by its descriptor kind, not collapsed to code.
+  assert.equal(result.routeKind, 'r2q');
+  assert.match(result.targetKey, /^r2q-[0-9a-f]{12}$/);
+  assert.equal(result.documentType, 'none');
+  assert.equal(result.target, null);
+});
+
+test('an unsupported r2q file-set lifecycle command names the generic file-set loop, not PR/CODE only', async (t) => {
+  const root = freshR2qProject(t);
+  // `finalize` is a file-set persistent command with no wired r2q lifecycle path yet
+  // (later tasks), so it falls to fileSetLifecycleUnsupported. The guidance must cover
+  // r2q with generic file-set wording rather than naming PR/CODE only.
+  const result = await runWorkflowCommand('finalize', [
+    'review-fix-r2q',
+    'target=.req-to-plan/WF-1',
+    'review-and-fix',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--json'
+  ], { cwd: root });
+  assert.equal(result.status, 'unsupported');
+  assert.equal(result.routeKind, 'r2q');
+  assert.match(result.nextAction, /file-set persistent loop/);
+  assert.doesNotMatch(result.nextAction, /PR\/CODE/);
 });
 
 // ---------------------------------------------------------------------------

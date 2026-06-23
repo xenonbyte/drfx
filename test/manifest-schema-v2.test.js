@@ -70,8 +70,8 @@ test('codex install records childFiles and treeChecksum for skill directories', 
   assert.ok(childFiles.every((name) => name.length > 0));
 });
 
-test('install owns all six routes (document + pr + code) and removes only owned files', async (t) => {
-  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-six-routes-')));
+test('install owns all seven routes (document + pr + code + r2q) and removes only owned files', async (t) => {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-seven-routes-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const homeDir = path.join(root, 'home');
   const cwd = path.join(root, 'project');
@@ -85,15 +85,15 @@ test('install owns all six routes (document + pr + code) and removes only owned 
   };
   for (const value of Object.values(platformRoots)) fs.mkdirSync(value, { recursive: true });
 
-  const sixRoutes = [
+  const allRoutes = [
     'review-fix-spec', 'review-fix-plan', 'review-fix-design',
-    'review-fix-doc', 'review-fix-pr', 'review-fix-code'
+    'review-fix-doc', 'review-fix-pr', 'review-fix-code', 'review-fix-r2q'
   ];
 
   for (const platform of ['claude', 'codex', 'gemini']) {
     await installPlatform(platform, { homeDir, platformRoots, cwd });
     const { manifest } = readInstallManifest(platform, { homeDir });
-    assert.equal(manifest.generated.length, 6, `${platform} must own six routes`);
+    assert.equal(manifest.generated.length, 7, `${platform} must own seven routes`);
   }
 
   // Codex pr/code skills embed their route-kind rubric.
@@ -107,18 +107,18 @@ test('install owns all six routes (document + pr + code) and removes only owned 
   assert.equal(codexResult.partial, true);
   assert.ok(codexResult.skipped.some((s) => s.path === path.join(platformRoots.codexSkills, 'review-fix-code') && s.reason === 'modified'));
   assert.equal(fs.existsSync(userNote), true);
-  // The other five codex skills were removed (owned-only).
+  // The other codex skills were removed (owned-only).
   assert.equal(fs.existsSync(path.join(platformRoots.codexSkills, 'review-fix-pr')), false);
 
-  // Claude/Gemini uninstall removes all six owned route files cleanly.
+  // Claude/Gemini uninstall removes all seven owned route files cleanly.
   const claudeResult = await uninstallPlatform('claude', { homeDir, platformRoots, cwd });
   assert.notEqual(claudeResult.partial, true);
-  for (const routeName of sixRoutes) {
+  for (const routeName of allRoutes) {
     assert.equal(fs.existsSync(path.join(platformRoots.claude, `${routeName}.md`)), false, `claude ${routeName} removed`);
   }
   const geminiResult = await uninstallPlatform('gemini', { homeDir, platformRoots, cwd });
   assert.notEqual(geminiResult.partial, true);
-  for (const routeName of sixRoutes) {
+  for (const routeName of allRoutes) {
     assert.equal(fs.existsSync(path.join(platformRoots.gemini, `${routeName}.toml`)), false, `gemini ${routeName} removed`);
   }
 });

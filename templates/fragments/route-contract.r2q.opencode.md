@@ -1,0 +1,12 @@
+- This route reviews an r2p requirement directory: `<project>/.req-to-plan/WF-*`. The review anchor is the requirement plan (`07-plan.md`).
+- This route has a fixed document type: `{{DOCUMENT_TYPE}}`. Users must not pass `type`, and must not infer type from filename or path.
+- Users must not pass `ref=`, `assurance=`, `strict`, `normal`, `ledger=`, `scope=`, or `base=`; this route has a fixed PLAN rubric and no reference-document surface.
+- The review judges the requirement plan (`07-plan.md`) against its owning upstream docs (`03–06`) inside the same requirement directory; fixes flow backward into `03–06` when an upstream doc owns the gap.
+- Edit only `07-plan.md` and the owning upstream doc (`03–06`); never edit `run.md` or any file outside `03–07`.
+- `run.md` is a protected read-only gate: it is read to confirm the plan stage is generated/approved, never written, and any drift in `run.md` makes stored eligibility stale.
+- The file-set guard defaults to `snapshot`; `guard=git` requires a clean worktree before the first fix and route-owned changes that stay inside the resolved `03–07` file set.
+- Public CLI commands are `drfx doctor`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.
+- For strict verified proof, run `drfx doctor` in the same route flow and consume only its JSON output.
+- The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, target editing, diff judgment, and final coordinator agreement are LLM work.
+- Do not trust old or stale descriptor files for automatic fixing or workflow PASS.
+- For resume, read `.drfx/targets/<target-key>/`.
