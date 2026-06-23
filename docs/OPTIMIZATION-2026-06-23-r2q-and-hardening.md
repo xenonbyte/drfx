@@ -350,8 +350,10 @@ Finding → owner-document mapping (each is a plain in-place edit; no r2p stage 
 
 - **Plan generated:** `run.md` shows the `plan` stage approved in `## Active Artifacts` (or `## Status` is
   `closed_at_plan_checkpoint`). If plan generation is incomplete → block with a clear reason.
-- **Not archived:** the requirement directory is **not** under an `*/archive/.req-to-plan/*` path
-  (archived runs live at `docs/archive/.req-to-plan/WF-*`; active runs at `<project>/.req-to-plan/WF-*`).
+- **Not archived:** the requirement directory is **not** under a `*/.req-to-plan/archive/*` path
+  (archived runs live at `<project>/.req-to-plan/archive/WF-*` — r2p's standard archive location; active
+  runs live directly at `<project>/.req-to-plan/WF-*`). The gate blocks when an `archive` segment sits
+  between `.req-to-plan/` and the `WF-*` directory.
 
 "Executed" has **no** r2p marker (no `r2p-execute`), so archive-location is only a pre-archive proxy, not
 proof that artifacts have not been consumed. r2q uses status + archive-path; it does not silently run on an
