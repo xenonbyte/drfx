@@ -255,14 +255,14 @@ Net: no interrupt, the loop runs to a clean terminal state, and the un-PASSed hu
 `npm run syntaxcheck && npm test` (`test/shared-assets.test.js` snapshots will move — 3b's prompt edits touch
 the most fixtures since fixer/coordinator are shared across all six routes).
 
-> **APPLIED 2026-06-23.** 3b's three edits are live: `shared/rubrics/common.md` (Resolution line + broadened
-> blocking), `shared/prompts/fixer.md` (surfacing-is-a-valid-fix), `shared/prompts/coordinator.md`
-> (human-decision → deferred + surfaced). Regenerated 24 `test/fixtures/embedded/*` snapshots (only `embedded/`
-> moves — `generated/` masks shared content; codex copied-asset test compares to live source). Verified:
-> `npm run syntaxcheck` (89 files) + `npm test` **1104/1104 pass, 0 fail**. Route scope confirmed by the diff:
-> document-route fixtures gained the common.md rule + fixer + coordinator; code-route (pr/code) fixtures gained
-> only fixer + coordinator (COMMON is not layered for PR/CODE). 3a (PLAN TDD/acceptance), P2, P3, and r2q
-> remain staged for the batch implementation.
+> **VALIDATED 2026-06-23 (not landed).** To confirm 3b's approach is implementable, the three edits were
+> applied to a throwaway working tree and the suite was run — `npm run syntaxcheck` (89 files) + `npm test`
+> **1104/1104 pass, 0 fail** — and the diff confirmed the route scope (document routes gain the common.md rule
+> + fixer + coordinator; pr/code gain only fixer + coordinator, since COMMON is not layered for PR/CODE).
+> Fixture impact: only `test/fixtures/embedded/*` moves (`generated/` masks shared content; the codex
+> copied-asset test compares to live source). The working-tree edits were then **reverted** — 3b is **not
+> landed/committed**; like 3a, P2, P3, and r2q it awaits document review and the batch implementation. The
+> validation only proves the documented approach is test-green and safe.
 
 ---
 
@@ -467,7 +467,7 @@ pass, the PLAN-rubric snapshot fixtures regenerate cleanly, and the r2q lifecycl
   `test/fixtures/embedded/<platform>/<route>.*` (the `generated/` shells mask embedded shared content to a
   sentinel; the codex copied-asset test compares to live source). Regenerate by writing, per
   `platform × route`, `extractEmbeddedSharedContent(renderPlatformRoute(platform, route, {packageVersion:'0.0.0-snapshot'}))`
-  to `embeddedSnapshotPath(...)` (the same calls the embedded test makes). Used for the 3b apply above.
+  to `embeddedSnapshotPath(...)` (the same calls the embedded test makes). Used for the 3b validation above.
 - **r2q gate fields.** Which exact `run.md` fields the gate parses (`## Status`, `## Active Artifacts`
   plan-stage approval, archive-path) — read a couple of real `WF-*` `run.md` files when writing the gate.
 - The earlier r2p-CLI ergonomics question is **moot** under the revised model (r2q never invokes the r2p CLI).
