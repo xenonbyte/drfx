@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { serializeManifest, parseManifestText } = require('../lib/manifest');
+const { formatManifestV2, parseManifestV2, requiredManifestV2Keys } = require('../lib/workflow-state');
 
 function baseManifest(generated) {
   return {
@@ -308,4 +309,114 @@ test('schema v1 uninstall removes an unchanged codex skill directory via the rec
 
   assert.notEqual(result.partial, true);
   assert.equal(fs.existsSync(skillDir), false);
+});
+
+// --- r2q targetContextKind schema registration ---
+
+function makeR2qManifest(overrides = {}) {
+  return {
+    manifestSchema: 2,
+    targetContextKind: 'r2q',
+    target: 'none',
+    normalizedTarget: 'none',
+    documentType: 'none',
+    strictness: 'normal',
+    mode: 'review-and-fix',
+    guardMode: 'git',
+    targetKey: 'r2q-aaaaaaaaaaaa',
+    ledgerPath: 'none',
+    status: 'review',
+    currentPhase: 'review',
+    currentRound: 1,
+    fixAttemptCount: 0,
+    assurance: 'practical',
+    runtimePlatform: 'claude-code',
+    descriptorPlatform: 'none',
+    assuranceProof: 'none',
+    runtimeSubagentProbe: 'not-required',
+    runtimeSubagentProbeEvidence: 'none',
+    runtimeFingerprintGuard: 'not-run',
+    runtimeStdinHandoff: 'not-required',
+    runtimeStdinHandoffEvidence: 'none',
+    runtimeDowngradeReason: 'none',
+    blockingReason: 'none',
+    statusReason: 'none',
+    currentReportPath: 'none',
+    lastReviewerReportPath: 'none',
+    lastTriageReportPath: 'none',
+    lastFixReportPath: 'none',
+    lastDiffReviewReportPath: 'none',
+    requirementDir: 'requirements/feature-x',
+    runMdSha256: 'b'.repeat(64),
+    fileSetFingerprint: 'c'.repeat(64),
+    lastModifiedAt: '2026-06-24T00:00:00.000Z',
+    references: [],
+    createdAt: '2026-06-24T00:00:00.000Z',
+    updatedAt: '2026-06-24T00:00:00.000Z',
+    ...overrides
+  };
+}
+
+test('r2q-kind manifest round-trips through format/parse/normalize', () => {
+  const text = formatManifestV2(makeR2qManifest());
+  assert.match(text, /Target context kind: r2q/);
+  assert.match(text, /Requirement dir: requirements\/feature-x/);
+  assert.match(text, /Run md sha256: b{64}/);
+  assert.match(text, /File set fingerprint: c{64}/);
+  assert.match(text, /Last modified at: 2026-06-24T00:00:00.000Z/);
+
+  const parsed = parseManifestV2(text);
+  assert.equal(parsed.targetContextKind, 'r2q');
+  assert.equal(parsed.documentType, 'none');
+  assert.equal(parsed.requirementDir, 'requirements/feature-x');
+  assert.equal(parsed.runMdSha256, 'b'.repeat(64));
+  assert.equal(parsed.fileSetFingerprint, 'c'.repeat(64));
+  assert.equal(parsed.lastModifiedAt, '2026-06-24T00:00:00.000Z');
+  // byte-stable round-trip
+  assert.equal(formatManifestV2(parsed), text);
+});
+
+test('r2q-kind manifest does not emit single-file identity fields', () => {
+  const text = formatManifestV2(makeR2qManifest());
+  assert.doesNotMatch(text, /^Initial content sha256:/m);
+  assert.doesNotMatch(text, /^Last known content sha256:/m);
+  assert.doesNotMatch(text, /^Last reviewed content sha256:/m);
+  assert.doesNotMatch(text, /^Last passed content sha256:/m);
+  assert.doesNotMatch(text, /^File size:/m);
+  assert.doesNotMatch(text, /^Base:/m);
+  assert.doesNotMatch(text, /^Base revision:/m);
+  assert.doesNotMatch(text, /^Merge base:/m);
+  assert.doesNotMatch(text, /^Head:/m);
+});
+
+test('r2q-kind manifest optional roundLimit round-trips and is omitted when none', () => {
+  const withLimit = formatManifestV2(makeR2qManifest({ roundLimit: '3' }));
+  assert.match(withLimit, /Round limit: 3/);
+  assert.equal(parseManifestV2(withLimit).roundLimit, '3');
+
+  const noLimit = formatManifestV2(makeR2qManifest({ roundLimit: 'none' }));
+  assert.doesNotMatch(noLimit, /Round limit:/);
+  assert.equal(parseManifestV2(noLimit).roundLimit, 'none');
+});
+
+test('requiredManifestV2Keys returns exactly the r2q key set', () => {
+  const keys = requiredManifestV2Keys('r2q');
+  // r2q-specific fields
+  assert.ok(keys.includes('requirementDir'), 'must include requirementDir');
+  assert.ok(keys.includes('runMdSha256'), 'must include runMdSha256');
+  assert.ok(keys.includes('fileSetFingerprint'), 'must include fileSetFingerprint');
+  assert.ok(keys.includes('lastModifiedAt'), 'must include lastModifiedAt');
+  // shared head fields
+  assert.ok(keys.includes('manifestSchema'), 'must include manifestSchema');
+  assert.ok(keys.includes('status'), 'must include status');
+  // timestamps appended by requiredManifestV2Keys
+  assert.ok(keys.includes('createdAt'), 'must include createdAt');
+  assert.ok(keys.includes('updatedAt'), 'must include updatedAt');
+  // must NOT include single-document content fields
+  assert.ok(!keys.includes('initialContentSha256'), 'must not include initialContentSha256');
+  assert.ok(!keys.includes('lastKnownContentSha256'), 'must not include lastKnownContentSha256');
+  assert.ok(!keys.includes('fileSize'), 'must not include fileSize');
+  // must NOT include PR-specific fields
+  assert.ok(!keys.includes('base'), 'must not include base');
+  assert.ok(!keys.includes('baseRevision'), 'must not include baseRevision');
 });
