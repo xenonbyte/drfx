@@ -450,7 +450,6 @@ test('e2e drift: mutating run.md after triage blocks begin-fix (no write, no PAS
 
 test('e2e editable-set: a write to run.md is refused as out-of-set (no diff-review, run.md byte-identical)', async (t) => {
   const { root, homeDir, wfDir } = makeSandbox(t, 'WF-20260624-runmd-refused', { git: true });
-  const runMdBefore = sha256OfFile(path.join(wfDir, 'run.md'));
   const { start, opts } = await reachAfterTriage(root, homeDir, wfDir, {
     review: REVIEW_FAIL,
     triage: TRIAGE_ACCEPT,

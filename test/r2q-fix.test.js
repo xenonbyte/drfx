@@ -272,7 +272,6 @@ test('r2q review-and-fix accepts an in-place backward fix to 07-plan.md + the ow
 test('r2q end-fix refuses a write to run.md as out-of-set', async (t) => {
   const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-runmd');
   const { start, opts } = await reachR2qFixStage(root, homeDir, wfDir);
-  const before = snapshotProtectedFiles(wfDir);
 
   const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
     ...opts,

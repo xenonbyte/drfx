@@ -252,7 +252,7 @@ function r2qArgs(wfDir, { mode = 'review-and-fix', assurance = 'practical', runt
 
 // Drive start → context → record-review → record-triage with the supplied review +
 // triage payloads, returning the start result and shared opts.
-async function reachAfterTriage(root, homeDir, wfDir, { review, triage, args }) {
+async function reachAfterTriage(root, homeDir, { review, triage, args }) {
   const opts = { cwd: root, homeDir };
   const start = await runWorkflowCommand('start', args, opts);
   assert.equal(start.ok, true, JSON.stringify(start));
@@ -279,7 +279,7 @@ async function reachAfterTriage(root, homeDir, wfDir, { review, triage, args }) 
 test('r2q review-and-fix earns PASS over the 03–07 set with the execution-state risk surfaced', async (t) => {
   const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-pass');
   const args = r2qArgs(wfDir);
-  const { start, opts } = await reachAfterTriage(root, homeDir, wfDir, {
+  const { start, opts } = await reachAfterTriage(root, homeDir, {
     review: REVIEW_FAIL,
     triage: TRIAGE_ACCEPT,
     args
@@ -375,7 +375,7 @@ test('r2q review-and-fix earns PASS over the 03–07 set with the execution-stat
 test('r2q human-decision finding stops-with-deferrals (owner+next action), never pass', async (t) => {
   const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-defer');
   const args = r2qArgs(wfDir);
-  const { start, opts, triageResult } = await reachAfterTriage(root, homeDir, wfDir, {
+  const { start, opts, triageResult } = await reachAfterTriage(root, homeDir, {
     review: REVIEW_FAIL_HUMAN,
     triage: TRIAGE_DEFER_USER,
     args
