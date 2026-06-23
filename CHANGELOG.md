@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **`review-fix-r2q` route.** Reviews an r2p requirement directory's `07-plan.md` with the PLAN rubric and fixes findings backward into the owning upstream docs (`03–06`) in place. `run.md` is a read-only, fingerprinted gate (r2q never writes it or invokes the r2p CLI); the route gates on a generated plan that is not under `*/.req-to-plan/archive/*`, guards the `03–07` edit set with `snapshot` (default) or `git`, and is advisory-only on Gemini.
+
 ### Fixed
 
 - `atomicCopyFile` now shares the non-regular-target refusal (`ERR_ATOMIC_WRITE_TARGET_KIND`) and

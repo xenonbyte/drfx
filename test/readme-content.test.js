@@ -2,7 +2,7 @@
 
 // README content parity tests (PLAN-TASK-010).
 // Verifies that README.md and README.zh-CN.md:
-//   - cover all six route names including the two new code routes
+//   - cover all seven route names including the two new code routes and r2q
 //   - carry the required technical literals for the code-route invocation tokens
 //   - align on section headings and identical technical literals across both files
 //   - describe Gemini advisory-only behavior for code routes correctly
@@ -28,10 +28,10 @@ function escapeRegExp(s) {
 }
 
 // ---------------------------------------------------------------------------
-// All six route names present in both READMEs
+// All seven route names present in both READMEs
 // ---------------------------------------------------------------------------
 
-test('both READMEs list all six route names', () => {
+test('both READMEs list all seven route names', () => {
   const en = read('README.md');
   const zh = read('README.zh-CN.md');
   const routes = [
@@ -40,7 +40,8 @@ test('both READMEs list all six route names', () => {
     'review-fix-design',
     'review-fix-doc',
     'review-fix-pr',
-    'review-fix-code'
+    'review-fix-code',
+    'review-fix-r2q'
   ];
   for (const route of routes) {
     assert.match(en, new RegExp(escapeRegExp(route)), `README.md missing ${route}`);
