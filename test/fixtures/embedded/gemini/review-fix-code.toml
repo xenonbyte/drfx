@@ -606,6 +606,7 @@ Constraints:
 - Do not perform a broad rewrite unless an accepted structural issue requires it.
 - Do not quote raw secrets, credentials, cookies, tokens, private keys, or raw sensitive logs in the fix report. Use [REDACTED:<kind>] and location anchors.
 - If an issue cannot be fixed cleanly, report it instead of guessing.
+- Surfacing is a valid fix. When an accepted issue is an ambiguous/uncertain point you cannot resolve without inventing a decision or external fact, resolve it by making the uncertainty explicit in the document — `UNCONFIRMED: <assumption>`, `DECISION NEEDED: <question + options>`, or an explicitly accepted assumption/risk — rather than guessing. A point that needs a human decision is surfaced and reported as needing human input; never halt the loop or guess.
 
 Output:
 Fixed:
@@ -741,6 +742,8 @@ Triage and PASS rules:
 - Triage decisions are `accepted`, `merged`, `downgraded`, `rejected`, and `deferred`.
 - Accepted high/medium findings block PASS until fixed, merged into fixed issues, downgraded with rationale, or rejected with rationale.
 - Deferred high/medium findings produce `stopped-with-deferrals`, not PASS.
+- A finding whose real resolution requires a human product / risk / scope decision the fixer must not invent is triaged `deferred` (`deferred_owner: user`, `deferred_next_action: <the decision>`).
+- Surfacing and deferring are one action, not a fix. When deferring such a finding, the coordinator (or fixer, which fixes directly by default) writes the `DECISION NEEDED: <question + options>` marker into the document — the marker is the in-document evidence of the deferral, not a resolved fix, so the finding stays `deferred` and does not count toward PASS. On the next round the reviewer sees the point is now explicitly surfaced (per the COMMON Resolution rule) and does not re-raise it as silent ambiguity, so it never trips `stopped-no-progress`. The loop continues on the other findings and ends `stopped-with-deferrals` (not PASS), the surfaced points listed.
 - Low findings block only in strict mode unless accepted non-blocking and included in the next reviewer context.
 
 Convergence:

@@ -464,10 +464,11 @@ Review for:
 - Terminology: terms are used consistently where differences would change meaning.
 - Placeholders: required sections contain no blocking `TBD`, `TODO`, `later`, "to be discussed", or equivalent placeholder text.
 - External facts: unstable or external facts are verified with authoritative sources, or marked `UNCONFIRMED`.
+- Resolution: every material ambiguous or uncertain point is either resolved or explicitly surfaced — as a decision to be made, an `UNCONFIRMED` mark, or an accepted assumption/risk — and is never left silent, vague, or glossed over.
 - Document type fit: if the document is functioning as a DESIGN, SPEC, or PLAN, flag that the user may get a better review from the matching route.
 - Reference Conformance: when references are provided, the document remains consistent with their material facts, constraints, terminology, scope, non-goals, and risks.
 
-Blocking findings include missing purpose, missing required context, ambiguity that affects execution or acceptance, unresolved questions that block use, unsupported project claims, and risk omissions that make the document unsafe to rely on.
+Blocking findings include missing purpose, missing required context, ambiguity that affects execution or acceptance, unresolved questions that block use, any material ambiguous or uncertain point left silent or unresolved (a genuine open point must be explicitly surfaced — decision-to-make, `UNCONFIRMED`, or accepted — not glossed), unsupported project claims, and risk omissions that make the document unsafe to rely on.
 
 Missing DESIGN, SPEC, or PLAN-specific structure is not blocking for `COMMON` unless the document's stated purpose depends on that structure.
 
@@ -487,7 +488,8 @@ Review for:
 - Prerequisites: dependencies, environment assumptions, credentials, data setup, and approvals are identified.
 - Tooling: commands, scripts, fixtures, CLIs, services, and local checks are named where needed.
 - Sequencing: route, ownership, migration, rollout, and handoff decisions are resolved before execution depends on them.
-- Verification: each meaningful change has tests, type checks, builds, smoke checks, inspection criteria, or acceptance checks.
+- Test strategy: every implementation task that produces verifiable behavior names a concrete test approach (test-first / TDD where practical) — unit, integration, or e2e — sufficient to prove the task. Tasks that produce no verifiable behavior (copy edits, doc-only, config-only, asset moves) are explicitly exempt and should say why.
+- Acceptance criteria: every material task states observable acceptance / done criteria (a clear pass/fail), except the non-behavioral tasks above.
 - Rollback: rollback or stop-the-line behavior is included where failure would matter.
 - Failure handling: blockers, partial progress, retries, degraded states, and operator communication are covered when material.
 - Data safety: migrations, destructive operations, sensitive data, backups, privacy, and production boundaries are handled.
@@ -501,7 +503,7 @@ Review for:
 
 A PLAN does not require a SPEC reference. SPEC-to-task mapping is optional and is not blocking by default. Missing SPEC IDs, stable IDs, trace tables, or coverage matrices is not blocking unless the PLAN claims complete coverage of a reference, custom rules require that structure, or the missing structure makes the PLAN unsafe or unverifiable for its stated purpose.
 
-Blocking findings include missing execution order, missing prerequisites, unverifiable steps, hidden external state changes, no rollback for risky operations, material reference conflict, unsupported new requirement embedded in execution steps, and unresolved architecture or product decisions embedded in execution steps.
+Blocking findings include missing execution order, missing prerequisites, unverifiable steps, hidden external state changes, no rollback for risky operations, material reference conflict, unsupported new requirement embedded in execution steps, unresolved architecture or product decisions embedded in execution steps, and a task that produces verifiable behavior with no named test strategy or no acceptance criteria (trivial non-behavioral tasks exempt).
 
 PASS for `PLAN` means the document is ordered, executable, verifiable, rollback-aware where needed, and ready to hand to another agent or engineer.
 
@@ -601,6 +603,7 @@ Constraints:
 - Do not perform a broad rewrite unless an accepted structural issue requires it.
 - Do not quote raw secrets, credentials, cookies, tokens, private keys, or raw sensitive logs in the fix report. Use [REDACTED:<kind>] and location anchors.
 - If an issue cannot be fixed cleanly, report it instead of guessing.
+- Surfacing is a valid fix. When an accepted issue is an ambiguous/uncertain point you cannot resolve without inventing a decision or external fact, resolve it by making the uncertainty explicit in the document — `UNCONFIRMED: <assumption>`, `DECISION NEEDED: <question + options>`, or an explicitly accepted assumption/risk — rather than guessing. A point that needs a human decision is surfaced and reported as needing human input; never halt the loop or guess.
 
 Output:
 Fixed:
@@ -736,6 +739,8 @@ Triage and PASS rules:
 - Triage decisions are `accepted`, `merged`, `downgraded`, `rejected`, and `deferred`.
 - Accepted high/medium findings block PASS until fixed, merged into fixed issues, downgraded with rationale, or rejected with rationale.
 - Deferred high/medium findings produce `stopped-with-deferrals`, not PASS.
+- A finding whose real resolution requires a human product / risk / scope decision the fixer must not invent is triaged `deferred` (`deferred_owner: user`, `deferred_next_action: <the decision>`).
+- Surfacing and deferring are one action, not a fix. When deferring such a finding, the coordinator (or fixer, which fixes directly by default) writes the `DECISION NEEDED: <question + options>` marker into the document — the marker is the in-document evidence of the deferral, not a resolved fix, so the finding stays `deferred` and does not count toward PASS. On the next round the reviewer sees the point is now explicitly surfaced (per the COMMON Resolution rule) and does not re-raise it as silent ambiguity, so it never trips `stopped-no-progress`. The loop continues on the other findings and ends `stopped-with-deferrals` (not PASS), the surfaced points listed.
 - Low findings block only in strict mode unless accepted non-blocking and included in the next reviewer context.
 
 Convergence:

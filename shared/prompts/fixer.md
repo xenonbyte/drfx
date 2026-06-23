@@ -23,6 +23,7 @@ Constraints:
 - Do not perform a broad rewrite unless an accepted structural issue requires it.
 - Do not quote raw secrets, credentials, cookies, tokens, private keys, or raw sensitive logs in the fix report. Use [REDACTED:<kind>] and location anchors.
 - If an issue cannot be fixed cleanly, report it instead of guessing.
+- Surfacing is a valid fix. When an accepted issue is an ambiguous/uncertain point you cannot resolve without inventing a decision or external fact, resolve it by making the uncertainty explicit in the document — `UNCONFIRMED: <assumption>`, `DECISION NEEDED: <question + options>`, or an explicitly accepted assumption/risk — rather than guessing. A point that needs a human decision is surfaced and reported as needing human input; never halt the loop or guess.
 
 Output:
 Fixed:

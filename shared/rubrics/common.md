@@ -32,10 +32,11 @@ Review for:
 - Terminology: terms are used consistently where differences would change meaning.
 - Placeholders: required sections contain no blocking `TBD`, `TODO`, `later`, "to be discussed", or equivalent placeholder text.
 - External facts: unstable or external facts are verified with authoritative sources, or marked `UNCONFIRMED`.
+- Resolution: every material ambiguous or uncertain point is either resolved or explicitly surfaced — as a decision to be made, an `UNCONFIRMED` mark, or an accepted assumption/risk — and is never left silent, vague, or glossed over.
 - Document type fit: if the document is functioning as a DESIGN, SPEC, or PLAN, flag that the user may get a better review from the matching route.
 - Reference Conformance: when references are provided, the document remains consistent with their material facts, constraints, terminology, scope, non-goals, and risks.
 
-Blocking findings include missing purpose, missing required context, ambiguity that affects execution or acceptance, unresolved questions that block use, unsupported project claims, and risk omissions that make the document unsafe to rely on.
+Blocking findings include missing purpose, missing required context, ambiguity that affects execution or acceptance, unresolved questions that block use, any material ambiguous or uncertain point left silent or unresolved (a genuine open point must be explicitly surfaced — decision-to-make, `UNCONFIRMED`, or accepted — not glossed), unsupported project claims, and risk omissions that make the document unsafe to rely on.
 
 Missing DESIGN, SPEC, or PLAN-specific structure is not blocking for `COMMON` unless the document's stated purpose depends on that structure.
 
