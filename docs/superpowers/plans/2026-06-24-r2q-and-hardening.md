@@ -23,8 +23,9 @@ Every task's requirements implicitly include this section. Values are copied ver
 - **No new rubric file for r2q** — it reuses `shared/rubrics/plan.md` + `shared/rubrics/common.md` via `documentType: 'PLAN'`, and stays OUT of the PR/CODE route-rule set `ROUTE_KIND_SET = {'pr','code'}` (`lib/rulebook.js:14`).
 - **Fixture regeneration is the established mechanism.** Editing shared `rubrics/`/`prompts/` moves ONLY `test/fixtures/embedded/<platform>/<route>.*` (the `generated/` shells mask embedded shared content to a sentinel; the codex copied-asset test compares to live source). Regenerate per `platform × route` by writing `extractEmbeddedSharedContent(renderPlatformRoute(platform, route, {packageVersion:'0.0.0-snapshot'}))` to `embeddedSnapshotPath(platform, route)` (the exact calls `test/shared-assets.test.js` makes). Do **not** commit a regeneration script.
 - **Repo language is English** (code, comments, in-repo docs, commit messages).
-- **Commit footer:** `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`. One local commit per task on branch `optimize`. Stage only the named files (never `git add -A`). `docs/` is gitignored — `git add -f` only the design/plan docs if a task must touch them (no Phase task should). Do **not** push or open PRs.
+- **Commit footer:** `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`. One local commit per task on branch `optimize`. Stage only the named files (never `git add -A`, and never a whole directory pathspec such as `shared`, `templates/fragments`, or `test/fixtures`). After every `git add`, run `git diff --cached --name-only` and confirm the staged list exactly matches that task's named file list before `git commit`; unstage anything unexpected before committing. `docs/` is gitignored — `git add -f` only the design/plan docs if a task must touch them (no Phase task should). Do **not** push or open PRs.
 - **Verify per task:** `npm run syntaxcheck && npm test` (full suite, ~1107 tests at the start of this plan) green before commit.
+- **Deterministic workflow tests.** Workflow/CLI tests must not depend on an LLM discovering planted semantic gaps or applying semantic fixes. Tests that exercise review/fix lifecycle submit explicit reviewer, triage, fix-report, diff-review, re-review, and final-response payload fixtures through the same workflow commands the route uses, and they simulate allowed or disallowed file edits inside the test harness.
 
 ---
 
@@ -206,6 +207,7 @@ Expected: clean syntaxcheck; full suite green (3 net-new tests).
 
 ```bash
 git add lib/atomic-write.js test/atomic-write.test.js CHANGELOG.md
+git diff --cached --name-only
 git commit -m "fix(safety): share non-regular-target refusal and dest-mode preservation in atomicCopyFile
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -260,6 +262,7 @@ Expected: green. If `test/readme-content.test.js` asserts exact strings that thi
 
 ```bash
 git add README.md README.zh-CN.md AGENTS.md
+git diff --cached --name-only
 git commit -m "docs: clarify strict-verified PASS is presently unreachable on all platforms
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -336,7 +339,7 @@ for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
 }
 ```
 
-Do **not** commit this script. Only `test/fixtures/embedded/*` files should change (the `generated/` shells mask shared content; the codex copied-asset test compares to live source).
+Do **not** commit this script. Only the existing six-route embedded fixture files listed in the commit command should change (the `generated/` shells mask shared content; the codex copied-asset test compares to live source).
 
 - [ ] **Step 9: Run the full suite to confirm the snapshots match**
 
@@ -346,7 +349,36 @@ Expected: green. `test/shared-assets.test.js` confirms the regenerated `embedded
 - [ ] **Step 10: Commit**
 
 ```bash
-git add shared/rubrics/plan.md shared/rubrics/common.md shared/prompts/fixer.md shared/prompts/coordinator.md test/fixtures/embedded
+git add \
+  shared/rubrics/plan.md \
+  shared/rubrics/common.md \
+  shared/prompts/fixer.md \
+  shared/prompts/coordinator.md \
+  test/fixtures/embedded/claude/review-fix-code.md \
+  test/fixtures/embedded/claude/review-fix-design.md \
+  test/fixtures/embedded/claude/review-fix-doc.md \
+  test/fixtures/embedded/claude/review-fix-plan.md \
+  test/fixtures/embedded/claude/review-fix-pr.md \
+  test/fixtures/embedded/claude/review-fix-spec.md \
+  test/fixtures/embedded/codex/review-fix-code.md \
+  test/fixtures/embedded/codex/review-fix-design.md \
+  test/fixtures/embedded/codex/review-fix-doc.md \
+  test/fixtures/embedded/codex/review-fix-plan.md \
+  test/fixtures/embedded/codex/review-fix-pr.md \
+  test/fixtures/embedded/codex/review-fix-spec.md \
+  test/fixtures/embedded/gemini/review-fix-code.toml \
+  test/fixtures/embedded/gemini/review-fix-design.toml \
+  test/fixtures/embedded/gemini/review-fix-doc.toml \
+  test/fixtures/embedded/gemini/review-fix-plan.toml \
+  test/fixtures/embedded/gemini/review-fix-pr.toml \
+  test/fixtures/embedded/gemini/review-fix-spec.toml \
+  test/fixtures/embedded/opencode/review-fix-code.md \
+  test/fixtures/embedded/opencode/review-fix-design.md \
+  test/fixtures/embedded/opencode/review-fix-doc.md \
+  test/fixtures/embedded/opencode/review-fix-plan.md \
+  test/fixtures/embedded/opencode/review-fix-pr.md \
+  test/fixtures/embedded/opencode/review-fix-spec.md
+git diff --cached --name-only
 git commit -m "feat(rubric): add per-task TDD/acceptance to PLAN and a no-silent-ambiguity surface-and-defer loop
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -377,10 +409,10 @@ Green-additive: new functions with their own unit tests; nothing in the workflow
 - Produces:
   - `parseRunMdGate(runMdText) -> { planApproved: boolean, status: string }` — defensive parser; throws `ERR_R2Q_RUNMD_UNRECOGNIZED` on a `run.md` that lacks the fields the gate needs (no silent fallback — principle 2).
   - `isArchivedRequirementDir(absDir) -> boolean` — true when an `archive` segment sits between `.req-to-plan/` and the `WF-*` directory.
-  - `resolveR2qTarget({ cwd, target, commandLog }) -> { routeKind:'r2q', targetContextKind:'r2q', requirementDir, projectRoot, editableFiles:[{relativePath, absolutePath, sha256, size}], fileSetFingerprint, runMdPath, runMdSha256, gate:{planApproved,status} }`. Resolves and validates the `WF-*` directory, enforces the gating predicates (plan generated AND not archived — else `fail('ERR_R2Q_GATE_*', ...)`), computes the editable-set fingerprint over the existing `03–07` `*.md` files, and fingerprints `run.md` as a protected read-only dependency.
+  - `resolveR2qTarget({ cwd, target, commandLog }) -> { routeKind:'r2q', targetContextKind:'r2q', requirementDir, projectRoot, editableFiles:[{relativePath, absolutePath, sha256, size}], fileSetFingerprint, runMdPath, runMdSha256, gate:{planApproved,status} }`. Resolves and validates an active `<project>/.req-to-plan/WF-*` directory, rejects paths outside that shape, rejects symlink escapes by lstat-checking the existing path segments under `.req-to-plan` (not by raw lexical-vs-realpath string equality, which breaks `/var`→`/private/var` aliases), validates `run.md` itself as a regular in-directory file before reading it, enforces the gating predicates (plan generated AND not archived — else `fail('ERR_R2Q_GATE_*', ...)`), requires the full editable owner-doc chain (`03-requirement-brief.md`, `04-risk-discovery.md`, `05-design.md`, `06-spec.md`, `07-plan.md`), computes the editable-set fingerprint over exactly those five files using the current `computeFileSetFingerprint` entry shape (`{ path, status, contentId }`), and fingerprints `run.md` as a protected read-only dependency. Missing, non-file, symlink, or renamed owner docs fail loudly before review with `ERR_R2Q_DOC_CHAIN_INCOMPLETE`; invalid or escaping `run.md` fails with `ERR_R2Q_RUNMD_MISSING` or `ERR_R2Q_RUNMD_SYMLINK`.
   - `buildR2qIdentity({ context, guardMode, roundLimit }) -> object`, `formatR2qIdentityFields`, `parseR2qIdentityFields`, `compareR2qIdentity({ stored, requested })` — mirror the `buildCodeIdentity`/`compareCodeIdentity` family (`target-context.js:1175`+). Identity scalars: `targetContextKind`, `guardMode`, `roundLimit`, `requirementDir` (root-relative), `runMdSha256`, `fileSetFingerprint`. (Drift in `runMdSha256` or `fileSetFingerprint` ⇒ identity mismatch ⇒ never PASS from stale eligibility.)
 
-- [ ] **Step 1: Confirm `run.md` formatting.** Read 1–2 real `WF-*/run.md` files (e.g. under `~/.req-to-plan/` or a project `.req-to-plan/`) to confirm the exact heading/field text for `## Status` and the plan-stage approval in `## Active Artifacts`. Record the confirmed field shapes in the task report. (If none is reachable, proceed against the design's documented shapes and mark the parser `UNCONFIRMED` in the report.)
+- [ ] **Step 1: Confirm `run.md` formatting safely.** Prefer checked-in fixtures, the approved design, or a user-supplied sanitized sample to confirm the exact heading/field text for `## Status` and the plan-stage approval in `## Active Artifacts`. Do not read arbitrary home-level `~/.req-to-plan/` or unrelated project requirement runs without explicit user approval for the exact path, because those files may contain private product context. If no approved sample is available, proceed against the design's documented shapes and mark the parser `UNCONFIRMED` in the task report.
 
 - [ ] **Step 2: Write failing unit tests** in `test/r2q-target-context.test.js` covering the gate parser, the archive predicate, and resolution. Build `WF-*` fixtures under a `t`-scoped `os.tmpdir()` sandbox (a directory `<root>/.req-to-plan/WF-20260101-aaa-demo/` containing `03-requirement-brief.md` … `07-plan.md` + a `run.md`). Assert:
 
@@ -396,9 +428,37 @@ assert.equal(isArchivedRequirementDir('/p/.req-to-plan/WF-x'), false);
 // resolution: happy path returns 5 editable files (03..07) + fingerprints
 const ctx = resolveR2qTarget({ cwd: root, target: wfDir });
 assert.equal(ctx.targetContextKind, 'r2q');
-assert.equal(ctx.editableFiles.length, 5);
+assert.deepEqual(ctx.editableFiles.map((f) => f.relativePath), [
+  '03-requirement-brief.md',
+  '04-risk-discovery.md',
+  '05-design.md',
+  '06-spec.md',
+  '07-plan.md'
+]);
 assert.match(ctx.fileSetFingerprint, /^[a-f0-9]{64}$/);
 assert.match(ctx.runMdSha256, /^[a-f0-9]{64}$/);
+// active requirement-directory shape and containment
+assert.throws(() => resolveR2qTarget({ cwd: root, target: outsideReqToPlanDir }), /ERR_R2Q_TARGET_SHAPE/);
+assert.throws(() => resolveR2qTarget({ cwd: root, target: symlinkedWfDir }), /ERR_R2Q_TARGET_SYMLINK/);
+if (process.platform === 'darwin' && fs.realpathSync.native('/var') === '/private/var') {
+  assert.doesNotThrow(() => resolveR2qTarget({ cwd: '/var/folders', target: privateVarAliasWfDir }));
+}
+// run.md is a protected in-directory regular file, not a symlink or directory
+assert.throws(() => resolveR2qTarget({ cwd: root, target: missingRunMdWfDir }), /ERR_R2Q_RUNMD_MISSING/);
+assert.throws(() => resolveR2qTarget({ cwd: root, target: directoryRunMdWfDir }), /ERR_R2Q_RUNMD_MISSING/);
+assert.throws(() => resolveR2qTarget({ cwd: root, target: symlinkRunMdWfDir }), /ERR_R2Q_RUNMD_SYMLINK/);
+// missing or renamed owner docs block before review
+assert.throws(() => resolveR2qTarget({ cwd: root, target: missingSpecWfDir }), /ERR_R2Q_DOC_CHAIN_INCOMPLETE/);
+assert.throws(() => resolveR2qTarget({ cwd: root, target: renamedPlanWfDir }), /ERR_R2Q_DOC_CHAIN_INCOMPLETE/);
+// fingerprint covers editable-file identities/content and is order-stable
+const before = ctx.fileSetFingerprint;
+assert.equal(computeFileSetFingerprint(ctx.editableFiles.map((f) => ({
+  path: f.relativePath,
+  status: 'modified',
+  contentId: f.sha256
+})).reverse()), before);
+fs.writeFileSync(path.join(wfDir, '06-spec.md'), 'changed\n');
+assert.notEqual(resolveR2qTarget({ cwd: root, target: wfDir }).fileSetFingerprint, before);
 
 // gating: incomplete plan blocks
 assert.throws(() => resolveR2qTarget({ cwd: root, target: incompletePlanWfDir }), /ERR_R2Q_GATE_PLAN_INCOMPLETE/);
@@ -411,7 +471,13 @@ assert.throws(() => resolveR2qTarget({ cwd: root, target: archivedWfDir }), /ERR
 - [ ] **Step 4: Implement the gate parser + archive predicate** in `lib/target-context.js` (near the other resolvers). Parse defensively; error loudly on an unrecognized `run.md`:
 
 ```javascript
-const R2Q_EDITABLE_PREFIXES = Object.freeze(['03', '04', '05', '06', '07']);
+const R2Q_EDITABLE_DOCS = Object.freeze([
+  '03-requirement-brief.md',
+  '04-risk-discovery.md',
+  '05-design.md',
+  '06-spec.md',
+  '07-plan.md'
+]);
 
 // Parse the FEW run.md fields the gate needs. Throws on an unrecognized run.md
 // rather than guessing (no silent fallback — principle 2). r2q never writes run.md.
@@ -422,7 +488,7 @@ function parseRunMdGate(runMdText) {
   const status = statusMatch[1].trim();
   // Plan generated: status closed at the plan checkpoint, OR the plan stage is
   // approved/active in "## Active Artifacts". Confirm the exact token against a
-  // real run.md in Step 1 and adjust ONLY this extraction if needed.
+  // Step 1 approved sample and adjust ONLY this extraction if needed.
   const planApproved =
     /closed_at_plan_checkpoint/.test(status) ||
     /^.*\bplan\b.*\b(approved|active)\b.*$/im.test(activeArtifactsSection(text));
@@ -441,48 +507,95 @@ function isArchivedRequirementDir(absDir) {
   // archived ⇒ an "archive" segment sits between .req-to-plan/ and the WF-* dir.
   return parts.slice(reqIdx + 1, parts.length - 1).includes('archive');
 }
+
+function hasSymlinkSegmentFromReqToPlan(absDir) {
+  const parts = String(absDir).split(path.sep);
+  const reqIdx = parts.lastIndexOf('.req-to-plan');
+  if (reqIdx === -1) return false;
+  let current = parts[0] === '' ? path.sep : parts[0];
+  for (let index = 1; index < parts.length; index += 1) {
+    current = path.join(current, parts[index]);
+    if (index < reqIdx) continue;
+    let segStats;
+    try { segStats = fs.lstatSync(current); }
+    catch { return false; } // a missing segment is not a symlink; the later realpath/statSync reports it as a clean shape/kind error
+    if (segStats.isSymbolicLink()) return true;
+  }
+  return false;
+}
+
+// Shape gate: an r2q target is a `WF-*` directory living under a `.req-to-plan`
+// ancestor (active OR archived). The active-vs-archived split is made separately
+// by isArchivedRequirementDir, so an archived dir still passes the shape check
+// and then fails loudly with ERR_R2Q_GATE_ARCHIVED (not a generic shape error).
+function isRequirementDirShape(absDir) {
+  if (!/^WF-/.test(path.basename(absDir))) return false;
+  return String(absDir).split(path.sep).includes('.req-to-plan');
+}
+
+// Project root = the directory that contains the `.req-to-plan` tree.
+function projectRootFromRequirementDir(absDir) {
+  const parts = String(absDir).split(path.sep);
+  const reqIdx = parts.lastIndexOf('.req-to-plan');
+  if (reqIdx <= 0) return null;
+  return parts.slice(0, reqIdx).join(path.sep) || path.sep;
+}
 ```
 
-- [ ] **Step 5: Implement `resolveR2qTarget`** — validate the directory is a real existing directory (reuse the `realExistingDirectory`-style checks, no symlink escape), enforce gating, read `run.md`, build the editable set over existing `0[3-7]-*.md` files, and fingerprint. Use the existing `computeFileSetFingerprint(files)` (`target-context.js:251`) for `fileSetFingerprint` and `crypto.createHash('sha256')` over the `run.md` bytes for `runMdSha256`:
+For containment, **reuse the existing `isInsideOrEqualRoot(rootRealPath, candidateRealPath)`** (`target-context.js:576`) and `isInside`/`realExistingDirectory` (`input.js:495`/`:483`) — do **not** add a new `isInsideOrEqual` helper.
+
+- [ ] **Step 5: Implement `resolveR2qTarget`** — validate the target is an active `<project>/.req-to-plan/WF-*` directory, reject paths outside `.req-to-plan`, reject archived dirs, reject actual symlink segments before reading `run.md` or fingerprinting editable files, enforce gating, validate `run.md` as a regular in-directory file, read `run.md`, require the five fixed editable docs in `R2Q_EDITABLE_DOCS`, and fingerprint exactly that ordered set. Use the existing `computeFileSetFingerprint(files)` (`target-context.js:251`) with entries shaped for its current contract (`{ path, status, contentId }`) and `crypto.createHash('sha256')` over the `run.md` bytes for `runMdSha256`:
 
 ```javascript
 function resolveR2qTarget({ cwd, target, commandLog } = {}) {
-  const requirementDir = fs.realpathSync.native(path.resolve(cwd || process.cwd(), target));
+  const lexicalDir = path.resolve(cwd || process.cwd(), target);
+  if (!isRequirementDirShape(lexicalDir)) fail('ERR_R2Q_TARGET_SHAPE', `r2q target must be <project>/.req-to-plan/WF-*: ${lexicalDir}`);
+  if (hasSymlinkSegmentFromReqToPlan(lexicalDir)) fail('ERR_R2Q_TARGET_SYMLINK', `r2q target must not resolve through a symlink: ${lexicalDir}`);
+  const requirementDir = fs.realpathSync.native(lexicalDir);
+  const projectRoot = projectRootFromRequirementDir(requirementDir);
+  if (!projectRoot || !isInsideOrEqualRoot(projectRoot, requirementDir)) fail('ERR_R2Q_TARGET_SHAPE', `r2q target must be inside its project root: ${lexicalDir}`);
   if (!fs.statSync(requirementDir).isDirectory()) fail('ERR_R2Q_TARGET_KIND', `r2q target must be a directory: ${requirementDir}`);
   if (isArchivedRequirementDir(requirementDir)) fail('ERR_R2Q_GATE_ARCHIVED', `requirement directory is archived: ${requirementDir}`);
 
   const runMdPath = path.join(requirementDir, 'run.md');
+  let runMdStats;
+  try { runMdStats = fs.lstatSync(runMdPath); }
+  catch { fail('ERR_R2Q_RUNMD_MISSING', `requirement directory has no run.md gate: ${runMdPath}`); }
+  if (runMdStats.isSymbolicLink()) fail('ERR_R2Q_RUNMD_SYMLINK', `run.md gate must not resolve through a symlink: ${runMdPath}`);
+  if (!runMdStats.isFile()) fail('ERR_R2Q_RUNMD_MISSING', `run.md gate must be a regular file: ${runMdPath}`);
   let runMdText;
   try { runMdText = fs.readFileSync(runMdPath, 'utf8'); }
   catch { fail('ERR_R2Q_RUNMD_MISSING', `requirement directory has no run.md gate: ${runMdPath}`); }
   const gate = parseRunMdGate(runMdText);
   if (!gate.planApproved) fail('ERR_R2Q_GATE_PLAN_INCOMPLETE', `plan stage is not generated/approved: ${runMdPath}`);
 
-  const editableFiles = [];
-  for (const name of fs.readdirSync(requirementDir).sort()) {
-    if (!/\.md$/.test(name)) continue;
-    if (!R2Q_EDITABLE_PREFIXES.includes(name.slice(0, 2))) continue;
+  const editableFiles = R2Q_EDITABLE_DOCS.map((name) => {
     const absolutePath = path.join(requirementDir, name);
-    if (!fs.lstatSync(absolutePath).isFile()) continue;
+    let stats;
+    try { stats = fs.lstatSync(absolutePath); }
+    catch { fail('ERR_R2Q_DOC_CHAIN_INCOMPLETE', `requirement directory is missing required owner doc: ${name}`); }
+    if (!stats.isFile()) fail('ERR_R2Q_DOC_CHAIN_INCOMPLETE', `required owner doc is not a regular file: ${name}`);
     const buf = fs.readFileSync(absolutePath);
-    editableFiles.push({
+    return {
       relativePath: name,
       absolutePath,
       sha256: crypto.createHash('sha256').update(buf).digest('hex'),
       size: buf.length
-    });
-  }
-  if (!editableFiles.some((f) => f.relativePath.startsWith('07-'))) {
-    fail('ERR_R2Q_NO_PLAN_DOC', `requirement directory has no 07-plan.md review anchor: ${requirementDir}`);
-  }
+    };
+  });
+  const fingerprintEntries = editableFiles.map((file) => ({
+    path: file.relativePath,
+    status: 'modified',
+    contentId: file.sha256
+  }));
 
   return {
     routeKind: 'r2q',
     targetContextKind: 'r2q',
     requirementDir,
-    projectRoot: requirementDir, // refined to the resolved root in Task 6 metadata
+    projectRoot,
     editableFiles,
-    fileSetFingerprint: computeFileSetFingerprint(editableFiles),
+    fileSetFingerprint: computeFileSetFingerprint(fingerprintEntries),
     runMdPath,
     runMdSha256: crypto.createHash('sha256').update(runMdText).digest('hex'),
     gate
@@ -502,6 +615,7 @@ function resolveR2qTarget({ cwd, target, commandLog } = {}) {
 
 ```bash
 git add lib/target-context.js test/r2q-target-context.test.js
+git diff --cached --name-only
 git commit -m "feat(r2q): add resolveR2qTarget gate parser, editable-set resolution, and identity
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -521,7 +635,7 @@ Green-additive: adds the `r2q` `targetContextKind` and its manifest field set so
 - Consumes: the existing `MANIFEST_V2_*` field arrays and the `manifestV2FieldsForKind`/`requiredManifestV2Keys`/`resolveTargetContextKind` dispatch (`workflow-state.js:95`–`213`, `:364`).
 - Produces: `TARGET_CONTEXT_KINDS` includes `'r2q'`; a new `MANIFEST_V2_R2Q_FILESET_FIELDS` (and list fields if needed); `manifestV2FieldsForKind('r2q')`, `requiredManifestV2Keys('r2q')`, and `resolveTargetContextKind` all handle `'r2q'`.
 
-- [ ] **Step 1: Write the failing assertions** in `test/manifest-schema-v2.test.js`: a round-trip `formatManifestV2`→`parseManifestV2`→`normalizeManifestV2` for an `r2q` manifest carrying the required keys (target-context kind `r2q`, `requirementDir`, `runMdSha256`, `fileSetFingerprint`, `lastKnownContentSha256`/round-limit etc. as the code-fileset analog requires), and an assertion that `requiredManifestV2Keys('r2q')` returns exactly the r2q key set. Run → FAIL.
+- [ ] **Step 1: Write the failing assertions** in `test/manifest-schema-v2.test.js`: a round-trip `formatManifestV2`→`parseManifestV2`→`normalizeManifestV2` for an `r2q` manifest carrying the required keys (target-context kind `r2q`, `requirementDir`, `runMdSha256`, `fileSetFingerprint`, `lastModifiedAt`, plus the existing shared manifest head fields and optional `roundLimit`), and an assertion that `requiredManifestV2Keys('r2q')` returns exactly the r2q key set. Do not add single-document content-hash fields such as `lastKnownContentSha256`; r2q identity is file-set based. Run → FAIL.
 
 - [ ] **Step 2: Add `'r2q'` to `TARGET_CONTEXT_KINDS`** (`workflow-state.js:95`): `Object.freeze(['document', 'pr', 'code', 'r2q'])`.
 
@@ -535,6 +649,7 @@ Green-additive: adds the `r2q` `targetContextKind` and its manifest field set so
 
 ```bash
 git add lib/workflow-state.js test/manifest-schema-v2.test.js
+git diff --cached --name-only
 git commit -m "feat(r2q): register the r2q target-context kind and manifest field set
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -553,9 +668,11 @@ This is the green-atomic scaffold: after it, `review-fix-r2q` is a real, generat
 - Modify: `lib/input.js` (`parseInvocationR2q` + dispatch)
 - Modify: `lib/rulebook.js` and its workflow consumer (document-stack dispatch for r2q)
 - Modify: `lib/workflow/target-resolution.js` (`isFileSetRoute`, `resolveRouteTargetMetadata`)
+- Modify as needed: `lib/workflow/index.js`, `lib/workflow/start.js`, `lib/workflow/helpers.js`, `lib/workflow/file-set-context.js`, `lib/workflow/file-set-no-state.js`, `lib/context-pack.js`, `lib/check.js` — every rule-stack/context consumer touched to make r2q use COMMON + PLAN and every lifecycle fallback that currently assumes only PR/CODE file-set routes.
 - Create: `skills/review-fix-r2q/SKILL.md`
 - Create: `test/fixtures/generated/<platform>/review-fix-r2q.*`, `test/fixtures/embedded/<platform>/review-fix-r2q.*`
 - Modify: route-count assertions in `test/routes.test.js`, `test/input-parsing.test.js`, `test/shared-assets.test.js`, `test/pack-contents.test.js`, `test/cli.test.js`, `test/capability-check.test.js`
+- Modify: workflow route-kind dispatch assertions in `test/workflow-fileset-dispatch.test.js`
 
 **Interfaces:**
 - Consumes: `resolveR2qTarget` (Task 4), the `r2q` manifest kind (Task 5), `getRouteDescriptor`.
@@ -603,7 +720,13 @@ r2q's `rubric: 'plan'` already adds `plan.md` via the existing `if (route.rubric
 
 - [ ] **Step 6: Add `parseInvocationR2q`** to `lib/input.js` and dispatch to it in `parseInvocation` (`input.js:435`): `if (routeKind === 'r2q') return parseInvocationR2q(entrySkill, tokens, options);`. Model it on `parseInvocationDocument` (`input.js:122`) but: the positional/`target=` argument is a **requirement directory** (not a `.md` file); accept the shared flags `read-only|review-and-fix`, `guard=git|snapshot` (default **snapshot** for r2q — override `DEFAULT_GUARD_MODE` per route), `resume|reset`, `rounds=<n>`, `root=`, `debug`; reject `ref=`, `strict|normal`, `assurance=`, `ledger=`, `scope=`, `base=` (r2q has a fixed PLAN rubric and no document-route assurance surface). Return `{ entrySkill, routeKind:'r2q', documentType:'PLAN', target, mode, guardMode, resume, reset, rounds, root, debug }`.
 
-- [ ] **Step 7: Wire the document rule stack for r2q.** r2q maps to `documentType: 'PLAN'`, so wherever the workflow chooses between the **document** rule stack (`mergeRules({documentType})`, `lib/rulebook.js:290`) and the **route** rule stack (`loadRouteRuleContext({routeKind})`, `:351`), r2q must take the document path. Find the dispatch (search consumers of `rulebook.js`: `lib/workflow/helpers.js`, `lib/workflow/start.js`, `lib/context-pack.js`, `lib/check.js`) and ensure the branch keys on `routeKind === 'pr' || routeKind === 'code'` (the `ROUTE_KIND_SET`) for the route stack, so r2q (kind `r2q`) falls to the document stack. Do NOT add r2q to `ROUTE_RULE_FILENAMES`/`ROUTE_KIND_SET`. Add a unit assertion that the merged rule sections for r2q are `COMMON + PLAN` (same as `review-fix-plan`).
+- [ ] **Step 7: Wire the document rule stack for r2q.** r2q maps to `documentType: 'PLAN'`, so wherever the workflow chooses between the **document** rule stack (`mergeRules({documentType})`, `lib/rulebook.js:290`) and the **route** rule stack (`loadRouteRuleContext({routeKind})`, `:351`), r2q must take the document path. Find the dispatch (search consumers of `rulebook.js`: `lib/workflow/index.js`, `lib/workflow/helpers.js`, `lib/workflow/start.js`, `lib/context-pack.js`, `lib/check.js`) and ensure the branch keys on `routeKind === 'pr' || routeKind === 'code'` (the `ROUTE_KIND_SET`) for the route stack, so r2q (kind `r2q`) falls to the document stack. Do NOT add r2q to `ROUTE_RULE_FILENAMES`/`ROUTE_KIND_SET`. Also replace any lifecycle fallback that infers file-set kind as `entrySkill === 'review-fix-pr' ? 'pr' : 'code'` with route-kind-aware handling, and replace PR/CODE-only operator guidance in unsupported/archive paths with wording that covers r2q without labeling it as code. Add unit assertions that the merged rule sections for r2q are `COMMON + PLAN` (same as `review-fix-plan`) and that r2q archive/unsupported workflow outputs preserve `routeKind: 'r2q'` and do not emit PR/CODE-only guidance.
+
+  **Route-kind dispatch audit (concrete grep targets).** `isFileSetRoute` returning true for r2q (Step 8) makes r2q fall into every `routeKind === 'pr' ? … : (assume code)` branch. Grep `grep -rn "=== 'pr'" lib/workflow lib/no-state.js` and fix each so a third kind is handled, not silently treated as `code`. Verified sites at plan-authoring time:
+  - `lib/workflow/index.js:540` — `routeKind: isFileSetRoute(parsed) ? (parsed.entrySkill === 'review-fix-pr' ? 'pr' : 'code') : 'document'` — **the binary collapse**; once r2q is a file-set route this mislabels it `code`. Make it route-kind-aware (derive from the descriptor's `routeKind`, e.g. `getRouteDescriptor(parsed.entrySkill).routeKind`).
+  - `lib/workflow/start.js:134` and `:345` — `if (routeKind === 'pr') {…} else {…/* code */}`.
+  - `lib/workflow/file-set-no-state.js:86` and `:477` — same pr/else-code shape (touched in Task 7).
+  - `lib/workflow/file-set-context.js:273`, `:339`; `lib/workflow/file-set-fix.js:70`; `lib/workflow/file-set-finalize.js:85` — `if (metadata.routeKind === 'pr') {…}` else-code (touched in Milestone 2 Tasks 8/9/11). Each Milestone-2 task must re-run this grep for its file and add the r2q branch, not rely on the else.
 
 - [ ] **Step 8: Teach `target-resolution.js` about r2q.** In `lib/workflow/target-resolution.js`: `isFileSetRoute` returns true for `kind === 'r2q'` (`:46`); `fileSetIdentitySeed` gets an r2q branch seeding on the resolved requirement-dir identity; `resolveRouteTargetMetadata` (`:153`) gets an r2q branch returning `{ routeKind:'r2q', projectRoot, targetKey, normalizedTarget:null, requirementDir }` (derive `targetKey` as `r2q-<hash12>` from the requirement-dir seed, mirroring `deriveFileSetTargetKey`).
 
@@ -611,14 +734,51 @@ r2q's `rubric: 'plan'` already adds `plan.md` via the existing `if (route.rubric
 
 - [ ] **Step 10: Generate the r2q fixtures.** Run the repo's fixture generation the same way `test/shared-assets.test.js` derives expectations — write the `generated/<platform>/review-fix-r2q.*` shells (shared content masked to the sentinel) and the `embedded/<platform>/review-fix-r2q.*` (actual embedded COMMON+PLAN+prompts) for all four platforms, via `renderPlatformRoute(platform, 'review-fix-r2q', {packageVersion:'0.0.0-snapshot'})` and the test's `extractEmbeddedSharedContent`/`embeddedSnapshotPath` helpers. Do not commit a generation script.
 
-- [ ] **Step 11: Update route-count assertions.** Update hardcoded six→seven expectations: `test/routes.test.js` (route count/names), `test/input-parsing.test.js`, `test/shared-assets.test.js` (route iteration list), `test/pack-contents.test.js` (skills/fixtures present), `test/cli.test.js`, `test/capability-check.test.js`. Where a test iterates `listRoutes()`, no count edit is needed — only the explicit `=== 6` / hardcoded route-name lists.
+- [ ] **Step 11: Update route-count and workflow-dispatch assertions.** Update hardcoded six→seven expectations: `test/routes.test.js` (route count/names), `test/input-parsing.test.js`, `test/shared-assets.test.js` (route iteration list), `test/pack-contents.test.js` (skills/fixtures present), `test/cli.test.js`, `test/capability-check.test.js`. Where a test iterates `listRoutes()`, no count edit is needed — only the explicit `=== 6` / hardcoded route-name lists. In `test/workflow-fileset-dispatch.test.js`, add deterministic r2q workflow cases using explicit CLI/test harness inputs: one coverage point for the archive/fresh-start-failure fallback that used to collapse non-PR file-set routes to `code`, and one coverage point for unsupported file-set lifecycle guidance that must name the actual route kind or generic file-set route instead of PR/CODE only.
 
 - [ ] **Step 12: Run the full suite** — `npm run syntaxcheck && npm test` → green. Confirm `renderPlatformRoute` produces byte-stable r2q output matching the new fixtures, the four existing routes' fixtures are unchanged, and Gemini's r2q output is advisory-only.
 
 - [ ] **Step 13: Commit**
 
 ```bash
-git add lib/routes.js lib/generator.js lib/input.js lib/rulebook.js lib/workflow/target-resolution.js templates/fragments skills/review-fix-r2q test/fixtures test/routes.test.js test/input-parsing.test.js test/shared-assets.test.js test/pack-contents.test.js test/cli.test.js test/capability-check.test.js
+git add \
+  lib/routes.js \
+  lib/generator.js \
+  lib/input.js \
+  lib/rulebook.js \
+  lib/workflow/target-resolution.js \
+  lib/workflow/index.js \
+  lib/workflow/start.js \
+  lib/workflow/helpers.js \
+  lib/workflow/file-set-context.js \
+  lib/workflow/file-set-no-state.js \
+  lib/context-pack.js \
+  lib/check.js \
+  templates/fragments/invocation-gate.r2q.claude.md \
+  templates/fragments/invocation-gate.r2q.codex.md \
+  templates/fragments/invocation-gate.r2q.gemini.md \
+  templates/fragments/invocation-gate.r2q.opencode.md \
+  templates/fragments/route-contract.r2q.claude.md \
+  templates/fragments/route-contract.r2q.codex.md \
+  templates/fragments/route-contract.r2q.gemini.md \
+  templates/fragments/route-contract.r2q.opencode.md \
+  skills/review-fix-r2q/SKILL.md \
+  test/fixtures/generated/claude/review-fix-r2q.md \
+  test/fixtures/generated/codex/review-fix-r2q.md \
+  test/fixtures/generated/gemini/review-fix-r2q.toml \
+  test/fixtures/generated/opencode/review-fix-r2q.md \
+  test/fixtures/embedded/claude/review-fix-r2q.md \
+  test/fixtures/embedded/codex/review-fix-r2q.md \
+  test/fixtures/embedded/gemini/review-fix-r2q.toml \
+  test/fixtures/embedded/opencode/review-fix-r2q.md \
+  test/routes.test.js \
+  test/input-parsing.test.js \
+  test/shared-assets.test.js \
+  test/pack-contents.test.js \
+  test/cli.test.js \
+  test/capability-check.test.js \
+  test/workflow-fileset-dispatch.test.js
+git diff --cached --name-only
 git commit -m "feat(r2q): register review-fix-r2q route with document PLAN stack and four-platform generation
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -633,7 +793,7 @@ After this task, `review-fix-r2q` in `read-only` (or under Gemini) resolves the 
 **Files:**
 - Modify: `lib/no-state.js`, `lib/workflow/file-set-no-state.js`, `lib/semantic-parsers.js`, `lib/final-response.js` (r2q branches in helpers that currently switch document vs PR/CODE)
 - Modify: `shared/core.md`, `shared/long-task.md`, `shared/prompts/fixer.md`, `shared/prompts/coordinator.md` (target-context wording for the requirement directory)
-- Regenerate: affected `test/fixtures/embedded/*`
+- Regenerate: affected embedded fixture files listed in the commit command (no directory-level staging)
 - Test: `test/r2q-advisory.test.js` (new)
 
 **Interfaces:**
@@ -646,7 +806,7 @@ After this task, `review-fix-r2q` in `read-only` (or under Gemini) resolves the 
 
 - [ ] **Step 3: Extend target-context wording** in `shared/core.md` and `shared/long-task.md` beyond "single document" and "PR/CODE file set" to cover r2q: reviews `07-plan.md`, may edit only `03–07`, treats `run.md` as read-only/protected, reports multi-file changes in the final machine payload.
 
-- [ ] **Step 4: Write a failing advisory e2e test** in `test/r2q-advisory.test.js`: build a `WF-*` fixture with a `07-plan.md` containing a planted PLAN-rubric gap, run the r2q advisory/read-only review path, and assert: status is `read-only-findings` (never `pass`); no `03–07` file or `run.md` was modified (compare sha256 before/after); the output references the owning upstream doc for the planted finding. Add a gating test: an incomplete-plan `run.md` yields the `ERR_R2Q_GATE_PLAN_INCOMPLETE` blocker, and an archived dir yields `ERR_R2Q_GATE_ARCHIVED` — neither runs a review.
+- [ ] **Step 4: Write a failing advisory e2e test** in `test/r2q-advisory.test.js`: build a `WF-*` fixture with the full `03–07` chain plus `run.md`, run the no-state advisory path through deterministic workflow calls, and submit an explicit reviewer `FAIL` payload fixture for a PLAN-rubric finding whose root cause maps to an owner doc. Record explicit triage and final-response payloads; do not rely on any test-time LLM or CLI semantic reviewer. Assert: final status is `read-only-findings` (never `pass`); no `03–07` file or `run.md` was modified (compare sha256 before/after); the validated final output references the owning upstream doc for the fixture finding. Add a separate snapshot/assertion test that the generated route prompt includes the finding→owner-doc map. Add a gating test: an incomplete-plan `run.md` yields the `ERR_R2Q_GATE_PLAN_INCOMPLETE` blocker, and an archived dir yields `ERR_R2Q_GATE_ARCHIVED` — neither reaches reviewer-recording.
 
 - [ ] **Step 5: Implement the r2q advisory branch** in the no-state helpers so r2q routes through `resolveR2qTarget` + the document PLAN review, returning read-only statuses only. Reuse the existing file-set no-state review machinery (`lib/workflow/file-set-no-state.js`) — r2q's "file set" is the `03–07` set, but in read-only mode it only reviews the `07-plan.md` anchor and reports; it writes nothing.
 
@@ -657,7 +817,45 @@ After this task, `review-fix-r2q` in `read-only` (or under Gemini) resolves the 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add lib/no-state.js lib/workflow/file-set-no-state.js lib/semantic-parsers.js lib/final-response.js shared test/fixtures/embedded test/r2q-advisory.test.js
+git add \
+  lib/no-state.js \
+  lib/workflow/file-set-no-state.js \
+  lib/semantic-parsers.js \
+  lib/final-response.js \
+  shared/core.md \
+  shared/long-task.md \
+  shared/prompts/fixer.md \
+  shared/prompts/coordinator.md \
+  test/fixtures/embedded/claude/review-fix-code.md \
+  test/fixtures/embedded/claude/review-fix-design.md \
+  test/fixtures/embedded/claude/review-fix-doc.md \
+  test/fixtures/embedded/claude/review-fix-plan.md \
+  test/fixtures/embedded/claude/review-fix-pr.md \
+  test/fixtures/embedded/claude/review-fix-r2q.md \
+  test/fixtures/embedded/claude/review-fix-spec.md \
+  test/fixtures/embedded/codex/review-fix-code.md \
+  test/fixtures/embedded/codex/review-fix-design.md \
+  test/fixtures/embedded/codex/review-fix-doc.md \
+  test/fixtures/embedded/codex/review-fix-plan.md \
+  test/fixtures/embedded/codex/review-fix-pr.md \
+  test/fixtures/embedded/codex/review-fix-r2q.md \
+  test/fixtures/embedded/codex/review-fix-spec.md \
+  test/fixtures/embedded/gemini/review-fix-code.toml \
+  test/fixtures/embedded/gemini/review-fix-design.toml \
+  test/fixtures/embedded/gemini/review-fix-doc.toml \
+  test/fixtures/embedded/gemini/review-fix-plan.toml \
+  test/fixtures/embedded/gemini/review-fix-pr.toml \
+  test/fixtures/embedded/gemini/review-fix-r2q.toml \
+  test/fixtures/embedded/gemini/review-fix-spec.toml \
+  test/fixtures/embedded/opencode/review-fix-code.md \
+  test/fixtures/embedded/opencode/review-fix-design.md \
+  test/fixtures/embedded/opencode/review-fix-doc.md \
+  test/fixtures/embedded/opencode/review-fix-plan.md \
+  test/fixtures/embedded/opencode/review-fix-pr.md \
+  test/fixtures/embedded/opencode/review-fix-r2q.md \
+  test/fixtures/embedded/opencode/review-fix-spec.md \
+  test/r2q-advisory.test.js
+git diff --cached --name-only
 git commit -m "feat(r2q): advisory/read-only review path with run.md gating and finding-to-owner-doc map
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -687,7 +885,7 @@ After Milestone 2, `review-fix-r2q` in `review-and-fix` earns PASS by reviewing 
 
 - [ ] **Step 3: Run** `node --test test/r2q-context.test.js` then `npm run syntaxcheck && npm test` → green.
 
-- [ ] **Step 4: Commit** (`git add lib/workflow/file-set-context.js lib/workflow/start.js test/r2q-context.test.js`; message `feat(r2q): persistent context over the 03–07 editable set with run.md as a protected dependency`; footer).
+- [ ] **Step 4: Commit** (`git add lib/workflow/file-set-context.js lib/workflow/start.js test/r2q-context.test.js`; then `git diff --cached --name-only` and confirm exactly those paths; message `feat(r2q): persistent context over the 03–07 editable set with run.md as a protected dependency`; footer).
 
 ---
 
@@ -701,13 +899,13 @@ After Milestone 2, `review-fix-r2q` in `review-and-fix` earns PASS by reviewing 
 - Consumes: the r2q context (Task 8), the finding→owner-doc map wording (Task 7).
 - Produces: an r2q fix phase that edits only files inside `03–07` (07-plan plus the owning upstream doc), guarded by the file-set guard; an attempt to edit `run.md` or any file outside `03–07` is refused as out-of-set.
 
-- [ ] **Step 1: Write failing tests** — (a) a finding whose root cause is upstream results in edits to BOTH `07-plan.md` and the mapped upstream doc, both inside the set; (b) any write to `run.md` or a path outside `03–07` is refused (`ERR_*` out-of-set, no write); (c) the fix phase requires a clean guard (git clean worktree over the set, or a valid snapshot anchor) before the first write. Run → FAIL.
+- [ ] **Step 1: Write failing tests** — drive the fix lifecycle with explicit accepted issue payloads, not semantic review. (a) start from a recorded reviewer finding whose root cause maps upstream; the test harness performs the allowed in-place edits to BOTH `07-plan.md` and the mapped upstream doc, submits a matching fix report, and asserts the workflow accepts only those in-set changes; (b) the test harness attempts to modify `run.md` or a path outside `03–07` and the guard refuses it (`ERR_*` out-of-set, no persisted write); (c) the fix phase requires a clean guard (git clean worktree over the set, or a valid snapshot anchor) before the first write. Run → FAIL.
 
 - [ ] **Step 2: Add the r2q fix branch** mirroring the file-set fix lifecycle (`runEndFix`/begin-fix/lock), bounding writes to the `03–07` editable set via the existing fix-guard membership check (extend it to treat `run.md` and non-`03–07` paths as out-of-set for r2q). The fixer edits in place — no versions, no checkpoints, no reopen, no `run.md` write.
 
 - [ ] **Step 3: Run** the new test + `npm run syntaxcheck && npm test` → green.
 
-- [ ] **Step 4: Commit** (`git add lib/workflow/file-set-fix.js lib/fix-guard.js test/r2q-fix.test.js`; message `feat(r2q): in-place backward fix bounded to the 03–07 set, run.md never written`; footer).
+- [ ] **Step 4: Commit** (`git add lib/workflow/file-set-fix.js lib/fix-guard.js test/r2q-fix.test.js`; then `git diff --cached --name-only` and confirm exactly those paths; message `feat(r2q): in-place backward fix bounded to the 03–07 set, run.md never written`; footer).
 
 ---
 
@@ -727,7 +925,7 @@ After Milestone 2, `review-fix-r2q` in `review-and-fix` earns PASS by reviewing 
 
 - [ ] **Step 3: Run** the new test + full suite → green.
 
-- [ ] **Step 4: Commit** (`git add lib/workflow/file-set-fix.js lib/workflow/file-set-finalize.js test/r2q-gate-freshness.test.js`; message `feat(r2q): revalidate the run.md gate at every write/PASS checkpoint (TOCTOU)`; footer).
+- [ ] **Step 4: Commit** (`git add lib/workflow/file-set-fix.js lib/workflow/file-set-finalize.js test/r2q-gate-freshness.test.js`; then `git diff --cached --name-only` and confirm exactly those paths; message `feat(r2q): revalidate the run.md gate at every write/PASS checkpoint (TOCTOU)`; footer).
 
 ---
 
@@ -741,13 +939,13 @@ After Milestone 2, `review-fix-r2q` in `review-and-fix` earns PASS by reviewing 
 - Consumes: the r2q fix + diff-review + re-review results, the guard state, the Item 3b surface-and-defer behavior.
 - Produces: r2q PASS is earned the normal way (07-plan reviewed, every blocking finding fixed in 07-plan and/or owning upstream, diff-reviewed, guard satisfied). There is NO `stopped-pending-human` state. A finding needing a human product/risk/scope decision is surfaced + deferred → `stopped-with-deferrals` (not PASS). read-only / advisory (Gemini) / drifted-set runs still cannot PASS.
 
-- [ ] **Step 1: Write failing tests** — (a) a fixable PLAN gap is fixed and r2q reaches `pass`, with `Files changed` listing the edited `03–07` files; (b) a planted human-decision finding (one requiring a product decision) ends `stopped-with-deferrals`, NOT `pass`, with the deferral's owner=user + next action recorded; (c) a Gemini r2q run never reaches `pass`. Run → FAIL.
+- [ ] **Step 1: Write failing tests** — use deterministic workflow payload fixtures for every semantic boundary. (a) submit an explicit initial reviewer finding, accepted triage, a test-harness edit to the owning `03–07` files, a matching fix report, `DIFF-OK`, a full re-review `PASS`, and a final-response payload; assert r2q reaches `pass` with `Files changed` listing the edited `03–07` files. (b) submit an explicit reviewer finding whose resolution requires a human product decision, triage it `deferred` with `deferred_owner: user`, surface the in-document marker through a test-harness edit, then assert final status is `stopped-with-deferrals`, NOT `pass`, with owner + next action recorded. (c) a Gemini r2q run never reaches `pass`. Run → FAIL.
 
 - [ ] **Step 2: Add the r2q finalize branch** — reuse `validatePass` (require diff-review-complete AND full-re-review-complete, guard satisfied, mode review-and-fix). Ensure the final-response payload's `Files changed` reports the multi-file (03–07) edits and surfaces the accepted execution-state risk note (design Decision 1 "accepted consequence").
 
 - [ ] **Step 3: Run** the new test + full suite → green.
 
-- [ ] **Step 4: Commit** (`git add lib/workflow/file-set-finalize.js lib/final-response.js test/r2q-finalize.test.js`; message `feat(r2q): earn PASS over the 03–07 set; human-decision findings defer, never pending-human`; footer).
+- [ ] **Step 4: Commit** (`git add lib/workflow/file-set-finalize.js lib/final-response.js test/r2q-finalize.test.js`; then `git diff --cached --name-only` and confirm exactly those paths; message `feat(r2q): earn PASS over the 03–07 set; human-decision findings defer, never pending-human`; footer).
 
 ---
 
@@ -776,7 +974,7 @@ After Milestone 2, `review-fix-r2q` in `review-and-fix` earns PASS by reviewing 
 
 - [ ] **Step 5: Run** `npm run syntaxcheck && npm test` → green (`test/readme-content.test.js` and any "seven routes" content assertions pass).
 
-- [ ] **Step 6: Commit** (`git add README.md README.zh-CN.md AGENTS.md CLAUDE.md package.json CHANGELOG.md`; message `docs(r2q): document review-fix-r2q and update route count to seven`; footer).
+- [ ] **Step 6: Commit** (`git add README.md README.zh-CN.md AGENTS.md CLAUDE.md package.json CHANGELOG.md`; then `git diff --cached --name-only` and confirm exactly those paths; message `docs(r2q): document review-fix-r2q and update route count to seven`; footer).
 
 ---
 
@@ -788,19 +986,43 @@ After Milestone 2, `review-fix-r2q` in `review-and-fix` earns PASS by reviewing 
 
 **Interfaces:** Consumes the full r2q route (Tasks 4–12).
 
-- [ ] **Step 1: Build a `WF-*` fixture directory** with `03-requirement-brief.md`, `04-risk-discovery.md`, `05-design.md`, `06-spec.md`, `07-plan.md`, and a `run.md` whose `## Status`/`## Active Artifacts` indicate a generated/approved plan. Include a `07-plan.md` with a planted PLAN-rubric gap whose root cause is upstream (e.g., a missing acceptance criterion owned by `06-spec.md`).
+- [ ] **Step 1: Build exact r2q fixture files** under `test/fixtures/r2q/approved/` with `03-requirement-brief.md`, `04-risk-discovery.md`, `05-design.md`, `06-spec.md`, `07-plan.md`, and a `run.md` whose `## Status`/`## Active Artifacts` indicate a generated/approved plan. Add deterministic payload fixtures under `test/fixtures/r2q/payloads/` for an upstream-owned PLAN finding (e.g. a missing acceptance criterion owned by `06-spec.md`) and a human-decision finding; the test harness, not the CLI, performs the corresponding file edits when exercising fix phases.
 
 - [ ] **Step 2: Write the e2e tests** exercising:
   - **Gating:** incomplete-plan run.md → `ERR_R2Q_GATE_PLAN_INCOMPLETE` block; archived dir (`…/.req-to-plan/archive/WF-*`) → `ERR_R2Q_GATE_ARCHIVED` block; neither runs a review.
   - **run.md drift:** mutate run.md mid-run → guarded drift blocker (no write, no PASS).
   - **Editable-set enforcement:** a fix never touches `run.md` or any path outside `03–07`.
   - **Default guard:** an untracked `.req-to-plan/WF-*` runs with `guard=snapshot` by default; a tracked-clean fixture runs with optional `guard=git`.
-  - **Finding→owner-doc map:** the planted finding edits BOTH `07-plan.md` and the owning `06-spec.md`.
-  - **Earned PASS:** the fixed run reaches `pass`; a planted human-decision finding ends `stopped-with-deferrals`, not `pass`.
+  - **Finding→owner-doc map:** an explicit reviewer payload maps the finding to `06-spec.md`; the test harness edit touches BOTH `07-plan.md` and the owning `06-spec.md`, and the fix report/final response names only those files.
+  - **Earned PASS:** the deterministic payload sequence plus simulated legal edits reaches `pass`; an explicit human-decision finding ends `stopped-with-deferrals`, not `pass`.
 
 - [ ] **Step 3: Run** `npm run syntaxcheck && npm test` → full suite green.
 
-- [ ] **Step 4: Commit** (`git add test/fixtures/r2q test/r2q-e2e.test.js`; message `test(r2q): end-to-end lifecycle, gating, drift, editable-set, and finding-to-owner coverage`; footer).
+- [ ] **Step 4: Commit**:
+
+```bash
+git add \
+  test/fixtures/r2q/approved/03-requirement-brief.md \
+  test/fixtures/r2q/approved/04-risk-discovery.md \
+  test/fixtures/r2q/approved/05-design.md \
+  test/fixtures/r2q/approved/06-spec.md \
+  test/fixtures/r2q/approved/07-plan.md \
+  test/fixtures/r2q/approved/run.md \
+  test/fixtures/r2q/payloads/upstream-finding.review.txt \
+  test/fixtures/r2q/payloads/upstream-finding.triage.txt \
+  test/fixtures/r2q/payloads/upstream-finding.fix-report.txt \
+  test/fixtures/r2q/payloads/upstream-finding.diff-ok.txt \
+  test/fixtures/r2q/payloads/upstream-finding.re-review-pass.txt \
+  test/fixtures/r2q/payloads/upstream-finding.final-pass.txt \
+  test/fixtures/r2q/payloads/human-decision.review.txt \
+  test/fixtures/r2q/payloads/human-decision.triage.txt \
+  test/fixtures/r2q/payloads/human-decision.final-deferral.txt \
+  test/r2q-e2e.test.js
+git diff --cached --name-only
+git commit -m "test(r2q): end-to-end lifecycle, gating, drift, editable-set, and finding-to-owner coverage
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+```
 
 ---
 
@@ -817,7 +1039,7 @@ Checked against the design `docs/OPTIMIZATION-2026-06-23-r2q-and-hardening.md`:
 - Guard/PASS/gate-freshness/inherits-3b (design §"Guard, PASS, and the run.md gate") → T9 (guard) / T10 (gate-freshness/TOCTOU) / T11 (earned PASS + 3b deferral). ✅.
 - Archive standard `*/.req-to-plan/archive/*` (committed correction) → T4 `isArchivedRequirementDir` + T12 docs. ✅.
 
-**2. Placeholder scan.** No "TBD/TODO/implement later". Phase 1 and the bounded r2q pieces (descriptor, fragments, gate parser, identity, manifest fields) carry complete code. The deep lifecycle tasks (8–11) specify exact files, Consumes/Produces interfaces, the named function to mirror (with file:line), and concrete failing tests — these are precise specs with pattern references, not vague placeholders; the one genuine unknown (exact `run.md` field text) is called out with a first-step verification against a real file. ✅.
+**2. Placeholder scan.** No "TBD/TODO/implement later". Phase 1 and the bounded r2q pieces (descriptor, fragments, gate parser, identity, manifest fields) carry complete code. The deep lifecycle tasks (8–11) specify exact files, Consumes/Produces interfaces, the named function to mirror (with file:line), and concrete failing tests — these are precise specs with pattern references, not vague placeholders; the one genuine unknown (exact `run.md` field text) is called out with a first-step verification against approved fixtures, design examples, or a user-approved sanitized sample. ✅.
 
 **3. Type/name consistency.** `resolveR2qTarget` (T4) → consumed by T6 (target-resolution), T7 (advisory), T8 (context). `runMdSha256`/`fileSetFingerprint` identity fields (T4) → used by T8 (manifest) and T10 (gate-freshness). `targetContextKind: 'r2q'` defined in T5, returned by T4/T6, validated in T5. `MANIFEST_V2_R2Q_FILESET_FIELDS` (T5) consumed by T8. `parseRunMdGate` (T4) reused by T10. `isArchivedRequirementDir` (T4) used by T4 resolution + T12 docs. Editable set `03–07` is consistent across T4/T7/T8/T9/T11/T13. ✅.
 
