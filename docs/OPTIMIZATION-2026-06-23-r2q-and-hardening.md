@@ -115,8 +115,8 @@ trust gates, supports strict-verified capability descriptors").
 
 ### Fix (doc-only, uniform, no history rewrite)
 
-Add one clarifying sentence to README (near the assurance section, ~lines 163–165) and mirror it in
-`AGENTS.md`:
+Add one clarifying sentence to `README.md` (near the assurance section, ~lines 163–165), mirror it in
+`README.zh-CN.md`, and record the operator-facing constraint in `AGENTS.md`:
 
 > `assurance=strict-verified` requires a verified `drfx doctor` capability proof. No adapter currently
 > emits verified reviewer-isolation or write-blocking proof, so strict-verified PASS is presently
@@ -134,8 +134,8 @@ Two changes under `shared/`: **3a** strengthens the PLAN rubric (per-task TDD + 
 only). **3b** is the no-unresolved-ambiguity behavior, delivered as three coordinated edits with **different
 route scope**: the reviewer rule in `common.md` reaches **document routes only** (COMMON is not layered for
 PR/CODE), while the surface-and-defer behavior in `fixer.md` + `coordinator.md` are **shared prompts → all
-six routes** (intentional; harmless and beneficial for code routes too — fixers should surface, not guess,
-on every route).
+routes** (intentional; harmless and beneficial for code routes too — fixers should surface, not guess, on
+every route).
 
 ### 3a — PLAN: per-task TDD + acceptance checks
 
@@ -250,10 +250,11 @@ Net: no interrupt, the loop runs to a clean terminal state, and the un-PASSed hu
 ### Ripple (3a + 3b)
 
 `shared/rubrics/plan.md` is embedded into generated `review-fix-plan` (and reused by `review-fix-r2q`);
-`shared/rubrics/common.md`, `shared/prompts/fixer.md`, and `shared/prompts/coordinator.md` are embedded into
-**every** route (document and code). Regenerate `test/fixtures/{generated,embedded}/<platform>/*` and run
+`shared/rubrics/common.md` affects document-rule routes only (the four single-document routes plus r2q once
+its PLAN stack is wired), while `shared/prompts/fixer.md` and `shared/prompts/coordinator.md` are embedded
+into **every** route. Regenerate `test/fixtures/{generated,embedded}/<platform>/*` and run
 `npm run syntaxcheck && npm test` (`test/shared-assets.test.js` snapshots will move — 3b's prompt edits touch
-the most fixtures since fixer/coordinator are shared across all six routes).
+the most fixtures since fixer/coordinator are shared across all routes).
 
 > **VALIDATED 2026-06-23 (not landed).** To confirm 3b's approach is implementable, the three edits were
 > applied to a throwaway working tree and the suite was run — `npm run syntaxcheck` (89 files) + `npm test`
@@ -302,9 +303,10 @@ r2p-reopen, r2p-gap-open, r2p-gap-resolve`. **There is no `r2p-execute` command.
 
 ### Decision 1 — behavior: in-place review-and-fix of the doc chain; run.md is a read-only gate (revised 2026-06-23)
 
-`review-fix-r2q` is a plain **document review-and-fix** over the requirement directory's doc chain, anchored
-on `07-plan.md`. It does **not** engage r2p's state machine: it never invokes the r2p CLI and never writes
-`run.md`.
+`review-fix-r2q` is a **requirement-directory target context** that applies the document PLAN stack to the
+requirement directory's doc chain, anchored on `07-plan.md`. It is not a normal single-file document route:
+it has one review anchor, a bounded editable doc-chain set, and read-only gate dependencies. It does **not**
+engage r2p's state machine: it never invokes the r2p CLI and never writes `run.md`.
 
 - **Review** `07-plan.md` against the PLAN + COMMON rubric (same rubric path as `review-fix-plan`).
 - **Fix in place**: for each finding, edit `07-plan.md`; when the root cause is upstream, **also edit the
@@ -324,11 +326,13 @@ machinery for a terminal polish pass is heavy, human-gated, and tightly coupled 
 principle 2). r2q deliberately treats the chain as plain files and leaves r2p's state alone.
 
 **Accepted consequence (stated, not a blocker).** Editing `06-spec.md` (etc.) without touching `run.md`
-leaves r2p's recorded version/approval cosmetically stale relative to the file. This is acceptable and
-intended within r2q's gated window: r2q runs only after plan generation and before execution/archival, so the
-corrected documents are the final artifacts handed to the executor; `r2p-status`/`r2p-continue` on a closed
-run only read or no-op, so the staleness is benign. Re-processing the dir with r2p afterward is an explicit
-r2p action outside r2q's scope.
+leaves r2p's recorded version/approval cosmetically stale relative to the file. This is acceptable only as a
+pre-archive QA-polish pass: r2q can prove plan generation and "not archived," but it cannot prove the artifacts
+were not already consumed because r2p has no execution marker. r2q therefore treats execution-state
+unobservability as an accepted risk that must be surfaced in route docs/output; if a user needs proof that a
+run has not been used, they must keep the run out of execution or use an external marker outside r2q's scope.
+`r2p-status`/`r2p-continue` on a closed run only read or no-op, so r2p state staleness remains benign for the
+r2p workflow itself. Re-processing the dir with r2p afterward is an explicit r2p action outside r2q's scope.
 
 Finding → owner-document mapping (each is a plain in-place edit; no r2p stage transition):
 
@@ -349,18 +353,24 @@ Finding → owner-document mapping (each is a plain in-place edit; no r2p stage 
 - **Not archived:** the requirement directory is **not** under an `*/archive/.req-to-plan/*` path
   (archived runs live at `docs/archive/.req-to-plan/WF-*`; active runs at `<project>/.req-to-plan/WF-*`).
 
-"Executed" has **no** r2p marker (no `r2p-execute`), so archive-location is the only observable proxy for
-"still in the reviewable window." r2q uses status + archive-path; it does not silently run on an archived or
-incomplete requirement.
+"Executed" has **no** r2p marker (no `r2p-execute`), so archive-location is only a pre-archive proxy, not
+proof that artifacts have not been consumed. r2q uses status + archive-path; it does not silently run on an
+archived or incomplete requirement, and it surfaces the execution-state uncertainty as an accepted risk.
 
 ### Guard, PASS, and the run.md gate (revised 2026-06-23)
 
-r2q behaves like the existing document review-and-fix routes — it does **not** invoke the r2p CLI or write
-`run.md`, so the human-checkpoint / reopen-fork concerns do not apply.
+r2q inherits the same guarded review-and-fix guarantees as existing routes — it does **not** invoke the r2p
+CLI or write `run.md`, so the human-checkpoint / reopen-fork concerns do not apply.
 
-- **Guard.** The git/snapshot file-set guard monitors **only** the doc-chain files r2q edits (`03–07` within
-  the resolved `WF-*` dir). `run.md` is not in the write set. A clean `git` guard (or a valid snapshot anchor)
-  is required before any write, same as every other route.
+- **Guard.** The git/snapshot r2q guard monitors the editable doc-chain files (`03–07` within the resolved
+  `WF-*` dir) **and** the read-only gate dependency `run.md`. `run.md` is fingerprinted and re-parsed as a
+  protected dependency, but is never in the editable set. A clean `git` guard (or a valid snapshot anchor) is
+  required before any write, same as every other route.
+- **Gate freshness.** r2q records the parsed gate result plus the `run.md` fingerprint in the target context.
+  Before `begin-fix`, before any lock refresh that precedes writes, after `end-fix`, and before final PASS, it
+  rechecks that `run.md` is unchanged and still satisfies the gate. If `run.md` changes, becomes unreadable, or
+  now indicates an incomplete/archived/invalid state, r2q stops as a guarded drift/blocker instead of writing
+  or passing from stale eligibility.
 - **PASS.** Earned the normal way — `07-plan.md` reviewed, every blocking finding fixed (in `07-plan.md`
   and/or the owning upstream doc), diff-reviewed, guard satisfied. There is **no** `stopped-pending-human`
   state, because r2q never hands off to an r2p human gate. read-only / advisory (Gemini) / drifted-file-set
@@ -381,42 +391,69 @@ new `targetContextKind` for the requirement directory and a **read-only** depend
 format (the route only makes sense for r2p-generated directories); it does **not** invoke the r2p CLI.
 
 - Platform policy: review-and-fix on Claude/Codex/opencode; advisory-only on Gemini (mirrors existing routes).
-- Guard: `git` default (WF docs are normally tracked); `snapshot` available.
-- Editable file set: `{03,04,05,06,07}-*.md` within the resolved `WF-*` directory only; `run.md` is
-  **read-only** (gate, never written).
+- Guard: `snapshot` default because active `.req-to-plan/WF-*` directories are commonly ignored/untracked
+  (this repository ignores `.req-to-plan/`). `guard=git` remains available when the selected WF directory is
+  tracked and has a clean rollback anchor.
+- Editable file set: `{03,04,05,06,07}-*.md` within the resolved `WF-*` directory only.
+- Protected read-only dependency: `run.md` (gate, fingerprinted/revalidated, never written).
 
 ### Architecture surface (per `AGENTS.md` route/platform sync notes)
 
 A new route + new `targetContextKind` touches (non-exhaustive):
 
 - `lib/routes.js` — add the `review-fix-r2q` descriptor (`routeKind: 'r2q'`, `targetContextKind: 'r2q'`,
-  `rubric: 'plan'`, `documentType: 'PLAN'`, platform policy).
-- `lib/rulebook.js` — **no new rule stack.** `rulebook.js` dispatches by `documentType` (`COMMON/SPEC/PLAN/
-  DESIGN`); r2q maps to `documentType: 'PLAN'` so it gets the same document stack as `review-fix-plan`
-  (COMMON → PLAN → user-global → project-local). Keep r2q **out** of `ROUTE_KIND_SET` (`{'pr','code'}`) so it
-  uses the document rule path, not the no-COMMON code stack.
-- `lib/generator.js` — `PLATFORM_TEMPLATES` / invocation text; add `templates/fragments/{invocation-gate,route-contract}.r2q.<platform>.md`
-  (2 × 4 = 8 fragments).
+  `rubric: 'plan'`, `documentType: 'PLAN'`, `defaultGuard: 'snapshot'`, platform policy). Treat
+  `routeKind: 'r2q'` as a first-class branch everywhere route kind is switched; do not rely on
+  `targetContextKind` to be inferred from it.
+- `lib/rulebook.js` — **no new rule stack.** r2q maps to `documentType: 'PLAN'`, so it must get the same
+  document stack as `review-fix-plan` (COMMON → PLAN → user-global → project-local). Keep r2q out of the
+  PR/CODE route-rule set (`{'pr','code'}`) and update any helper that currently assumes "non-document route
+  kind means PR/CODE rubric only."
+- `lib/generator.js` — update `sharedRelativePathsForRoute` so r2q embeds COMMON + PLAN, update
+  `targetTokenFor`, platform invocation text, route listing/generation helpers, and add
+  `templates/fragments/{invocation-gate,route-contract}.r2q.<platform>.md` (2 × 4 = 8 fragments). Preserve the
+  existing backwards-compatible `ROUTES` export if external consumers still expect only the four
+  single-document descriptors.
 - `lib/input.js` — parse the requirement-directory argument + shared flags.
 - `lib/target-context.js` — resolve + validate the `WF-*` directory, parse `run.md`, enforce the gating
-  predicates, compute the file-set fingerprint over the doc chain.
-- `lib/workflow/` — the r2q lifecycle: gate (parse `run.md`, error on wrong state) → review `07-plan` → map
-  findings to owner docs → apply in-place fixes across the doc chain → diff-review → finalize. No r2p CLI.
-- `lib/workflow-state.js` / manifest — register the `r2q` `targetContextKind` discriminator and its required keys.
+  predicates, compute the editable file-set fingerprint over `03–07`, and record a protected read-only
+  dependency fingerprint for `run.md`.
+- `lib/workflow/`, `lib/no-state.js`, and `lib/semantic-parsers.js` — add the r2q lifecycle: gate (parse
+  `run.md`, error on wrong state) → review `07-plan` → map findings to owner docs → apply in-place fixes
+  across the editable doc chain → diff-review → full re-review → finalize. Add explicit r2q handling in
+  helpers that currently branch only on document vs PR/CODE, including target metadata, no-state read-only
+  review, stdin payload validation, final-response validation, and any `isFileSetRoute`/target-resolution
+  shortcut.
+- `lib/workflow-state.js` / manifest — register the `r2q` `targetContextKind` discriminator and its required
+  keys: requirement directory identity, review anchor `07-plan.md`, editable doc-chain files, read-only
+  `run.md` gate fingerprint/result, file-set fingerprint, and changed-files semantics.
+- `shared/core.md`, `shared/long-task.md`, `shared/prompts/fixer.md`, and `shared/prompts/coordinator.md` —
+  extend the target-context wording beyond "single document" and "PR/CODE file set": r2q reviews `07-plan.md`,
+  may edit only `03–07`, treats `run.md` as read-only/protected, and reports multi-file changes in the final
+  machine payload.
 - Tests + fixtures — regenerate `test/fixtures/{generated,embedded}/<platform>/*`; add r2q lifecycle tests
-  and a `WF-*` fixture directory; cover gating (incomplete plan, archived dir) and the finding→owner-doc mapping.
-- `README.md` / `README.zh-CN.md` / `AGENTS.md` — document the route, the run.md read-only gate, and that r2q
-  never writes `run.md` or invokes the r2p CLI.
+  and a `WF-*` fixture directory; cover gating (incomplete plan, archived dir), `run.md` drift after start,
+  editable-set enforcement, ignored/untracked active dirs using default `guard=snapshot`, optional `guard=git`
+  on a tracked clean fixture, and the finding→owner-doc mapping. Update hard-coded six-route assertions in
+  `test/shared-assets.test.js`, `test/manifest-schema-v2.test.js`, `test/pack-contents.test.js`,
+  `test/cli.test.js`, and `test/capability-check.test.js`.
+- `skills/`, install metadata, and docs — add `skills/review-fix-r2q/SKILL.md`, ensure install/uninstall
+  ownership covers the new Codex skill directory, update `README.md`, `README.zh-CN.md`, `AGENTS.md`,
+  `CLAUDE.md`, and `package.json` wording that currently says "six routes", and document that r2q never writes
+  `run.md` or invokes the r2p CLI.
 
 ### Fragile assumptions (premise collapse) + mitigations
 
 - **A1 — r2p `run.md` format stability (read-only).** r2q parses `run.md` only for the gate. *Mitigation:*
   parse defensively for the few fields it needs (`## Status`, plan-stage approval); **error out loudly** on an
   unrecognized/invalid `run.md` rather than guessing or editing (no silent fallback — principle 2). r2q never
-  writes `run.md` or calls the r2p CLI, so r2p's internal schema churn cannot corrupt anything r2q owns.
+  writes `run.md` or calls the r2p CLI, and it fingerprints/revalidates `run.md` during the guarded workflow so
+  r2p's internal schema churn cannot silently invalidate a running review.
 - **A2 — stale run.md after edits (accepted).** Editing the docs leaves r2p's recorded versions cosmetically
-  stale. *Mitigation:* gating confines r2q to the post-plan/pre-execution window where this is benign (see
-  Decision 1, "Accepted consequence"); not a code concern.
+  stale, and r2q cannot prove whether the artifacts have already been consumed because r2p has no execution
+  marker. *Mitigation:* gating confines r2q to a post-plan/pre-archive proxy window, `run.md` is protected
+  against drift during the review, and route docs/output surface the execution-state uncertainty as an accepted
+  risk rather than claiming a proven pre-execution state.
 - **A3 — archived/executed detection.** No `r2p-execute` marker exists. *Mitigation:* gate on archive-path
   (Decision 2) and block, not guess; revisit if r2p later adds an execution marker.
 
@@ -426,9 +463,10 @@ A new route + new `targetContextKind` touches (non-exhaustive):
 The milestones below are build order to keep the tree green during implementation, not separately released
 plans:
 
-1. Route scaffold + gating resolver: `routes.js`, `input.js`, `target-context.js` (resolve `WF-*`, parse
-   `run.md`, enforce gating + error on wrong state), generator wiring + 8 fragments, fixtures — plus the
-   advisory/read-only review that reports the finding→owner-doc map.
+1. Route scaffold + gating resolver: `routes.js`, `input.js`, `target-context.js` (resolve `WF-*`, parse and
+   fingerprint `run.md`, enforce gating + error on wrong state), generator wiring + 8 fragments, shared
+   target-context wording, skills/install surfaces, fixtures — plus the advisory/read-only review that reports
+   the finding→owner-doc map.
 2. In-place backward-fix: workflow lifecycle that applies the doc-chain edits (`07-plan` + owning upstream
    docs), guarded by git/snapshot. No r2p CLI, no `run.md` writes.
 3. Docs (README/AGENTS) + end-to-end lifecycle tests.
