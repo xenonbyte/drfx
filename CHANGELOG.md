@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `atomicCopyFile` now shares the non-regular-target refusal (`ERR_ATOMIC_WRITE_TARGET_KIND`) and
+  destination-mode preservation that `atomicWriteFile` already had, making the "every atomic write …
+  refuses to clobber non-regular targets and preserves existing file permissions" guarantee true for
+  snapshot rollback bodies (`lib/snapshot-guard.js`) as well.
+
 ## 0.7.1 - 2026-06-23
 
 Internal hardening of how drfx writes its own files. Every atomic write — capability descriptors, install manifests, leases, workflow state, snapshot rollback bodies, and generated route files — now flows through one shared helper that refuses to clobber non-regular targets and preserves existing file permissions.

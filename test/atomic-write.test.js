@@ -133,3 +133,42 @@ test('atomicCopyFile leaves no temp behind when the source is missing', (t) => {
   assert.equal(fs.existsSync(dest), false);
   assert.deepEqual(tempSiblings(dest), []);
 });
+
+test('atomicCopyFile refuses to replace a symlink target', { skip: process.platform === 'win32' }, (t) => {
+  const root = makeSandbox(t);
+  const source = path.join(root, 'src.txt');
+  const dest = path.join(root, 'link');
+  fs.writeFileSync(source, 'payload\n');
+  fs.symlinkSync(source, dest);
+
+  assert.throws(() => atomicCopyFile(source, dest), /non-regular/);
+  assert.equal(fs.lstatSync(dest).isSymbolicLink(), true);
+  assert.deepEqual(tempSiblings(dest), []);
+});
+
+test('atomicCopyFile refuses to replace a directory target', (t) => {
+  const root = makeSandbox(t);
+  const source = path.join(root, 'src.txt');
+  const dest = path.join(root, 'adir');
+  fs.writeFileSync(source, 'payload\n');
+  fs.mkdirSync(dest);
+
+  assert.throws(() => atomicCopyFile(source, dest), /non-regular/);
+  assert.equal(fs.statSync(dest).isDirectory(), true);
+  assert.deepEqual(tempSiblings(dest), []);
+});
+
+test('atomicCopyFile preserves existing destination mode', { skip: process.platform === 'win32' }, (t) => {
+  const root = makeSandbox(t);
+  const source = path.join(root, 'src.txt');
+  const dest = path.join(root, 'manifest');
+  fs.writeFileSync(source, 'NEW CONTENT\n', { mode: 0o644 });
+  fs.writeFileSync(dest, 'old\n', { mode: 0o600 });
+  fs.chmodSync(dest, 0o600);
+
+  atomicCopyFile(source, dest);
+
+  assert.equal(fs.readFileSync(dest, 'utf8'), 'NEW CONTENT\n');
+  assert.equal(fs.statSync(dest).mode & 0o777, 0o600);
+  assert.deepEqual(tempSiblings(dest), []);
+});
