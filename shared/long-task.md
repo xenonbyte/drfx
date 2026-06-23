@@ -8,11 +8,12 @@ No-state read-only uses command-generated `reviewGuard` and `stateToken` values 
 
 ## Route Target Contexts
 
-A route resolves one of three target contexts. The protocol below is identical across them; only the target identity differs.
+A route resolves one of four target contexts. The protocol below is identical across them; only the target identity differs.
 
 - Document routes (`review-fix-spec`/`plan`/`design`/`doc`): the target context is a single file. Its identity is the normalized target path relative to the project root.
 - PR route (`review-fix-pr`): the target context is the file set of a local PR diff (`base=<branch>` vs `HEAD`, via the local merge base). Its identity is the route kind plus the base ref, with a deterministic file-set fingerprint over the diff. PR resolution is local and read-only: never fetch, push, or mutate refs.
 - CODE route (`review-fix-code`): the target context is the file set discovered by traversing in-root source `scope=<path>` directories under mandatory exclusions. Its identity is the route kind plus the normalized scopes and a deterministic file-set fingerprint over the discovered files; stored exclusions describe the resolver policy used for audit, but default exclusion-list drift alone does not make resume stale when the file-set fingerprint is unchanged.
+- r2q route (`review-fix-r2q`): the target context is an r2p requirement directory (`target=<requirement-dir>`). The reviewed anchor is `07-plan.md` (against COMMON+PLAN); the editable file set is the `03`–`07` owner docs and `run.md` is a read-only/protected gate dependency. Its identity is the route kind plus the requirement directory, with a deterministic file-set fingerprint over the `03`–`07` set and the `run.md` content hash as a protected dependency fingerprint.
 
 ## Target State Directory
 

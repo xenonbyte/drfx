@@ -114,6 +114,16 @@ Triage and PASS rules:
 - Surfacing and deferring are one action, not a fix. When deferring such a finding, the coordinator (or fixer, which fixes directly by default) writes the `DECISION NEEDED: <question + options>` marker into the document — the marker is the in-document evidence of the deferral, not a resolved fix, so the finding stays `deferred` and does not count toward PASS. On the next round the reviewer sees the point is now explicitly surfaced (per the COMMON Resolution rule) and does not re-raise it as silent ambiguity, so it never trips `stopped-no-progress`. The loop continues on the other findings and ends `stopped-with-deferrals` (not PASS), the surfaced points listed.
 - Low findings block only in strict mode unless accepted non-blocking and included in the next reviewer context.
 
+r2q finding-to-owner-doc map (`review-fix-r2q` only):
+- r2q reviews `07-plan.md`; the editable set is the `03`–`07` owner docs and `run.md` is read-only/protected (never edit it).
+- Map each blocking finding to the doc that owns its root cause, and fix backward there (in `review-and-fix`) or name that owner doc in the read-only report:
+  - acceptance criteria / observable behavior gap -> `06-spec.md`
+  - architecture, interface, or sequencing gap -> `05-design.md`
+  - unmitigated risk or missing rollback -> `04-risk-discovery.md`
+  - scope or requirement ambiguity -> `03-requirement-brief.md`
+  - pure execution-ordering or tooling issue local to the plan -> `07-plan.md` only
+- A finding whose root cause is upstream is fixed in the owning upstream doc, not patched only in `07-plan.md`. In read-only mode, name the owning doc for each blocking finding and stop as read-only-findings (never PASS).
+
 Convergence:
 - The workflow enforces a deterministic fix-attempt cap (default 5 fixes per target); the 6th begin-fix is refused as stopped-no-progress.
 - Additionally, if a high or medium finding that was marked fixed in an earlier round is raised again by a later full re-review at the same location/category, treat the loop as not converging: stop as stopped-no-progress with the recurring findings (redacted IDs/locations) and a next action, instead of attempting another fix.
