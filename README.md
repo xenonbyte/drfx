@@ -227,12 +227,12 @@ Syntax:
 review-fix-r2q target=<requirement-dir> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
 ```
 
-`review-fix-r2q` reviews an r2p requirement directory's `07-plan.md` with the PLAN rubric and fixes findings backward into the owning upstream docs (`03`–`06`) in place. `run.md` is a read-only, fingerprinted gate — r2q never writes it and never invokes the r2p CLI.
+`review-fix-r2q` reviews an r2p requirement directory's `07-plan.md` with the PLAN rubric and fixes findings in place across the `03`–`07` file set: plan-local execution defects are fixed directly in `07-plan.md`, and when a finding's root cause is upstream it edits the owning upstream doc (`03`–`06`) and re-aligns the affected `07-plan.md` section. `run.md` is a read-only, fingerprinted gate — r2q never writes it and never invokes the r2p CLI.
 
 - `target=<requirement-dir>` is required. The target is the requirement directory (the one that contains `run.md`, `07-plan.md`, and the upstream docs `03`–`06`). A bare path is accepted as shorthand.
 - The route gates on a generated plan (`07-plan.md` must exist and must not be under `*/.req-to-plan/archive/*`). **Accepted execution-state risk:** no `r2p-execute` marker exists in the workflow state, so archive-location is a pre-archive proxy, not proof the plan artifacts were not consumed.
 - `guard=snapshot` is the default (not `guard=git`) because active `.req-to-plan/WF-*` directories are commonly untracked; `guard=git` is accepted when the requirement directory is tracked and clean.
-- Auto-fix modifies only `03`–`06` in the resolved requirement directory. `07-plan.md` is read for review but is never written by r2q.
+- Auto-fix may modify the resolved requirement file set `03`–`07`: it fixes plan-local execution defects directly in `07-plan.md`, and when a finding's root cause is upstream it edits the owning upstream doc (`03`–`06`) and re-aligns the affected `07-plan.md` section. `run.md` is the read-only gate and is never written; nothing outside `03`–`07` is touched.
 - `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code, Codex, and opencode; advisory read-only on Gemini).
 - Advisory-only on Gemini: `review-and-fix` is unsupported, `rounds=<n>` is not accepted, workflow PASS is unavailable, and automatic fixing never runs.
 - `resume` explicitly continues from saved state. Stale state is refused; there is no silent reuse.

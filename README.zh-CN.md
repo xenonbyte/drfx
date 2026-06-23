@@ -226,12 +226,12 @@ Syntax:
 review-fix-r2q target=<requirement-dir> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
 ```
 
-`review-fix-r2q` 用 PLAN rubric 审查 r2p requirement directory 中的 `07-plan.md`，并将 findings 向上修复回 owning upstream docs（`03`–`06`）。`run.md` 是只读的、带指纹的 gate——r2q 从不写入 `run.md`，也从不调用 r2p CLI。
+`review-fix-r2q` 用 PLAN rubric 审查 r2p requirement directory 中的 `07-plan.md`，并在 `03`–`07` 文件集内就地修复 findings：plan 本身的执行层缺陷直接在 `07-plan.md` 修复；当 finding 根因在上游时，编辑对应的 upstream doc（`03`–`06`）并同步对齐受影响的 `07-plan.md` 段落。`run.md` 是只读的、带指纹的 gate——r2q 从不写入 `run.md`，也从不调用 r2p CLI。
 
 - `target=<requirement-dir>` 为必填。target 是 requirement directory（包含 `run.md`、`07-plan.md` 以及 upstream docs `03`–`06` 的目录）。也接受 bare path 作为简写。
 - route 以 generated plan 作为 gate（`07-plan.md` 必须存在，且不能位于 `*/.req-to-plan/archive/*` 下）。**已接受的执行状态风险：** workflow state 中不存在 `r2p-execute` marker，因此 archive 位置是 pre-archive 代理，而非制品未被消费的证明。
 - `guard=snapshot` 是默认值（而非 `guard=git`），因为活跃的 `.req-to-plan/WF-*` 目录通常未被 git 跟踪；当 requirement directory 已跟踪且 clean 时，`guard=git` 也可接受。
-- 自动修复只改 requirement directory 内的 `03`–`06`。`07-plan.md` 仅供 review 读取，r2q 从不写入。
+- 自动修复可改动 requirement directory 内的 `03`–`07` 文件集：plan 本身的执行层缺陷直接在 `07-plan.md` 修复；当 finding 根因在上游时，编辑对应的 upstream doc（`03`–`06`）并同步对齐受影响的 `07-plan.md` 段落。`run.md` 是只读 gate，从不写入；`03`–`07` 之外的文件一律不动。
 - `read-only` 或 `review-and-fix`（Claude Code、Codex 和 opencode 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
 - 在 Gemini 上为 advisory-only：`review-and-fix` 不支持，`rounds=<n>` 不接受，workflow PASS 不可用，自动修复永远不会运行。
 - `resume` 显式从已保存的 state 继续。拒绝 stale state，不存在静默复用。
