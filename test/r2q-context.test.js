@@ -202,6 +202,46 @@ test('r2q persistent start resolves relative target from explicit root outside c
   assert.equal(manifest.requirementDir, path.relative(root, wfDir).split(path.sep).join('/'));
 });
 
+test('r2q persistent start resolves relative root from the original cwd when base recomputes from project root', async (t) => {
+  const parent = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-relative-parent-')));
+  const root = path.join(parent, 'proj');
+  fs.mkdirSync(root, { recursive: true });
+  const homeDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-relative-home-')));
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
+
+  git(root, ['init', '-b', 'main']);
+  const wfDir = path.join(root, '.req-to-plan', 'WF-20260624-relative-root');
+  fs.mkdirSync(wfDir, { recursive: true });
+  fs.writeFileSync(path.join(wfDir, 'run.md'), planApprovedRunMd);
+  for (const doc of R2Q_EDITABLE_DOCS) {
+    fs.writeFileSync(path.join(wfDir, doc), `# ${doc}\nContent of ${doc}\n`);
+  }
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'seed requirement']);
+
+  const args = [
+    'review-fix-r2q',
+    'target=.req-to-plan/WF-20260624-relative-root',
+    'review-and-fix',
+    'root=proj',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--json'
+  ];
+
+  const start = await runWorkflowCommand('start', args, { cwd: parent, homeDir });
+  assert.equal(start.ok, true, JSON.stringify(start));
+  assert.equal(start.routeKind, 'r2q');
+  assert.equal(start.targetKey, parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).targetKey);
+});
+
 // ---------------------------------------------------------------------------
 // Persisted manifest round-trips as targetContextKind:'r2q' with run.md
 // fingerprint + editable-set fingerprint.

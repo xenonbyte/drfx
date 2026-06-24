@@ -367,6 +367,81 @@ test('r2q review-and-fix earns PASS over the 03–07 set with the execution-stat
   assert.equal(ledger.issues.find((issue) => issue.id === 'ISSUE-001').status, 'fixed');
 });
 
+test('r2q finalize refuses PASS when run.md drifted before full re-review context', async (t) => {
+  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-drift-before-full-review');
+  const args = r2qArgs(wfDir);
+  const { start, opts } = await reachAfterTriage(root, homeDir, {
+    review: REVIEW_FAIL,
+    triage: TRIAGE_ACCEPT,
+    args
+  });
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
+    ...opts,
+    now: new Date('2026-06-24T00:00:00.000Z')
+  });
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+
+  fs.writeFileSync(
+    path.join(wfDir, '07-plan.md'),
+    '# 07-plan.md\nStep 3 now references SPEC-ACCEPT-1 from 06-spec.md.\n'
+  );
+  fs.writeFileSync(
+    path.join(wfDir, '06-spec.md'),
+    '# 06-spec.md\nSPEC-ACCEPT-1: the acceptance criterion the plan step relies on.\n'
+  );
+
+  const originalRunMdSha256 = sha256OfFile(path.join(wfDir, 'run.md'));
+
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], { ...opts, stdin: fixReportBackward(root, wfDir) });
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+
+  const diff = await runWorkflowCommand('record-diff-review', [
+    start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], { ...opts, stdin: DIFF_OK });
+  assert.equal(diff.ok, true, JSON.stringify(diff));
+
+  fs.appendFileSync(path.join(wfDir, 'run.md'), '\nchanged before full re-review context\n');
+
+  const fullContext = await runWorkflowCommand('context', [...args, '--phase', 'full-re-review'], opts);
+  assert.equal(fullContext.ok, true, JSON.stringify(fullContext));
+  const fullReview = await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'full-re-review',
+    '--result-stdin'
+  ], { ...opts, stdin: REVIEW_PASS });
+  assert.equal(fullReview.ok, true, JSON.stringify(fullReview));
+
+  const manifestAfterFullReview = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(
+    manifestAfterFullReview.runMdSha256,
+    originalRunMdSha256,
+    'full re-review must not re-anchor the protected run.md fingerprint'
+  );
+
+  const filesChanged = [
+    memberPath(root, wfDir, '06-spec.md'),
+    memberPath(root, wfDir, '07-plan.md')
+  ].sort().join(', ');
+  const final = await runWorkflowCommand('finalize', [
+    start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], { ...opts, stdin: finalPass(filesChanged) });
+
+  assert.equal(final.ok, false, JSON.stringify(final));
+  assert.equal(final.status, 'blocked');
+  assert.equal(final.blockingReason, 'unexpected-worktree-change');
+  assert.notEqual(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'pass');
+});
+
 // ---------------------------------------------------------------------------
 // (b) DEFERRAL — a human-product-decision finding stops with deferrals, never pass.
 //     There is NO stopped-pending-human state.

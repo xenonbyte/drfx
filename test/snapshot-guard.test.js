@@ -895,6 +895,37 @@ test('file-set snapshot validate blocks writes under existing infrastructure dir
   assert.equal(result.blockingReason, 'unexpected-worktree-change');
 });
 
+test('file-set snapshot validate blocks deletions under force-included pruned directories', (t) => {
+  const fixture = makeWorkspace(t);
+  const wfDir = path.join(fixture.root, '.req-to-plan', 'WF-force-delete');
+  fs.mkdirSync(wfDir, { recursive: true });
+  const monitored = path.join(wfDir, '07-plan.md');
+  const sibling = path.join(wfDir, '06-spec.md');
+  fs.writeFileSync(monitored, '# Plan\n');
+  fs.writeFileSync(sibling, '# Spec\n');
+
+  const monitoredRelative = path.relative(fixture.root, monitored).split(path.sep).join('/');
+  const baseline = captureFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: [monitoredRelative],
+    forceIncludeDirs: [wfDir]
+  });
+  assert.equal(baseline.status, 'passed');
+  assert.ok(baseline.treeEntries.some((entry) => entry.path.endsWith('/06-spec.md')));
+
+  fs.rmSync(sibling);
+
+  const result = validateFileSetBaseline({
+    projectRoot: fixture.root,
+    monitoredFiles: [monitoredRelative],
+    baseline,
+    forceIncludeDirs: [wfDir]
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'unexpected-worktree-change');
+  assert.equal(result.entries[0].kind, 'deleted');
+});
+
 test('file-set snapshot baseline supports deleted PR members as missing monitored files', (t) => {
   const fixture = makeWorkspace(t);
   const deletedPath = path.join(fixture.root, 'docs', 'deleted.js');

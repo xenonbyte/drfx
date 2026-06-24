@@ -113,6 +113,19 @@ test('Claude and Codex file-set review-and-fix routes require full re-review aft
   }
 });
 
+test('generated r2q practical start text keeps snapshot as the materialized default guard', () => {
+  const SNAPSHOT_VERSION = '0.0.0-snapshot';
+
+  for (const platform of ['claude', 'codex', 'opencode']) {
+    const rendered = renderPlatformRoute(platform, 'review-fix-r2q', { packageVersion: SNAPSHOT_VERSION });
+    assert.match(
+      rendered,
+      /persistent practical command[\s\S]*?<selectedGuard>` is explicit guard or default `snapshot`/,
+      `${platform}:review-fix-r2q practical path must preserve snapshot as the default guard`
+    );
+  }
+});
+
 test('Claude and Codex partitioned CODE flow gates aggregate FAIL fix instructions on write mode', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
