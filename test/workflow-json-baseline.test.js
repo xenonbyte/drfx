@@ -719,6 +719,54 @@ test('SCOPE-IN-001 compact context output keeps paths and omits skeleton bodies'
   assert.ok(compact.contextManifestPath);
 });
 
+test('SCOPE-IN-001 compact no-state partitioned context keeps partition plan fields', () => {
+  const compact = JSON.parse(formatWorkflowJson({
+    ok: true,
+    status: 'partitioned-review',
+    targetStateDir: null,
+    documentType: 'none',
+    requestedMode: 'read-only',
+    mode: 'read-only',
+    guardMode: 'snapshot',
+    strictness: 'normal',
+    requestedAssurance: 'practical',
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    runtimeCheck: { subagentProbe: { status: 'ready' } },
+    contextManifestPath: '/tmp/drfx/context.json',
+    contextPackSkeleton: { body: 'debug-only context body' },
+    userExcludes: ['dist'],
+    reviewMode: 'partitioned',
+    unitCount: 2,
+    unitByteBudget: 128000,
+    units: [{ unit_id: 'unit-001' }, { unit_id: 'unit-002' }],
+    crosscuttingBackstops: ['security-redaction'],
+    projectReviewFingerprint: 'project-fingerprint'
+  }, { mode: 'compact', subcommand: 'context' }));
+
+  assert.equal(compact.reviewMode, 'partitioned');
+  assert.equal(compact.unitCount, 2);
+  assert.equal(compact.unitByteBudget, 128000);
+  assert.deepEqual(compact.crosscuttingBackstops, ['security-redaction']);
+  assert.equal(compact.units, undefined);
+  assert.equal(compact.projectReviewFingerprint, undefined);
+  assert.equal(compact.userExcludes, undefined);
+  assert.equal(compact.runtimeCheck, undefined);
+  assert.equal(compact.contextPackSkeleton, undefined);
+});
+
+test('SCOPE-IN-001 compact formatter fails closed without workflow subcommand', () => {
+  assert.throws(
+    () => formatWorkflowJson({
+      ok: true,
+      status: 'started',
+      runtimeCheck: { subagentProbe: { status: 'ready' } },
+      contextPackSkeleton: { body: 'debug-only context body' }
+    }, { mode: 'compact' }),
+    { code: 'ERR_WORKFLOW_JSON_COMPACT' }
+  );
+});
+
 test('SCOPE-IN-001 compact generated-route continuation keeps next-step artifact paths', async (t) => {
   const sequence = await runGeneratedRouteContinuationSmoke(t, { jsonMode: 'compact' });
   assertCompactResponseFields('start', sequence.start, {
