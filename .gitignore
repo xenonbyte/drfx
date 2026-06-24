@@ -1,12 +1,12 @@
-docs/
-design/
+docs/archive
 CONTINUITY.md
 !CLAUDE.md
 !AGENTS.md
 .drfx/
-.docs-review-fix/
 .req-to-plan/
 .DS_Store
 *.tgz
 npm-debug.log*
 .codegraph
+.claude
+.superpowers
