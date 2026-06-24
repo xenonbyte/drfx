@@ -102,6 +102,10 @@ function changedFiles(wfDir, before) {
   return Object.keys(before).filter((name) => before[name] !== sha256OfFile(path.join(wfDir, name)));
 }
 
+function projectRelative(root, wfDir, name) {
+  return path.relative(root, path.join(wfDir, name)).split(path.sep).join('/');
+}
+
 function r2qArgs(wfDir) {
   return [
     'review-fix-r2q',
@@ -145,14 +149,21 @@ test('r2q persistent start + context assembles the 03–07 editable set with run
 
   // The editable file set is EXACTLY the five 03–07 docs — run.md is NOT in it.
   const editable = pack.fileSet.files.map((file) => file.path).sort();
-  assert.deepEqual(editable, [...R2Q_EDITABLE_DOCS].sort());
-  assert.ok(!editable.includes('run.md'), 'run.md must never be in the editable set');
+  const expectedEditable = R2Q_EDITABLE_DOCS.map((doc) => projectRelative(root, wfDir, doc)).sort();
+  assert.deepEqual(editable, expectedEditable);
+  assert.ok(!editable.some((file) => file.endsWith('/run.md')), 'run.md must never be in the editable set');
+
+  // The guard baseline must use real on-disk hashes for the same editable file set.
+  const guardFiles = pack.reviewerGuardBaseline.files;
+  assert.equal(guardFiles.length, R2Q_EDITABLE_DOCS.length);
+  assert.ok(guardFiles.every((file) => file.kind === 'file'), 'all r2q guard files must exist on disk');
+  assert.ok(guardFiles.every((file) => file.sha256 !== 'none'), 'all r2q guard files must carry real hashes');
 
   // run.md appears as a PROTECTED read-only dependency, fingerprinted.
   const expected = resolveR2qTarget({ cwd: root, target: wfDir });
   assert.ok(Array.isArray(pack.protectedDependencies), 'protectedDependencies must be present');
   const protectedPaths = pack.protectedDependencies.map((dep) => dep.path);
-  assert.deepEqual(protectedPaths, ['run.md']);
+  assert.deepEqual(protectedPaths, [projectRelative(root, wfDir, 'run.md')]);
   const runMdDep = pack.protectedDependencies[0];
   assert.equal(runMdDep.readOnly, true);
   assert.equal(runMdDep.sha256, expected.runMdSha256);
@@ -162,6 +173,33 @@ test('r2q persistent start + context assembles the 03–07 editable set with run
 
   // Nothing under the requirement directory was mutated by start/context.
   assert.deepEqual(changedFiles(wfDir, before), []);
+});
+
+test('r2q persistent start resolves relative target from explicit root outside cwd', async (t) => {
+  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-root');
+  const outside = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-outside-')));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  const args = [
+    'review-fix-r2q',
+    'target=.req-to-plan/WF-20260624-root',
+    'review-and-fix',
+    `root=${root}`,
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--json'
+  ];
+
+  const start = await runWorkflowCommand('start', args, { cwd: outside, homeDir });
+  assert.equal(start.ok, true, JSON.stringify(start));
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.targetContextKind, 'r2q');
+  assert.equal(manifest.requirementDir, path.relative(root, wfDir).split(path.sep).join('/'));
 });
 
 // ---------------------------------------------------------------------------

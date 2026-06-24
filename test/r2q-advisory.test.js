@@ -145,6 +145,10 @@ function changedFiles(wfDir, before) {
   return Object.keys(before).filter((name) => before[name] !== sha256OfFile(path.join(wfDir, name)));
 }
 
+function projectRelative(root, wfDir, name) {
+  return path.relative(root, path.join(wfDir, name)).split(path.sep).join('/');
+}
+
 function r2qArgs(wfDir) {
   return [
     'review-fix-r2q',
@@ -183,6 +187,14 @@ test('r2q advisory review finalizes read-only-findings without editing any 03–
   assert.equal(context.routeKind, 'r2q');
   assert.equal(context.targetStateDir, null);
   assert.equal(typeof context.reviewGuard, 'string');
+  assert.deepEqual(
+    context.contextPackSkeleton.fileSet.files.map((file) => file.path).sort(),
+    R2Q_EDITABLE_DOCS.map((doc) => projectRelative(root, wfDir, doc)).sort()
+  );
+  assert.deepEqual(
+    context.contextPackSkeleton.protectedDependencies.map((dep) => dep.path),
+    [projectRelative(root, wfDir, 'run.md')]
+  );
 
   const review = await runWorkflowCommand('record-review', [
     '--no-state',

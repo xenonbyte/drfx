@@ -59,12 +59,37 @@ function parsedFor(entrySkill, tokens) {
   return { invocation };
 }
 
-// Create a shape-valid r2q requirement directory (<project>/.req-to-plan/WF-*) and
-// return the project root. Lexical shape only — enough for metadata + dispatch tests.
+const R2Q_EDITABLE_DOCS = [
+  '03-requirement-brief.md',
+  '04-risk-discovery.md',
+  '05-design.md',
+  '06-spec.md',
+  '07-plan.md'
+];
+
+const PLAN_APPROVED_RUN_MD = [
+  '# Requirement Run',
+  '',
+  '## Status',
+  'closed_at_plan_checkpoint',
+  '',
+  '## Active Artifacts',
+  '- plan: approved',
+  ''
+].join('\n');
+
+// Create a valid r2q requirement directory (<project>/.req-to-plan/WF-*) and
+// return the project root. Metadata tests need only the shape, while preflight
+// tests exercise the full run.md + 03–07 resolver gate.
 function freshR2qProject(t) {
   const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.mkdirSync(path.join(root, '.req-to-plan', 'WF-1'), { recursive: true });
+  const wfDir = path.join(root, '.req-to-plan', 'WF-1');
+  fs.mkdirSync(wfDir, { recursive: true });
+  fs.writeFileSync(path.join(wfDir, 'run.md'), PLAN_APPROVED_RUN_MD);
+  for (const doc of R2Q_EDITABLE_DOCS) {
+    fs.writeFileSync(path.join(wfDir, doc), `# ${doc}\nContent of ${doc}\n`);
+  }
   return root;
 }
 
@@ -381,6 +406,32 @@ test('an r2q advisory review-and-fix start dispatches to unsupported with routeK
   assert.match(result.targetKey, /^r2q-[0-9a-f]{12}$/);
   assert.equal(result.documentType, 'none');
   assert.equal(result.target, null);
+});
+
+test('r2q write eligibility preflight monitors project-root-relative owner doc paths', async (t) => {
+  const root = freshR2qProject(t);
+  const result = await runWorkflowCommand('preflight', [
+    'review-fix-r2q',
+    'target=.req-to-plan/WF-1',
+    'review-and-fix',
+    'guard=snapshot',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    '--json'
+  ], { cwd: root });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.status, 'write-eligible');
+  assert.equal(result.routeKind, 'r2q');
+  assert.equal(result.targetOnlyGuard.status, 'passed');
+  assert.equal(result.targetOnlyGuard.guardMode, 'snapshot');
+  assert.equal(result.targetOnlyGuard.monitoredFileCount, R2Q_EDITABLE_DOCS.length);
 });
 
 test('an unsupported r2q file-set lifecycle command names the generic file-set loop, not PR/CODE only', async (t) => {
