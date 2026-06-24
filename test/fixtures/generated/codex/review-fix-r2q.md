@@ -144,7 +144,7 @@ drfx workflow preflight review-fix-r2q target=<requirement-dir> review-and-fix g
 
 For Claude Code, use `--runtime-platform claude-code`.
 
-This command accepts `assurance=practical` and `assurance=strict-verified` before runtime probes and strict proof because it does not create target state. It returns `unsupported` for explicit `review-and-fix assurance=advisory`.
+For r2q, this internal preflight command accepts materialized `--assurance practical` and `--assurance strict-verified` workflow values before runtime probes and strict proof because it does not create target state. The route must not accept or forward a user `assurance=` token; the Invocation Gate rejects it.
 
 If preflight blocks, do not dispatch the semantic reviewer and do not create target state. Render concise default output:
 
@@ -160,7 +160,7 @@ When `debug` is present, include the redacted normalized blocker reason returned
 
 ## Runtime Probes
 
-For `assurance=practical` and `assurance=strict-verified`, run a live reviewer subagent probe before workflow start. The probe prompt must not read target/reference files and must not write files. It must require exactly this single output line:
+For materialized `practical` and `strict-verified` assurance, run a live reviewer subagent probe before workflow start. The probe prompt must not read target/reference files and must not write files. It must require exactly this single output line:
 
 ```text
 DRFX_REVIEWER_READY
@@ -172,7 +172,7 @@ Only the exact single line means ready. Map failures exactly:
 - Tool call error, timeout, user or host rejection, or unreadable result: `--runtime-subagent-probe failed --runtime-downgrade-reason reviewer-dispatch-failed`.
 - Output other than exact `DRFX_REVIEWER_READY`: `--runtime-subagent-probe failed --runtime-downgrade-reason reviewer-probe-invalid`.
 
-Explicit `assurance=advisory read-only` skips the subagent probe and passes `--runtime-subagent-probe not-required --runtime-downgrade-reason none`.
+r2q exposes no advisory assurance token. A materialized read-only r2q flow uses the practical no-state path unless an internal strict-verified state-backed path is selected.
 
 Before any semantic payload command, prove real stdin handoff: start the command as a process/session, obtain a stdin handle, write payload bytes, send EOF, and read exit code plus stdout/stderr. On failure, fail closed as `unsafe-handoff-file` before semantic handoff. Do not use shell pipes, heredocs, herestrings, command substitution, argv, environment variables, env vars, or raw temp files for semantic payloads.
 
@@ -180,31 +180,31 @@ Fingerprint guard failure is not a downgrade path. If workflow start or context 
 
 ## Strict Verified Proof
 
-Only explicit `assurance=strict-verified` requests strict verified mode. In the same-flow route invocation, run:
+Only the internal same-flow strict proof branch may use `strict-verified` for r2q. Do not accept a user `assurance=` token to request it. In that branch, run:
 
 ```text
 drfx doctor --platform codex --json
 ```
 
-Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.codex.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Materialize `<stateControlToken>` as `reset` only when the current invocation includes `reset`; otherwise omit it. Pass those current-run values to workflow start:
+Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.codex.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Materialize `<stateControlToken>` as `reset` only when the current invocation includes `reset`; otherwise omit it. Pass those current-run values to workflow start:
 
 ```text
 drfx workflow start review-fix-r2q target=<requirement-dir> <selectedMode> <stateControlToken> rounds=<roundLimit> guard=<selectedGuard> --assurance strict-verified --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
 ```
 
-For `review-and-fix assurance=strict-verified`, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
+For an internal strict-verified `review-and-fix` r2q start, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
 
 Do not scrape human-readable `drfx doctor` output. Do not reuse a cached descriptor or installer-default descriptor. Do not claim strict verified assurance unless the internal workflow command accepts the descriptor proof.
 
 ## Persistent Review-And-Fix Flow
 
-For `assurance=practical`, after successful probes, start persistent state:
+For the materialized practical path, after successful probes, start persistent state:
 
 ```text
 drfx workflow start review-fix-r2q target=<requirement-dir> review-and-fix <stateControlToken> rounds=<roundLimit> guard=<selectedGuard> --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
 ```
 
-This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, `<selectedGuard>` is explicit guard or default `snapshot`, and `<stateControlToken>` is `reset` only for explicit reset starts. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
+This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, `<selectedGuard>` is explicit guard or default `snapshot`, and `<stateControlToken>` is `reset` only for explicit reset starts. If the internal strict-verified branch is selected, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
 
 Then coordinate this loop:
 
@@ -233,36 +233,21 @@ Preflight terminal paths must run before reading target/reference bodies, before
 
 Use the materialized `<selectedAssurance>` to choose runtime fields, and pass the materialized `<selectedGuard>` to every no-state workflow command:
 
-- Advisory read-only no-state path uses `--assurance advisory --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none`. Do not use the practical/strict-verified ready-probe commands for advisory read-only. Advisory skips the subagent probe, but review-backed semantic payload commands still require proven stdin handoff.
-- Practical read-only no-state path uses `<selectedAssurance>` set to `practical` with `--runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none`.
+- r2q exposes no user-facing advisory assurance token. Practical read-only no-state path uses `<selectedAssurance>` set to `practical` with `--runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none`.
 - Strict-verified read-only is state-backed: use the Strict Verified Proof workflow start with ready probe/handoff fields. Do not use no-state commands for `strict-verified`.
-
-Advisory read-only no-state path starts with:
-
-```text
-drfx workflow context --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform codex --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
-```
-
-Submit advisory review, triage, and final response by repeating the same advisory runtime fields:
-
-```text
-drfx workflow record-review --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform codex --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
-drfx workflow record-triage --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform codex --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
-drfx workflow finalize --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform codex --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
-```
 
 Practical read-only no-state path starts with:
 
 ```text
-drfx workflow context --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
+drfx workflow context --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
 ```
 
 Submit practical review, triage, and final response by repeating the same practical runtime fields:
 
 ```text
-drfx workflow record-review --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
-drfx workflow record-triage --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
-drfx workflow finalize --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
+drfx workflow record-review --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
+drfx workflow record-triage --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
+drfx workflow finalize --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
 ```
 
 

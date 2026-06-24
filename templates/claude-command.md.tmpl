@@ -110,7 +110,7 @@ drfx workflow preflight {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix guard=<se
 
 For Codex, use `--runtime-platform codex`.
 
-This command accepts `assurance=practical` and `assurance=strict-verified` before runtime probes and strict proof because it does not create target state. It returns `unsupported` for explicit `review-and-fix assurance=advisory`.
+{{PREFLIGHT_ASSURANCE_TEXT}}
 
 If preflight blocks, do not dispatch the semantic reviewer and do not create target state. Render concise default output:
 
@@ -126,7 +126,7 @@ When `debug` is present, include the redacted normalized blocker reason returned
 
 ## Runtime Probes
 
-For `assurance=practical` and `assurance=strict-verified`, run a live reviewer subagent or Task-style reviewer probe before workflow start. The probe prompt must not read target/reference files and must not write files. It must require exactly this single output line:
+{{RUNTIME_PROBE_ASSURANCE_TEXT}}
 
 ```text
 DRFX_REVIEWER_READY
@@ -138,7 +138,7 @@ Only the exact single line means ready. Map failures exactly:
 - Tool call error, timeout, user or host rejection, or unreadable result: `--runtime-subagent-probe failed --runtime-downgrade-reason reviewer-dispatch-failed`.
 - Output other than exact `DRFX_REVIEWER_READY`: `--runtime-subagent-probe failed --runtime-downgrade-reason reviewer-probe-invalid`.
 
-Explicit `assurance=advisory read-only` skips the subagent probe and passes `--runtime-subagent-probe not-required --runtime-downgrade-reason none`.
+{{ADVISORY_PROBE_SKIP_TEXT}}
 
 Before any semantic payload command, prove real stdin handoff: start the command as a process/session, obtain a stdin handle, write payload bytes, send EOF, and read exit code plus stdout/stderr. On failure, fail closed as `unsafe-handoff-file` before semantic handoff. Do not use shell pipes, heredocs, herestrings, command substitution, argv, environment variables, env vars, or raw temp files for semantic payloads.
 
@@ -146,31 +146,31 @@ Fingerprint guard failure is not a downgrade path. If workflow start or context 
 
 ## Strict Verified Proof
 
-Only explicit `assurance=strict-verified` requests strict verified mode. In the same-flow route invocation, run:
+{{STRICT_VERIFIED_INTRO_TEXT}}
 
 ```text
 drfx doctor --platform claude --json
 ```
 
-Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.claude.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Materialize `<stateControlToken>` as `reset` only when the current invocation includes `reset`; otherwise omit it. Pass those current-run values to workflow start:
+{{STRICT_VERIFIED_SELECTED_MODE_TEXT}}
 
 ```text
 drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} <selectedMode>{{STATE_CONTROL_TOKEN}}{{ROUNDS_TOKEN}} guard=<selectedGuard> --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
 ```
 
-For `review-and-fix assurance=strict-verified`, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
+{{STRICT_VERIFIED_REVIEW_AND_FIX_TEXT}}
 
 Do not scrape human-readable `drfx doctor` output. Do not reuse a cached descriptor or installer-default descriptor. Do not claim strict verified assurance unless the internal workflow command accepts the descriptor proof.
 
 ## Persistent Review-And-Fix Flow
 
-For `assurance=practical`, after successful probes, start persistent state:
+{{PERSISTENT_PRACTICAL_INTRO_TEXT}}
 
 ```text
 drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix{{STATE_CONTROL_TOKEN}}{{ROUNDS_TOKEN}} guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
 ```
 
-This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, `<selectedGuard>` is explicit guard or default `{{DEFAULT_GUARD}}`, and `<stateControlToken>` is `reset` only for explicit reset starts. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
+{{PERSISTENT_PRACTICAL_SUMMARY_TEXT}}
 {{PARTITIONED_REVIEW_FLOW}}
 Then coordinate this loop:
 
@@ -197,40 +197,7 @@ For one-shot `read-only` without `ledger=`, without `resume`, and without `reset
 
 Preflight terminal paths must run before reading target/reference bodies, before semantic payload generation, and before any state token exists. They must use `workflow preflight --no-state`, must not call `workflow context`, and must not pass semantic stdin flags.
 
-Use the materialized `<selectedAssurance>` to choose runtime fields, and pass the materialized `<selectedGuard>` to every no-state workflow command:
-
-- Advisory read-only no-state path uses `--assurance advisory --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none`. Do not use the practical/strict-verified ready-probe commands for advisory read-only. Advisory skips the subagent probe, but review-backed semantic payload commands still require proven stdin handoff.
-- Practical read-only no-state path uses `<selectedAssurance>` set to `practical` with `--runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none`.
-- Strict-verified read-only is state-backed: use the Strict Verified Proof workflow start with ready probe/handoff fields. Do not use no-state commands for `strict-verified`.
-
-Advisory read-only no-state path starts with:
-
-```text
-drfx workflow context --no-state {{ROUTE_NAME}} {{TARGET_TOKEN}} read-only guard=<selectedGuard> --assurance advisory --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
-```
-
-Submit advisory review, triage, and final response by repeating the same advisory runtime fields:
-
-```text
-drfx workflow record-review --no-state {{ROUTE_NAME}} {{TARGET_TOKEN}} read-only guard=<selectedGuard> --assurance advisory --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
-drfx workflow record-triage --no-state {{ROUTE_NAME}} {{TARGET_TOKEN}} read-only guard=<selectedGuard> --assurance advisory --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
-drfx workflow finalize --no-state {{ROUTE_NAME}} {{TARGET_TOKEN}} read-only guard=<selectedGuard> --assurance advisory --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
-```
-
-Practical read-only no-state path starts with:
-
-```text
-drfx workflow context --no-state {{ROUTE_NAME}} {{TARGET_TOKEN}} read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
-```
-
-Submit practical review, triage, and final response by repeating the same practical runtime fields:
-
-```text
-drfx workflow record-review --no-state {{ROUTE_NAME}} {{TARGET_TOKEN}} read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
-drfx workflow record-triage --no-state {{ROUTE_NAME}} {{TARGET_TOKEN}} read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
-drfx workflow finalize --no-state {{ROUTE_NAME}} {{TARGET_TOKEN}} read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
-```
-
+{{RUNTIME_FLAGS}}
 No-state final status is `read-only-clean`, `read-only-findings`, `blocked`, or `unsupported`; never `pass`.
 
 ## Embedded Shared Content

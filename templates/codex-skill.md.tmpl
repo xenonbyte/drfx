@@ -115,7 +115,7 @@ drfx workflow preflight {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix guard=<se
 
 For Claude Code, use `--runtime-platform claude-code`.
 
-This command accepts `assurance=practical` and `assurance=strict-verified` before runtime probes and strict proof because it does not create target state. It returns `unsupported` for explicit `review-and-fix assurance=advisory`.
+{{PREFLIGHT_ASSURANCE_TEXT}}
 
 If preflight blocks, do not dispatch the semantic reviewer and do not create target state. Render concise default output:
 
@@ -131,7 +131,7 @@ When `debug` is present, include the redacted normalized blocker reason returned
 
 ## Runtime Probes
 
-For `assurance=practical` and `assurance=strict-verified`, run a live reviewer subagent probe before workflow start. The probe prompt must not read target/reference files and must not write files. It must require exactly this single output line:
+{{RUNTIME_PROBE_ASSURANCE_TEXT}}
 
 ```text
 DRFX_REVIEWER_READY
@@ -143,7 +143,7 @@ Only the exact single line means ready. Map failures exactly:
 - Tool call error, timeout, user or host rejection, or unreadable result: `--runtime-subagent-probe failed --runtime-downgrade-reason reviewer-dispatch-failed`.
 - Output other than exact `DRFX_REVIEWER_READY`: `--runtime-subagent-probe failed --runtime-downgrade-reason reviewer-probe-invalid`.
 
-Explicit `assurance=advisory read-only` skips the subagent probe and passes `--runtime-subagent-probe not-required --runtime-downgrade-reason none`.
+{{ADVISORY_PROBE_SKIP_TEXT}}
 
 Before any semantic payload command, prove real stdin handoff: start the command as a process/session, obtain a stdin handle, write payload bytes, send EOF, and read exit code plus stdout/stderr. On failure, fail closed as `unsafe-handoff-file` before semantic handoff. Do not use shell pipes, heredocs, herestrings, command substitution, argv, environment variables, env vars, or raw temp files for semantic payloads.
 
@@ -151,31 +151,31 @@ Fingerprint guard failure is not a downgrade path. If workflow start or context 
 
 ## Strict Verified Proof
 
-Only explicit `assurance=strict-verified` requests strict verified mode. In the same-flow route invocation, run:
+{{STRICT_VERIFIED_INTRO_TEXT}}
 
 ```text
 drfx doctor --platform codex --json
 ```
 
-Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.codex.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Materialize `<stateControlToken>` as `reset` only when the current invocation includes `reset`; otherwise omit it. Pass those current-run values to workflow start:
+{{STRICT_VERIFIED_SELECTED_MODE_TEXT}}
 
 ```text
 drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} <selectedMode>{{STATE_CONTROL_TOKEN}}{{ROUNDS_TOKEN}} guard=<selectedGuard> --assurance strict-verified --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
 ```
 
-For `review-and-fix assurance=strict-verified`, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
+{{STRICT_VERIFIED_REVIEW_AND_FIX_TEXT}}
 
 Do not scrape human-readable `drfx doctor` output. Do not reuse a cached descriptor or installer-default descriptor. Do not claim strict verified assurance unless the internal workflow command accepts the descriptor proof.
 
 ## Persistent Review-And-Fix Flow
 
-For `assurance=practical`, after successful probes, start persistent state:
+{{PERSISTENT_PRACTICAL_INTRO_TEXT}}
 
 ```text
 drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix{{STATE_CONTROL_TOKEN}}{{ROUNDS_TOKEN}} guard=<selectedGuard> --assurance practical --runtime-platform codex --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
 ```
 
-This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, `<selectedGuard>` is explicit guard or default `{{DEFAULT_GUARD}}`, and `<stateControlToken>` is `reset` only for explicit reset starts. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
+{{PERSISTENT_PRACTICAL_SUMMARY_TEXT}}
 {{PARTITIONED_REVIEW_FLOW}}
 Then coordinate this loop:
 

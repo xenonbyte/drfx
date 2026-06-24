@@ -136,6 +136,39 @@ test('generated r2q practical start text keeps snapshot as the materialized defa
   }
 });
 
+test('generated r2q route text does not expose user-facing assurance tokens', () => {
+  const SNAPSHOT_VERSION = '0.0.0-snapshot';
+  const forbiddenUserTokenGuidance = [
+    /This command accepts `assurance=practical`/,
+    /For `assurance=practical` and `assurance=strict-verified`/,
+    /Explicit `assurance=advisory read-only`/,
+    /Only explicit `assurance=strict-verified` requests strict verified mode/,
+    /For `assurance=practical`, after successful probes/,
+    /For `review-and-fix assurance=strict-verified`/,
+    /Advisory read-only no-state path/,
+    /--assurance advisory/
+  ];
+
+  for (const platform of ['claude', 'codex', 'opencode']) {
+    const rendered = renderPlatformRoute(platform, 'review-fix-r2q', { packageVersion: SNAPSHOT_VERSION });
+
+    assert.match(
+      rendered,
+      /This route has a fixed PLAN rubric and exposes no `assurance=` token/,
+      `${platform}:review-fix-r2q must document that assurance is internal-only`
+    );
+    assert.match(
+      rendered,
+      /--assurance practical/,
+      `${platform}:review-fix-r2q must keep internal practical assurance materialization`
+    );
+
+    for (const pattern of forbiddenUserTokenGuidance) {
+      assert.doesNotMatch(rendered, pattern, `${platform}:review-fix-r2q must not expose ${pattern}`);
+    }
+  }
+});
+
 test('Claude and Codex partitioned CODE flow gates aggregate FAIL fix instructions on write mode', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
@@ -614,17 +647,27 @@ test('unknown markdown custom rules are warnings in normal mode docs', () => {
   assert.match(sharedText, /normal[^\n]*warning/i);
 });
 
-test('codex route template uses shared runtime flags placeholder', () => {
+test('platform route templates use shared runtime flags placeholder', () => {
   const sharedRuntimeFlags = read('shared/runtime-flags.md');
-  const codexTemplate = read('templates/codex-skill.md.tmpl');
-  const rendered = renderPlatformRoute('codex', 'review-fix-spec', { packageVersion: '0.0.0-test' });
+  const templatePaths = [
+    'templates/claude-command.md.tmpl',
+    'templates/codex-skill.md.tmpl',
+    'templates/opencode-command.md.tmpl'
+  ];
 
-  assert.match(codexTemplate, /\{\{RUNTIME_FLAGS\}\}/);
-  assert.doesNotMatch(codexTemplate, /Use the materialized `<selectedAssurance>` to choose runtime fields/);
+  for (const templatePath of templatePaths) {
+    const template = read(templatePath);
+    assert.match(template, /\{\{RUNTIME_FLAGS\}\}/, templatePath);
+    assert.doesNotMatch(template, /Use the materialized `<selectedAssurance>` to choose runtime fields/, templatePath);
+  }
   assert.match(sharedRuntimeFlags, /Use the materialized `<selectedAssurance>` to choose runtime fields/);
-  assert.match(rendered, /Use the materialized `<selectedAssurance>` to choose runtime fields/);
-  assert.doesNotMatch(rendered, /\{\{RUNTIME_FLAGS\}\}/);
-  assert.doesNotMatch(rendered, /\{\{RUNTIME_PLATFORM\}\}/);
+
+  for (const platform of ['claude', 'codex', 'opencode']) {
+    const rendered = renderPlatformRoute(platform, 'review-fix-spec', { packageVersion: '0.0.0-test' });
+    assert.match(rendered, /Use the materialized `<selectedAssurance>` to choose runtime fields/, platform);
+    assert.doesNotMatch(rendered, /\{\{RUNTIME_FLAGS\}\}/, platform);
+    assert.doesNotMatch(rendered, /\{\{RUNTIME_PLATFORM\}\}/, platform);
+  }
 });
 
 test('README stays usage-focused', () => {
@@ -684,8 +727,8 @@ test('route templates bind each runtime platform explicitly', () => {
 });
 
 test('strict verified route proof uses same-flow check json only', () => {
-  const codexText = read('templates/codex-skill.md.tmpl');
-  const claudeText = read('templates/claude-command.md.tmpl');
+  const codexText = renderedDocumentRoute('codex');
+  const claudeText = renderedDocumentRoute('claude');
   const geminiText = read('templates/gemini-command.toml.tmpl');
 
   for (const [label, text, publicPlatform] of [
