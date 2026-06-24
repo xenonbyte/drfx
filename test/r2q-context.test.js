@@ -236,6 +236,41 @@ test('r2q persistent manifest round-trips with targetContextKind r2q + run.md fi
   assert.notEqual(manifest.runMdSha256, manifest.fileSetFingerprint);
 });
 
+test('r2q persistent record-review blocks when protected run.md drifts after context', async (t) => {
+  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-context-drift');
+  const opts = { cwd: root, homeDir };
+  const args = r2qArgs(wfDir);
+
+  const start = await runWorkflowCommand('start', args, opts);
+  assert.equal(start.ok, true, JSON.stringify(start));
+
+  const context = await runWorkflowCommand('context', args, opts);
+  assert.equal(context.ok, true, JSON.stringify(context));
+  assert.equal(
+    context.contextPackSkeleton.reviewerGuardBaseline.protectedDependencies[0].path,
+    projectRelative(root, wfDir, 'run.md')
+  );
+
+  fs.appendFileSync(path.join(wfDir, 'run.md'), '\nchanged after reviewer context\n');
+
+  const review = await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], {
+    ...opts,
+    stdin: [
+      'PASS',
+      'Summary: correctness, regression, safety, tests, contracts, maintainability, platform checked'
+    ].join('\n')
+  });
+
+  assert.equal(review.ok, false, JSON.stringify(review));
+  assert.equal(review.status, 'blocked');
+  assert.equal(review.blockingReason, 'reviewer-mutated-file');
+});
+
 // ---------------------------------------------------------------------------
 // The persistent path enforces the run.md gate before writing any state.
 // ---------------------------------------------------------------------------

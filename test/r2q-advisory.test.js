@@ -238,6 +238,31 @@ test('r2q advisory review finalizes read-only-findings without editing any 03–
   assert.equal(fs.existsSync(path.join(root, '.drfx')), false);
 });
 
+test('r2q advisory record-review blocks when protected run.md drifts after context', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const wfDir = makeWfDir(root, 'WF-20260624-advisory-drift');
+  const commonArgs = r2qArgs(wfDir);
+  const opts = { cwd: root, homeDir };
+
+  const context = await runWorkflowCommand('context', ['--no-state', ...commonArgs], opts);
+  assert.equal(context.ok, true, JSON.stringify(context));
+  assert.equal(typeof context.reviewGuard, 'string');
+
+  fs.appendFileSync(path.join(wfDir, 'run.md'), '\nchanged after no-state context\n');
+
+  const review = await runWorkflowCommand('record-review', [
+    '--no-state',
+    ...commonArgs,
+    '--review-guard',
+    context.reviewGuard,
+    '--result-stdin'
+  ], { ...opts, stdin: REVIEW_FAIL });
+
+  assert.equal(review.ok, false, JSON.stringify(review));
+  assert.equal(review.status, 'blocked');
+  assert.equal(review.blockingReason, 'reviewer-mutated-file');
+});
+
 // ---------------------------------------------------------------------------
 // Generated route prompt embeds the finding->owner-doc map.
 // ---------------------------------------------------------------------------
