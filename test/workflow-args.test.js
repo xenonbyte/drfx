@@ -1082,3 +1082,24 @@ test('unknown --unit-like typo on a non-partitioned subcommand still rejects', (
     /Unknown workflow option: --unitt/
   );
 });
+
+test('finalize with a single token parses into a target-state dir (guard does not apply)', () => {
+  const parsed = parseWorkflowArgs('finalize', ['/abs/target/state/dir']);
+  assert.equal(parsed.subcommand, 'finalize');
+  assert.equal(parsed.noState, false);
+  assert.equal(parsed.targetStateDir, path.resolve('/abs/target/state/dir'));
+});
+
+test('finalize without --no-state and without a target-state dir is rejected', async () => {
+  // A finalize invocation that parses as a full entry-skill run (>=2 tokens, no
+  // --no-state) carries neither noState nor a targetStateDir. Without the guard it
+  // would silently fall through to workflowBase and start a fresh workflow run.
+  await assert.rejects(
+    () => runWorkflowCommand('finalize', ['review-fix-spec', 'target=docs/spec.md']),
+    (error) => {
+      assert.equal(error.code, 'ERR_WORKFLOW_COMMAND');
+      assert.match(error.message, /finalize requires a target-state directory/);
+      return true;
+    }
+  );
+});
