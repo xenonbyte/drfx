@@ -141,23 +141,54 @@ const WORKFLOW_IDENTITY_COMPACT_FIELDS = [
   'round',
   'documentType',
   'strictness',
+  'requestedMode',
   'mode',
   'guardMode',
+  'modeSource',
+  'modeNormalizedFrom',
+  'requestedAssurance',
+  'assuranceSource',
+  'assuranceNormalizedFrom',
   'assurance',
   'runtimePlatform',
+  'descriptorPlatform',
+  'assuranceProof',
+  'strictProofError',
   'currentPhase'
 ];
 const STATE_CONTEXT_FIELDS = ['contextManifestPath'];
 const REVIEW_RECORD_FIELDS = ['contextManifestPath', 'reviewerReportPath'];
 const FIX_LOCK_FIELDS = ['lockOwnerId', 'leaseId', 'leaseExpiresAt', 'refreshAfterSeconds', 'fixGuardReportPath'];
+const FINALIZATION_STATUS_FIELDS = [
+  'requiresUserDecision',
+  'conflict',
+  'continuityWarning',
+  'originalBlockingReason'
+];
 const PARTITION_PLAN_FIELDS = [
   'reviewMode',
   'reviewPlanPath',
+  'reason',
   'unitCount',
   'unitByteBudget',
+  'oversize',
+  'reviewCacheKey',
+  'backstops',
+  'forcedReread',
   'crosscuttingBackstops'
 ];
+const PARTITION_UNIT_FIELDS = ['reused'];
 const NO_STATE_TOKEN_FIELDS = ['reviewGuard', 'stateToken'];
+const DEBUG_ONLY_FULL_FIELDS_OMITTED_FROM_COMPACT_MATRIX = new Set([
+  'runtimeCheck',
+  'contextPackSkeleton',
+  'userExcludes',
+  'scopeIgnoreOverrides',
+  'units',
+  'projectReviewFingerprint',
+  'summaries',
+  'coverageProof'
+]);
 
 const REVIEW_FAIL = [
   'FAIL',
@@ -263,13 +294,16 @@ const COMPACT_ALLOWLIST_MATRIX = [
     ...STATUS_COMPACT_FIELDS,
     ...WORKFLOW_IDENTITY_COMPACT_FIELDS,
     'diffReviewReportPath',
-    'requiresFullReview'
+    'requiresFullReview',
+    'requiresUserDecision',
+    'continuityWarning'
   ]),
   compactRow('fix-lifecycle', 'finalize', [
     ...STATUS_COMPACT_FIELDS,
     ...WORKFLOW_IDENTITY_COMPACT_FIELDS,
     'finalResponse',
     'fixedIssueIds',
+    ...FINALIZATION_STATUS_FIELDS,
     'receiptPath',
     'archivedStatePath',
     'archiveWarning'
@@ -323,7 +357,8 @@ const COMPACT_ALLOWLIST_MATRIX = [
     ...WORKFLOW_IDENTITY_COMPACT_FIELDS,
     'unitId',
     'coverageRisk',
-    'reviewerReportPath'
+    'reviewerReportPath',
+    ...PARTITION_UNIT_FIELDS
   ]),
   compactRow('partitioned', 'crosscutting', [
     ...STATUS_COMPACT_FIELDS,
@@ -478,6 +513,28 @@ function allFormatterFieldsResult() {
   });
 }
 
+function compactAllowlistFields() {
+  const fields = new Set();
+  for (const row of COMPACT_ALLOWLIST_MATRIX) {
+    for (const field of row.fields) fields.add(field);
+  }
+  return fields;
+}
+
+function assertRequiredCompactFields(label, response, requiredFields) {
+  assert.equal(response.ok, true, `${label} compact response must be ok`);
+  for (const field of ['status', 'targetStateDir', ...requiredFields]) {
+    assert.equal(Object.hasOwn(response, field), true, `${label} compact response missing ${field}`);
+    assert.notEqual(response[field], null, `${label} compact response has null ${field}`);
+    if (typeof response[field] === 'string') {
+      assert.notEqual(response[field], '', `${label} compact response has empty ${field}`);
+    }
+    if (Array.isArray(response[field])) {
+      assert.ok(response[field].length > 0, `${label} compact response has empty ${field}`);
+    }
+  }
+}
+
 async function runGeneratedRouteContinuationSmoke(t, { jsonMode }) {
   const fixture = freshRouteFixture(t);
   const common = routeArgs({ jsonMode, root: fixture.root, target: fixture.target });
@@ -494,25 +551,25 @@ async function runGeneratedRouteContinuationSmoke(t, { jsonMode }) {
     '--triage-stdin'
   ], { input: TRIAGE_ACCEPT });
 
-  runWorkflowCli(fixture.root, 'begin-fix', [start.targetStateDir, jsonFlag(jsonMode)]);
+  const beginFix = runWorkflowCli(fixture.root, 'begin-fix', [start.targetStateDir, jsonFlag(jsonMode)]);
   fs.writeFileSync(fixture.target, '# Spec\n\nclarified body\n');
-  runWorkflowCli(fixture.root, 'end-fix', [
+  const endFix = runWorkflowCli(fixture.root, 'end-fix', [
     start.targetStateDir,
     '--fix-report-stdin',
     jsonFlag(jsonMode)
   ], { input: FIX_REPORT });
-  runWorkflowCli(fixture.root, 'record-diff-review', [
+  const recordDiffReview = runWorkflowCli(fixture.root, 'record-diff-review', [
     start.targetStateDir,
     '--result-stdin',
     jsonFlag(jsonMode)
   ], { input: DIFF_OK });
-  runWorkflowCli(fixture.root, 'context', routeArgs({
+  const fullReviewContext = runWorkflowCli(fixture.root, 'context', routeArgs({
     jsonMode,
     phase: 'full-re-review',
     root: fixture.root,
     target: fixture.target
   }));
-  runWorkflowCli(fixture.root, 'record-review', [
+  const fullReviewRecordReview = runWorkflowCli(fixture.root, 'record-review', [
     ...routeArgs({
       jsonMode,
       phase: 'full-re-review',
@@ -527,7 +584,18 @@ async function runGeneratedRouteContinuationSmoke(t, { jsonMode }) {
     jsonFlag(jsonMode)
   ], { input: FINAL_PASS });
 
-  return { start, context, recordReview, recordTriage, finalize };
+  return {
+    start,
+    context,
+    recordReview,
+    recordTriage,
+    beginFix,
+    endFix,
+    recordDiffReview,
+    fullReviewContext,
+    fullReviewRecordReview,
+    finalize
+  };
 }
 
 test('workflowJson baseline for start stays byte-for-byte stable', async (t) => {
@@ -580,12 +648,25 @@ test('SCOPE-IN-001 compact allowlist matrix covers every generated-route workflo
 
 test('SCOPE-IN-001 compact formatter matrix classifies every route-automated full-output field', () => {
   const full = JSON.parse(formatWorkflowJson(allFormatterFieldsResult(), { mode: 'full', subcommand: 'context' }));
+  const matrixFields = compactAllowlistFields();
   for (const field of Object.keys(full)) {
     assert.ok(FULL_OUTPUT_FIELD_PURPOSES.has(field), `unclassified full-output field: ${field}`);
+    const purpose = FULL_OUTPUT_FIELD_PURPOSES.get(field);
     assert.ok(
-      ALLOWED_COMPACT_PURPOSES.has(FULL_OUTPUT_FIELD_PURPOSES.get(field)),
-      `field ${field} has unsupported compact purpose ${FULL_OUTPUT_FIELD_PURPOSES.get(field)}`
+      ALLOWED_COMPACT_PURPOSES.has(purpose),
+      `field ${field} has unsupported compact purpose ${purpose}`
     );
+    if (matrixFields.has(field)) continue;
+    assert.equal(purpose, 'debug only', `full-output field ${field} is absent from compact allowlist matrix`);
+    assert.ok(
+      DEBUG_ONLY_FULL_FIELDS_OMITTED_FROM_COMPACT_MATRIX.has(field),
+      `debug-only full-output field ${field} is absent from compact matrix without explicit accounting`
+    );
+  }
+  for (const field of DEBUG_ONLY_FULL_FIELDS_OMITTED_FROM_COMPACT_MATRIX) {
+    assert.equal(Object.hasOwn(full, field), true, `debug-only compact omission ${field} is not emitted by full output`);
+    assert.equal(FULL_OUTPUT_FIELD_PURPOSES.get(field), 'debug only', `${field} omission must stay classified debug only`);
+    assert.equal(matrixFields.has(field), false, `${field} is listed as compact-omitted but appears in the matrix`);
   }
 });
 
@@ -606,9 +687,19 @@ test('SCOPE-IN-001 compact context output keeps paths and omits skeleton bodies'
 
 test('SCOPE-IN-001 compact generated-route continuation keeps next-step artifact paths', async (t) => {
   const sequence = await runGeneratedRouteContinuationSmoke(t, { jsonMode: 'compact' });
-  assert.ok(sequence.start.targetStateDir);
-  assert.ok(sequence.context.contextManifestPath);
-  assert.ok(sequence.recordReview.reviewerReportPath);
-  assert.ok(sequence.recordTriage.ledgerPath || sequence.recordTriage.stateToken);
-  assert.ok(sequence.finalize.status);
+  assertRequiredCompactFields('start', sequence.start, ['targetKey']);
+  assertRequiredCompactFields('context', sequence.context, ['contextManifestPath']);
+  assertRequiredCompactFields('record-review', sequence.recordReview, ['reviewerReportPath']);
+  assertRequiredCompactFields('record-triage', sequence.recordTriage, ['ledgerPath']);
+  assertRequiredCompactFields('begin-fix', sequence.beginFix, [
+    'lockOwnerId',
+    'leaseId',
+    'leaseExpiresAt',
+    'fixGuardReportPath'
+  ]);
+  assertRequiredCompactFields('end-fix', sequence.endFix, ['fixReportPath', 'fixedIssueIds']);
+  assertRequiredCompactFields('record-diff-review', sequence.recordDiffReview, ['diffReviewReportPath']);
+  assertRequiredCompactFields('full-re-review context', sequence.fullReviewContext, ['contextManifestPath']);
+  assertRequiredCompactFields('full-re-review record-review', sequence.fullReviewRecordReview, ['reviewerReportPath']);
+  assertRequiredCompactFields('finalize', sequence.finalize, ['finalResponse', 'receiptPath']);
 });

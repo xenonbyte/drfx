@@ -133,7 +133,14 @@ test('SCOPE-IN-001 workflow JSON mode accepts full and compact while preserving 
   assert.equal(parseWorkflowJsonMode(['--json']), 'full');
   assert.equal(parseWorkflowJsonMode(['--json=full']), 'full');
   assert.equal(parseWorkflowJsonMode(['--json=compact']), 'compact');
-  assert.throws(() => parseWorkflowJsonMode(['--json=bad']), /ERR_WORKFLOW_FLAG/);
+  assert.throws(
+    () => parseWorkflowJsonMode(['--json=bad']),
+    (error) => {
+      assert.equal(error.code, 'ERR_WORKFLOW_FLAG');
+      assert.match(error.message, /--json/);
+      return true;
+    }
+  );
 
   const bare = parseWorkflowArgs('context', workflowJsonModeArgs('--json'));
   assert.equal(bare.json, true);

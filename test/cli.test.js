@@ -126,9 +126,11 @@ test('SCOPE-IN-001 doctor and status keep --json as a boolean user-command flag'
   assert.equal(status.platforms.codex.installed, false);
 
   for (const command of ['doctor', 'status']) {
-    const result = run([command, '--json=compact'], { home, expectFail: true });
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /Unknown option: --json=compact/);
+    for (const flag of ['--json=compact', '--json=full']) {
+      const result = run([command, flag], { home, expectFail: true });
+      assert.equal(result.code, 1);
+      assert.match(result.stderr, new RegExp(`Unknown option: ${flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    }
   }
 });
 
