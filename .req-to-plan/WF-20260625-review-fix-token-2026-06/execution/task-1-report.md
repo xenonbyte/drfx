@@ -33,3 +33,13 @@ Follow-up verification:
 - `node --test test/workflow-args.test.js test/workflow-json-baseline.test.js test/cli.test.js`
 - Result: expected RED before PLAN-TASK-002. Latest run: 69 tests, 66 passed, 3 failed.
 - Remaining RED evidence is still PLAN-TASK-002 implementation work: `parseWorkflowJsonMode` is not exported/implemented; compact formatting still emits `contextPackSkeleton`; workflow CLI still rejects `--json=compact` before the strengthened continuation assertions can run.
+
+Second fix-review follow-up (2026-06-25):
+- Replaced the continuation smoke's presence-only compact helper with matrix-row enforcement: each captured CLI response is now checked against its `COMPACT_ALLOWLIST_MATRIX` row for `state/*` or `fix-lifecycle/*`.
+- Required continuation fields must be present and must also be declared by the row being asserted, so the smoke cannot pass with fields that are absent from the expected compact contract.
+- Actual response keys must be a subset of the matched compact row, and debug-only full fields are explicitly rejected via `FULL_OUTPUT_FIELD_PURPOSES` and `DEBUG_ONLY_FULL_FIELDS_OMITTED_FROM_COMPACT_MATRIX`. Leaks such as `contextPackSkeleton`, `runtimeCheck`, `units`, `summaries`, or `coverageProof` now fail the compact CLI smoke.
+
+Second follow-up verification:
+- `node --test test/workflow-args.test.js test/workflow-json-baseline.test.js test/cli.test.js`
+- Result: expected RED before PLAN-TASK-002. Latest run: 69 tests, 66 passed, 3 failed.
+- Remaining RED evidence is unchanged and still targeted at PLAN-TASK-002 production work: `parseWorkflowJsonMode` is not exported/implemented; compact formatting still emits `contextPackSkeleton`; workflow CLI still rejects `--json=compact` before the continuation smoke reaches the new matrix-row assertions.

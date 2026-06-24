@@ -521,9 +521,24 @@ function compactAllowlistFields() {
   return fields;
 }
 
-function assertRequiredCompactFields(label, response, requiredFields) {
+function compactAllowlistRow(scope, command) {
+  const row = COMPACT_ALLOWLIST_MATRIX.find((candidate) => (
+    candidate.scope === scope && candidate.command === command
+  ));
+  assert.ok(row, `missing compact allowlist row ${scope}/${command}`);
+  return row;
+}
+
+function assertCompactResponseFields(label, response, { scope, command, requiredFields }) {
+  const row = compactAllowlistRow(scope, command);
+  const allowedFields = new Set(row.fields);
   assert.equal(response.ok, true, `${label} compact response must be ok`);
-  for (const field of ['status', 'targetStateDir', ...requiredFields]) {
+  for (const field of ['ok', 'status', ...requiredFields]) {
+    assert.equal(
+      allowedFields.has(field),
+      true,
+      `${label} compact required field ${field} missing from ${scope}/${command} allowlist`
+    );
     assert.equal(Object.hasOwn(response, field), true, `${label} compact response missing ${field}`);
     assert.notEqual(response[field], null, `${label} compact response has null ${field}`);
     if (typeof response[field] === 'string') {
@@ -532,6 +547,25 @@ function assertRequiredCompactFields(label, response, requiredFields) {
     if (Array.isArray(response[field])) {
       assert.ok(response[field].length > 0, `${label} compact response has empty ${field}`);
     }
+  }
+  for (const field of Object.keys(response)) {
+    assert.equal(
+      allowedFields.has(field),
+      true,
+      `${label} compact response leaked ${field}; ${scope}/${command} compact allowlist is ${row.fields.join(', ')}`
+    );
+    assert.notEqual(
+      FULL_OUTPUT_FIELD_PURPOSES.get(field),
+      'debug only',
+      `${label} compact response leaked debug-only full field ${field}`
+    );
+  }
+  for (const field of DEBUG_ONLY_FULL_FIELDS_OMITTED_FROM_COMPACT_MATRIX) {
+    assert.equal(
+      Object.hasOwn(response, field),
+      false,
+      `${label} compact response leaked debug-only full field ${field}`
+    );
   }
 }
 
@@ -687,19 +721,60 @@ test('SCOPE-IN-001 compact context output keeps paths and omits skeleton bodies'
 
 test('SCOPE-IN-001 compact generated-route continuation keeps next-step artifact paths', async (t) => {
   const sequence = await runGeneratedRouteContinuationSmoke(t, { jsonMode: 'compact' });
-  assertRequiredCompactFields('start', sequence.start, ['targetKey']);
-  assertRequiredCompactFields('context', sequence.context, ['contextManifestPath']);
-  assertRequiredCompactFields('record-review', sequence.recordReview, ['reviewerReportPath']);
-  assertRequiredCompactFields('record-triage', sequence.recordTriage, ['ledgerPath']);
-  assertRequiredCompactFields('begin-fix', sequence.beginFix, [
-    'lockOwnerId',
-    'leaseId',
-    'leaseExpiresAt',
-    'fixGuardReportPath'
-  ]);
-  assertRequiredCompactFields('end-fix', sequence.endFix, ['fixReportPath', 'fixedIssueIds']);
-  assertRequiredCompactFields('record-diff-review', sequence.recordDiffReview, ['diffReviewReportPath']);
-  assertRequiredCompactFields('full-re-review context', sequence.fullReviewContext, ['contextManifestPath']);
-  assertRequiredCompactFields('full-re-review record-review', sequence.fullReviewRecordReview, ['reviewerReportPath']);
-  assertRequiredCompactFields('finalize', sequence.finalize, ['finalResponse', 'receiptPath']);
+  assertCompactResponseFields('start', sequence.start, {
+    scope: 'state',
+    command: 'start',
+    requiredFields: ['targetStateDir', 'targetKey']
+  });
+  assertCompactResponseFields('context', sequence.context, {
+    scope: 'state',
+    command: 'context',
+    requiredFields: ['targetStateDir', 'contextManifestPath']
+  });
+  assertCompactResponseFields('record-review', sequence.recordReview, {
+    scope: 'state',
+    command: 'record-review',
+    requiredFields: ['targetStateDir', 'reviewerReportPath']
+  });
+  assertCompactResponseFields('record-triage', sequence.recordTriage, {
+    scope: 'state',
+    command: 'record-triage',
+    requiredFields: ['targetStateDir', 'ledgerPath']
+  });
+  assertCompactResponseFields('begin-fix', sequence.beginFix, {
+    scope: 'fix-lifecycle',
+    command: 'begin-fix',
+    requiredFields: [
+      'targetStateDir',
+      'lockOwnerId',
+      'leaseId',
+      'leaseExpiresAt',
+      'fixGuardReportPath'
+    ]
+  });
+  assertCompactResponseFields('end-fix', sequence.endFix, {
+    scope: 'fix-lifecycle',
+    command: 'end-fix',
+    requiredFields: ['targetStateDir', 'fixReportPath', 'fixedIssueIds']
+  });
+  assertCompactResponseFields('record-diff-review', sequence.recordDiffReview, {
+    scope: 'fix-lifecycle',
+    command: 'record-diff-review',
+    requiredFields: ['targetStateDir', 'diffReviewReportPath']
+  });
+  assertCompactResponseFields('full-re-review context', sequence.fullReviewContext, {
+    scope: 'state',
+    command: 'context',
+    requiredFields: ['targetStateDir', 'contextManifestPath']
+  });
+  assertCompactResponseFields('full-re-review record-review', sequence.fullReviewRecordReview, {
+    scope: 'state',
+    command: 'record-review',
+    requiredFields: ['targetStateDir', 'reviewerReportPath']
+  });
+  assertCompactResponseFields('finalize', sequence.finalize, {
+    scope: 'fix-lifecycle',
+    command: 'finalize',
+    requiredFields: ['targetStateDir', 'finalResponse', 'receiptPath']
+  });
 });
