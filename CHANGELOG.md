@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 - 2026-06-24
+
+Adds the seventh route, `review-fix-r2q`: a requirement-to-PLAN review-fix loop over an r2p requirement directory. It reviews the requirement plan (`07-plan.md`) with the PLAN rubric and fixes findings in place across the `03–07` edit set, treating `run.md` as a read-only, fingerprinted gate.
 
 ### Added
 
