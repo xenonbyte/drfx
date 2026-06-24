@@ -1,17 +1,18 @@
-# review-fix Token 消耗优化需求
+# review-fix Token 消耗与循环韧性优化需求
 
 - 日期：2026-06-25
-- 范围：workflow JSON 输出、route 生成文本、shared prompt/rubric 嵌入策略、相关测试与文档
+- 范围：workflow JSON 输出、route 生成文本、shared prompt/rubric 嵌入策略、fix report 契约、循环恢复能力、相关测试与文档
 - 目标读者：`@xenonbyte/drfx` 维护者与实现 agent
 - 状态：需求草案
 - 形态：需求文档。本文描述问题、目标、质量边界、需求条目与验收标准；不替代实现期的具体代码方案
 
 ## 背景
 
-`@xenonbyte/drfx` 的核心价值是把审查、修复、diff review、full re-review、guard、receipt、状态恢复与平台 route 安装做成可审计的 review-fix workflow。当前项目在质量门上已经相对完整，但执行过程中存在明显的 token 消耗压力，主要来自两类内容：
+`@xenonbyte/drfx` 的核心价值是把审查、修复、diff review、full re-review、guard、receipt、状态恢复与平台 route 安装做成可审计的 review-fix workflow。当前项目在质量门上已经相对完整，但执行过程中存在明显的 token 消耗压力和一处循环恢复脆弱点，主要来自三类内容：
 
 1. workflow 命令的默认 JSON 输出含有大量可由路径重新读取的结构化详情。
 2. 生成 route shell 中重复嵌入 shared prompt、rubric、protocol 与模板文本，平台越多、route 越多，重复越明显。
+3. document route 的 fix report 契约、生成 route 提示和状态机恢复路径不完全一致，导致一次可修正的内部 payload 失配可能让自动 review-fix 循环停在 blocked 状态。
 
 本需求的目标不是“压缩审查内容”，而是区分三类信息：
 
@@ -27,6 +28,17 @@
 - `review-fix-code` 是生成 route 中体量最大的入口之一。Codex、Claude Code、opencode 版本的 route shell 约 88 KB 到 89 KB，Gemini 版本约 73 KB。文本中包含大量 shared 规则与协议内容，后续必须用快照和体量测试防止无意膨胀。
 - Codex skill 当前既在 `SKILL.md` 中嵌入 shared 内容，又复制 shared assets。双份内容便于离线使用，但也带来明显重复，需要在不破坏 Codex 调用可靠性的前提下评估去重。
 - 默认输出中不应包含 raw prompts、raw subagent transcripts、raw logs、secrets、tokens 或大段文件 skeleton。需要 debug 时，应通过路径读取 redacted artifact。
+- 一次 `review-fix-doc` 实测暴露出循环恢复问题：document route 的 `end-fix` 只接受 `Fixed`、`Files changed`、`Not fixed`、`Residual risk` 四段 fix report；但 route/fixer 提示又要求记录每轮 verification。若 coordinator 把 `Verification:` 写入 document fix report，`end-fix` 会以 `fix-report-mismatch` 阻塞。file-set fix path 已支持 `Verification:` 和 blocked retry，document fix path 目前没有等价恢复路径。
+
+## 已验证的脆弱假设
+
+本需求里最脆弱的假设是：compact stdout 可以稳定枚举，并且不会让 route 后续步骤缺少必要状态。对当前实现的只读核对结论是：该假设可以成立，但前提是先落成 per-command allowlist 和 route-continuation 测试，不能用全局删字段替代验证。
+
+- `workflowJson` 当前返回固定基础字段集合，包括 `targetStateDir`、`manifestPath`、`ledgerPath`、`contextManifestPath`、`contextPackSkeleton`、`reviewGuard`、`stateToken`、`blockingReason`、`statusReason`、`nextAction` 等。这说明 compact 可以从现有字段集合派生，不需要改变底层 workflow 执行语义。
+- `formatWorkflowJson` 还会按结果追加锁信息、fix report 路径、final response、partitioned review 的 `units`、`summaries`、`coverageProof` 等字段。这说明 compact 不能只做全局黑名单，必须按 workflow subcommand 定义字段白名单。
+- `contextManifestPath` 与 `contextPackSkeleton` 同时返回，且 skeleton 已写入 manifest。默认 stdout 只保留 path、让 route 需要详情时读取 artifact，是正向收益明确且不降低审查质量的优化。
+- document `runEndFix` 当前调用 `parseFixReport(payload)`，不会开启 `allowVerification`；file-set `runEndFix` 调用 `parseFixReport(payload, { allowVerification: true })`，并要求 `Verification:` 非空。document route 的契约漂移不是猜测，而是当前 parser 和 workflow 的实际不一致。
+- file-set blocked retry 已经在 `begin-fix` 路径复用 persisted baseline、校验 guard、重新加锁，并提示 `retry end-fix with a valid fix report`。document retry 应复用这个状态机思路，而不是设计成绕过 guard 的新捷径。
 
 ## 质量边界
 
@@ -39,16 +51,20 @@
 - 不把 “token 少” 当作 PASS 条件。PASS 只能由既有质量门和 re-review 结果获得。
 - 不引入会吞掉错误、静默降级、隐藏 blocker 或扩大自动修复写入范围的逻辑。
 - 不引入外部运行时依赖，也不把 `rtk-ai/rtk` 作为本项目 runtime dependency。
+- 不为了“继续循环”而接受未解析、未校验或 issue 映射不一致的 fix report。
+- 修复 `fix-report-mismatch` 恢复能力时，必须保留原始 pre-fix guard baseline，不能把已经修改后的目标重新当作干净基线。
 
 ## 目标
 
-- G1：默认 workflow JSON 输出更短，只包含 route 串联和用户状态判断所需字段。
+- G1：生成 route 自动调用的 compact workflow JSON 输出更短，只包含 route 串联和用户状态判断所需字段；用户手动 CLI 的裸 `--json` 仍保持等价于 `--json=full`。
 - G2：完整诊断信息仍可通过 `--json=full`、manifest path、receipt path 或 debug 路径读取。
 - G3：生成 route 默认使用 compact 输出，避免把重复 JSON 继续灌入后续模型上下文。
 - G4：新增可执行的体量回归测试，防止 context JSON、route shell、embedded shared 内容无意膨胀。
 - G5：借鉴 `rtk-ai/rtk` 的输出过滤思想，只过滤返回面，不改变底层执行和审查语义。
 - G6：识别并删除繁琐或冗余流程中的重复输出，优先减少默认数据面，而不是减少质量门。
 - G7：所有优化必须有正收益，可量化为 token、字节、重复率、测试稳定性或维护复杂度下降。
+- G8：document route 的 fix report 契约、生成 route 提示和状态机恢复路径保持一致；可修正的内部 payload 失配不应迫使用户 reset 才能继续自动循环。
+- G9：compact 输出切默认前，必须为 route 自动调用到的 workflow subcommand 建立字段 allowlist，并证明 compact 输出足以驱动后续步骤。
 
 ## 非目标
 
@@ -58,10 +74,25 @@
 - 不引入通用 LLM 总结层来压缩 reviewer 证据。模型总结可能丢失 blocker，不适合作为质量门前置。
 - 不把 prompt、rubric、workflow hard constraints 做语义删减。可去重、可延迟读取、可压缩重复措辞，但不得减弱规则。
 - 不以大规模重构为目标。只有当冗余流程或结构问题直接增加 token、漂移或维护风险时才改。
+- 不把 blocked retry 设计成跳过 diff review 或 full re-review 的捷径。恢复后仍必须走完整闭环。
+- 不允许 route 自行手改 `.drfx` manifest 或 ledger 来绕过状态机。
 
 ## 需求条目
 
 ### 批次 A：compact workflow JSON
+
+#### A0 建立 compact stdout 字段 allowlist
+
+- 现状：`workflowJson` 和 `formatWorkflowJson` 当前返回一个较宽的字段集合，其中既有 route 串联必须字段，也有 path-readable、debug-only 和 partitioned review 大字段。
+- 需求：
+  - 对每个 route 自动调用的 workflow subcommand 建立 compact 字段 allowlist，至少覆盖 `preflight`、`start`、`context`、`record-review`、`record-triage`、`begin-fix`、`refresh-lock`、`end-fix`、`abort-fix`、`record-diff-review`、`finalize`，以及 file-set/partitioned review 专属 subcommand。
+  - allowlist 中的字段必须按用途标记为 `stdout required`、`path readable`、`user status` 或 `debug only`。compact stdout 只能默认返回 `stdout required`、`user status` 和 `path readable` 的路径值，`debug only` 只在 full 或 debug 输出里出现。
+  - compact 必须保留 route 串联需要的路径字段，例如 `targetStateDir`、`manifestPath`、`ledgerPath`、`contextManifestPath`、`reviewerReportPath`、`fixReportPath`、`receiptPath`、`reviewPlanPath` 等按 subcommand 需要出现的路径。
+  - compact 不得返回 raw prompt、raw transcript、raw log、完整 file skeleton、完整 `units`、完整 `summaries` 或可通过 artifact 路径读取的大对象。
+- 验收：
+  - 每个已列 subcommand 都有 compact allowlist 测试，测试同时断言必要字段存在和大字段缺席。
+  - route fixture 或 workflow smoke 测试证明 generated route 使用 compact stdout 后仍能找到下一步所需 artifact。
+  - 新增 subcommand 或新增 stdout 字段时，必须更新 allowlist 测试，否则测试失败。
 
 #### A1 支持 `--json=compact|full`
 
@@ -101,6 +132,7 @@
   - partitioned start/context 的 compact 输出可驱动后续步骤。
   - compact 输出不包含 raw prompts、raw transcripts、raw logs 或 secret-like payload。
   - full 输出仍满足现有调试需求。
+  - partitioned review 的 `units`、`summaries`、`coverageProof` 等大字段是否进入 compact，必须由 A0 的 subcommand allowlist 明确决定，不能沿用 full 的默认追加字段。
 
 ### 批次 B：route 默认使用 compact 输出
 
@@ -108,6 +140,7 @@
 
 - 现状：生成 route 内部调用 workflow 命令时使用 JSON 输出，容易把完整结构传给后续模型上下文。
 - 需求：
+  - 只有 A0 的 allowlist 和 route-continuation 测试通过后，才能把 generated route 默认调用切到 `--json=compact`。
   - 由 route 自动调用的 workflow 命令默认使用 `--json=compact`。
   - 需要调试、失败诊断或人工复现时，route 应提示可使用 `--json=full` 或 debug artifact 路径。
   - 外部用户手动运行 CLI 时仍可选择 full。
@@ -166,9 +199,12 @@
 - 现状：Codex skill 既嵌入 shared 内容，又复制 shared assets，存在重复。
 - 需求：
   - 评估 Codex route 是否可以把部分 embedded shared 内容改为强制读取 copied shared source。
+  - 去重前必须先给出字节或 token proxy 测量，证明收益来自重复内容减少，而不是删减 prompt、rubric、protocol 或 workflow hard constraints。
+  - 只有在体量下降达到实现前设定的最低收益阈值，且离线、安装、缺失文件 fail-closed 测试都通过时，才允许改 Codex skill 读取策略。
   - 若改动，必须保证离线安装、skill discoverability、route invocation、共享规则读取均可靠。
-  - 若无法安全去重，应保留现状，并只用 size test 防止继续膨胀。
+  - 若收益不明显、风险大于收益，或需要新增脆弱运行时读取路径，应保留现状，并只用 size test 防止继续膨胀。
 - 验收：
+  - 评估报告或测试输出记录去重前后的 route/skill 字节数、重复率或 token proxy 变化。
   - 去重后 Codex skill 仍能在无网络环境下完整执行。
   - 缺失 copied shared source 时必须 fail closed，不得用空规则继续。
   - 相关 fixture 和安装测试覆盖。
@@ -189,8 +225,8 @@
 #### E1 删除重复输出路径
 
 - 需求：
-  - 对 workflow 输出字段做一次字段级审查，标记 `stdout required`、`path readable`、`debug only` 三类。
-  - 默认 stdout 只保留 `stdout required`。
+  - 对 workflow 输出字段做一次字段级审查，标记 `stdout required`、`path readable`、`user status`、`debug only` 四类；该分类必须落到 A0 的 per-command allowlist 或等价测试数据中。
+  - 默认 stdout 只保留 `stdout required`、`user status` 和 `path readable` 的路径值。
   - `path readable` 字段保留文件路径，不重复输出文件正文。
   - `debug only` 字段只在 full 或 debug 输出中出现。
 - 验收：
@@ -207,6 +243,56 @@
   - diff 聚焦在输出格式、生成模板和测试。
   - 没有无关重构、无关格式化或公共接口漂移。
 
+### 批次 F：workflow 循环恢复与契约一致性
+
+#### F1 统一 document fix report 契约与 route 提示
+
+- 现状：document fix path 只解析四段 fix report，但 fixer prompt 要求每轮记录 verification，file-set fix path 还额外支持 `Verification:`。
+- 需求：
+  - document `end-fix` 必须接受并要求 `Verification:` 段，位置与 file-set fix path 一致，位于 `Not fixed:` 与 `Residual risk:` 之间。
+  - `Verification:` 至少记录一个实际验证命令、检查方法和结果；如果无法运行验证，也必须写明未能运行的原因，不能留空或省略。
+  - parser 可以继续用 `allowVerification` 控制 schema，但 document `runEndFix` 在 review-and-fix 路径必须启用 verification 解析，并在缺失 `Verification:` 时 fail closed 为 `fix-report-mismatch`。
+  - shared fixer prompt、generated route fixture、parser 测试和 workflow 测试必须描述同一份 document fix report schema。
+- 验收：
+  - 含 `Verification:` 的 document fix report 能被 parser 和 workflow 接受。
+  - 缺失 `Verification:`、section 顺序错误或 verification 为空时，document `end-fix` 以 `fix-report-mismatch` 阻塞，并给出可恢复下一步。
+  - document 与 file-set 的 fix report schema 差异只允许体现在 target/file-set 语义上，不允许再出现 prompt 要求但 parser 拒绝的 section。
+
+#### F2 `fix-report-mismatch` 支持安全重提
+
+- 现状：document `end-fix` 一旦因 fix report 格式或 issue 映射失配进入 `blocked`，后续不能直接补交正确 report 继续原 fix round；用户只能 reset 或人工清理状态。file-set path 已有部分 blocked retry 能力。
+- 需求：
+  - document route 必须复用 `begin-fix` 作为 blocked retry 入口：当 manifest 为 `Status: blocked`、`Current phase: fix`、`Blocking reason: fix-report-mismatch`，再次 `begin-fix` 应进入安全重提模式，并返回 `retry end-fix with a valid fix report` 一类下一步。
+  - retry 必须复用原始 `begin-fix` guard baseline，不能重新采样已修改后的目标作为 pre-fix baseline。
+  - retry 前必须确认目标修改仍只发生在允许的 target 文件内，reference 文件未变，target-only guard 可验证，rollback anchor 仍可用，并且锁能重新获取。
+  - retry 只能恢复到可提交 `end-fix` 的状态，不能修改 accepted findings、跳过 ledger 校验或直接推进到 diff review。
+  - 重提成功后必须继续 `diff review -> full re-review`，不能直接 PASS。
+- 验收：
+  - 测试覆盖：第一次 `end-fix` 提交无效 fix report 后进入 `fix-report-mismatch`，随后提交有效 report 可继续到 `diff-review`。
+  - 测试覆盖：retry 期间出现 reference 变化、非 target 变化、target-only guard 不可用时仍 fail closed。
+  - 测试覆盖：retry 不会重写 pre-fix baseline，不会把已经修改后的目标当作干净基线。
+  - 成功 retry 后 ledger 中 accepted issue 被更新为 fixed，manifest 的 `lastFixReportPath`、`lastKnownContentSha256` 和 current phase 正确推进。
+
+#### F3 修复提示与解析器的契约回归测试
+
+- 需求：
+  - 增加一组“prompt schema vs parser schema”测试，至少覆盖 reviewer result、triage result、document fix report、file-set fix report、diff review 和 final response。
+  - 测试不需要理解自然语言质量，只检查 route/prompt 中给出的机器 payload section 名、顺序和必填字段是否能被 parser 接受。
+  - 当 shared prompt 或 parser 任一侧修改 schema 时，fixture diff 必须显式显示两边同步变更。
+- 验收：
+  - 故意在 document fixer prompt 中加入 parser 不支持的 section 时测试失败。
+  - 故意让 parser 新增必填字段但 prompt 未更新时测试失败。
+
+#### F4 blocker 输出给出可恢复路径
+
+- 需求：
+  - `fix-report-mismatch` 默认用户输出应说明是内部 payload 契约问题、目标是否已经被写入、是否需要 `resume`、`reset` 或 retry。
+  - debug 输出可以给出 redacted parser 错误和 report path，但不得打印 raw prompt、raw transcript 或目标正文。
+  - 当 retry 能继续时，默认下一步应是 retry；只有无法安全 retry 时才建议 `reset`。
+- 验收：
+  - document route 和 file-set route 的 `fix-report-mismatch` 输出可区分“可重提 report”和“必须 reset/人工处理”。
+  - 用户可见输出不暴露内部 issue IDs、raw JSON 或原始 payload 正文。
+
 ## 验证要求
 
 - 每个实现批次至少运行：
@@ -214,30 +300,40 @@
   - `npm test`
 - 涉及生成模板、shared prompt、rubric 或 fixture 的改动，必须更新并审查对应 fixture。
 - 涉及 README 行为说明的改动，必须保持 `README.md` 与 `README.zh-CN.md` 结构同步。
-- 任何 compact/full 行为改动必须有针对性测试。
+- 任何 compact/full 行为改动必须有针对性测试，包括 per-command allowlist、必要字段存在、大字段缺席和 generated route 后续步骤可继续。
+- fix report schema、blocked retry 或 route prompt 改动必须有针对性 workflow 测试，覆盖 document route 和 file-set route 的差异。
+- `fix-report-mismatch` 恢复能力必须至少有一个失败后成功重提的回归测试。
+- Codex shared 去重只有在收益测量、离线执行、安装路径、缺失 shared source fail-closed 测试都通过后才能实施；否则必须记录为暂不改行为。
 - 若某项检查无法运行，最终说明必须列出原因和剩余风险。
 
 ## 回滚
 
 - A、B、C 批次应可独立回滚。A 是 CLI 输出契约扩展，B 是 route 调用方式，C 是测试护栏。
 - D 批次涉及 Codex skill shared 嵌入策略，风险高于 A 到 C，应单独提交并保留明确 fixture diff。
+- F 批次涉及 workflow 状态恢复，应单独提交或至少与 token 输出压缩解耦，避免把恢复语义变更混进体量优化 diff。
 - 所有批次不做数据迁移、不修改远端状态、不改变已有 workflow state 文件的读取语义。
 
 ## 风险与依赖
 
 - compact 输出如果字段删减过度，可能导致 route 后续步骤拿不到必要路径。必须用 route 级 fixture 和 workflow e2e 测试覆盖。
 - route shell 去重如果做得过深，可能让平台在缺少 shared source 时失败方式不清晰。必须 fail closed，并给出可读错误。
+- Codex shared 去重如果收益不足，反而会把一次静态嵌入变成运行时文件读取风险。D1 必须允许“测量后不改行为”作为合格结论。
 - 体量预算阈值过紧会制造维护噪音，过松又拦不住回归。初始阈值应基于当前 fixture 加合理余量，并在增长时要求显式说明。
+- `fix-report-mismatch` retry 如果设计过宽，可能把真实状态漂移误判为可恢复错误。retry 必须绑定原 begin-fix baseline、target-only guard 和 reference fingerprint。
+- document 与 file-set fix report schema 若继续分叉，route 生成文本、shared prompt 和 parser 测试必须把差异显式化。
 - 本需求无新增第三方 runtime 依赖。`rtk-ai/rtk` 仅作为设计参考，不纳入依赖树。
 
 ## 完成定义
 
 本需求完成时，应同时满足：
 
-- 默认 workflow JSON 和 route 内部调用已使用 compact 输出。
+- 用户手动 CLI 的裸 `--json` 仍保持 full 兼容语义，生成 route 内部 workflow 调用已使用 compact 输出。
+- route 自动调用到的 workflow subcommand 都有 compact allowlist 测试，compact 输出被证明足以驱动后续步骤。
 - full 输出、manifest、receipt 和 debug artifact 仍可支持完整诊断。
 - 审查和修复质量门没有减少。
 - context JSON 和 route shell 有体量回归测试。
 - shared prompt/rubric 的变更有 fixture 或 snapshot 守护。
+- Codex shared 去重已通过收益门槛和 fail-closed 测试，或被明确记录为收益不足而暂不改行为。
+- document route 的 fix report 契约与 generated route 提示一致，`fix-report-mismatch` 可在安全条件下重提并继续完整 review-fix 循环。
 - README 或开发文档已说明 compact/full 语义和调试入口。
 - 全量语法检查和测试通过，或明确说明无法运行的检查与风险。
