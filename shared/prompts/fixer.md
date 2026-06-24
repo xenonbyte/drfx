@@ -35,10 +35,13 @@ Files changed:
 Not fixed:
 - ISSUE-002: <reason, or none>
 
+Verification:
+- <command or inspection method and result; omit this section if no verification was performed>
+
 Residual risk:
 - <risk, or none identified>
 
-For every fix round, record the verification command or inspection method used, its result, and the residual risk when no suitable verification can run.
+When verification is performed, include the optional Verification section between Not fixed and Residual risk with at least one non-empty list item. When no suitable verification can run, omit this section and record the reason as residual risk.
 
 If a requested fix cannot be made within the target context, leave the affected files unchanged for that issue and report it under Not fixed.
 ```

@@ -14,6 +14,28 @@ const {
   readSemanticPayload
 } = require('../lib/semantic-parsers');
 
+const ROOT = path.join(__dirname, '..');
+
+function readShared(relativePath) {
+  return fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
+}
+
+function validFixReportLines() {
+  return [
+    'Fixed:',
+    '- ISSUE-001: Added schema validation.',
+    '',
+    'Files changed:',
+    '- docs/target.md',
+    '',
+    'Not fixed:',
+    '- none',
+    '',
+    'Residual risk:',
+    '- none identified'
+  ];
+}
+
 test('parses triage exact item schema', () => {
   const text = [
     'Triage:',
@@ -143,6 +165,98 @@ test('fix report rejects sections out of schema order', () => {
       '- none identified'
     ].join('\n')),
     /section order/i
+  );
+});
+
+test('document and file-set fix reports share optional Verification schema', () => {
+  const withoutVerification = parseFixReport(validFixReportLines().join('\n'), {
+    allowVerification: true
+  });
+  assert.equal(withoutVerification.verification, null);
+
+  const withVerification = parseFixReport([
+    ...validFixReportLines().slice(0, 9),
+    'Verification:',
+    '- npm test passes',
+    '',
+    ...validFixReportLines().slice(9)
+  ].join('\n'), { allowVerification: true });
+  assert.deepEqual(withVerification.verification, ['npm test passes']);
+
+  assert.throws(
+    () => parseFixReport([
+      ...validFixReportLines().slice(0, 9),
+      'Verification:',
+      '',
+      ...validFixReportLines().slice(9)
+    ].join('\n'), { allowVerification: true }),
+    /Verification/i
+  );
+});
+
+test('fix report Verification schema rejects wrong order and unknown sections', () => {
+  assert.throws(
+    () => parseFixReport([
+      ...validFixReportLines(),
+      '',
+      'Verification:',
+      '- npm test passes'
+    ].join('\n'), { allowVerification: true }),
+    /section order/i
+  );
+
+  assert.throws(
+    () => parseFixReport([
+      ...validFixReportLines().slice(0, 9),
+      'Notes:',
+      '- extra',
+      '',
+      ...validFixReportLines().slice(9)
+    ].join('\n'), { allowVerification: true }),
+    /unknown section Notes/i
+  );
+});
+
+test('fix report prompt/schema contracts cover reviewer triage fix diff review and final response payload sections', () => {
+  const reviewer = readShared('shared/prompts/reviewer.md');
+  const fixer = readShared('shared/prompts/fixer.md');
+  const coordinator = readShared('shared/prompts/coordinator.md');
+
+  assert.match(reviewer, /Output schema:[\s\S]*PASS[\s\S]*Summary:/);
+  assert.match(reviewer, /FAIL[\s\S]*Findings:[\s\S]*- id: R001/);
+  for (const field of ['severity:', 'location:', 'issue:', 'why_it_matters:', 'suggested_fix:', 'confidence:', 'sensitive:']) {
+    assert.match(reviewer, new RegExp(field));
+  }
+
+  assert.match(coordinator, /Triage report:[\s\S]*Triage:[\s\S]*- reviewer_id: R001/);
+  for (const field of [
+    'issue_id:',
+    'decision:',
+    'severity:',
+    'original_severity:',
+    'rationale:',
+    'merged_into:',
+    'deferred_owner:',
+    'deferred_next_action:',
+    'non_blocking:'
+  ]) {
+    assert.match(coordinator, new RegExp(field));
+  }
+
+  assert.match(
+    fixer,
+    /Output:[\s\S]*Fixed:[\s\S]*Files changed:[\s\S]*Not fixed:[\s\S]*Verification:[\s\S]*Residual risk:/
+  );
+  assert.match(fixer, /Verification:[\s\S]*omit this section/i);
+
+  assert.match(coordinator, /Diff review:[\s\S]*DIFF-OK[\s\S]*DIFF-FAIL/);
+  for (const field of ['issue_id', 'problem', 'required_action']) {
+    assert.match(coordinator, new RegExp(field));
+  }
+
+  assert.match(
+    coordinator,
+    /Internal workflow final-response payload machine block fields are `Final status:`, `Assurance:`, `Runtime platform:`, `Mode:`, `Target:`, `Files changed:`, `Fixed issue IDs:`, `Verification performed:`, `Deferrals or blockers:`, `Blocking reason:`, `Status reason:`, `Residual risk:`, `Redaction statement:`, and `Coordinator agreement:`\./
   );
 });
 

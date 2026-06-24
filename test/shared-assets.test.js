@@ -59,84 +59,84 @@ const GENERATED_SHELL_BASELINE_BYTES = Object.freeze({
 const CODEX_SHARED_DEDUP_EXPECTED_MEASUREMENT = Object.freeze({
   routes: Object.freeze({
     'review-fix-spec': Object.freeze({
-      routeBytes: 80973,
-      embeddedSharedBytes: 58905,
-      copiedSharedBytes: 58607,
-      duplicateBytes: 58607,
+      routeBytes: 81265,
+      embeddedSharedBytes: 59197,
+      copiedSharedBytes: 58899,
+      duplicateBytes: 58899,
       copiedRouteBytes: 23274,
-      shrinkBytes: 57699,
-      shrinkPercent: 71.26,
+      shrinkBytes: 57991,
+      shrinkPercent: 71.36,
       wouldGrow: false
     }),
     'review-fix-plan': Object.freeze({
-      routeBytes: 81281,
-      embeddedSharedBytes: 59213,
-      copiedSharedBytes: 58915,
-      duplicateBytes: 58915,
+      routeBytes: 81573,
+      embeddedSharedBytes: 59505,
+      copiedSharedBytes: 59207,
+      duplicateBytes: 59207,
       copiedRouteBytes: 23274,
-      shrinkBytes: 58007,
-      shrinkPercent: 71.37,
+      shrinkBytes: 58299,
+      shrinkPercent: 71.47,
       wouldGrow: false
     }),
     'review-fix-design': Object.freeze({
-      routeBytes: 81083,
-      embeddedSharedBytes: 58967,
-      copiedSharedBytes: 58667,
-      duplicateBytes: 58667,
+      routeBytes: 81375,
+      embeddedSharedBytes: 59259,
+      copiedSharedBytes: 58959,
+      duplicateBytes: 58959,
       copiedRouteBytes: 23324,
-      shrinkBytes: 57759,
-      shrinkPercent: 71.23,
+      shrinkBytes: 58051,
+      shrinkPercent: 71.34,
       wouldGrow: false
     }),
     'review-fix-doc': Object.freeze({
-      routeBytes: 77780,
-      embeddedSharedBytes: 55727,
-      copiedSharedBytes: 55468,
-      duplicateBytes: 55468,
+      routeBytes: 78072,
+      embeddedSharedBytes: 56019,
+      copiedSharedBytes: 55760,
+      duplicateBytes: 55760,
       copiedRouteBytes: 23232,
-      shrinkBytes: 54548,
-      shrinkPercent: 70.13,
+      shrinkBytes: 54840,
+      shrinkPercent: 70.24,
       wouldGrow: false
     }),
     'review-fix-pr': Object.freeze({
-      routeBytes: 78122,
-      embeddedSharedBytes: 56232,
-      copiedSharedBytes: 55977,
-      duplicateBytes: 55977,
+      routeBytes: 78414,
+      embeddedSharedBytes: 56524,
+      copiedSharedBytes: 56269,
+      duplicateBytes: 56269,
       copiedRouteBytes: 23065,
-      shrinkBytes: 55057,
-      shrinkPercent: 70.48,
+      shrinkBytes: 55349,
+      shrinkPercent: 70.59,
       wouldGrow: false
     }),
     'review-fix-code': Object.freeze({
-      routeBytes: 89107,
-      embeddedSharedBytes: 59832,
-      copiedSharedBytes: 59575,
-      duplicateBytes: 59575,
+      routeBytes: 89399,
+      embeddedSharedBytes: 60124,
+      copiedSharedBytes: 59867,
+      duplicateBytes: 59867,
       copiedRouteBytes: 30452,
-      shrinkBytes: 58655,
-      shrinkPercent: 65.83,
+      shrinkBytes: 58947,
+      shrinkPercent: 65.94,
       wouldGrow: false
     }),
     'review-fix-r2q': Object.freeze({
-      routeBytes: 81216,
-      embeddedSharedBytes: 59213,
-      copiedSharedBytes: 58915,
-      duplicateBytes: 58915,
+      routeBytes: 81508,
+      embeddedSharedBytes: 59505,
+      copiedSharedBytes: 59207,
+      duplicateBytes: 59207,
       copiedRouteBytes: 23209,
-      shrinkBytes: 58007,
-      shrinkPercent: 71.42,
+      shrinkBytes: 58299,
+      shrinkPercent: 71.53,
       wouldGrow: false
     })
   }),
   totals: Object.freeze({
-    routeBytes: 569562,
-    embeddedSharedBytes: 408089,
-    copiedSharedBytes: 406124,
-    duplicateBytes: 406124
+    routeBytes: 571606,
+    embeddedSharedBytes: 410133,
+    copiedSharedBytes: 408168,
+    duplicateBytes: 408168
   }),
-  largestShellShrinkBytes: 58655,
-  largestShellShrinkPercent: 65.83,
+  largestShellShrinkBytes: 58947,
+  largestShellShrinkPercent: 65.94,
   anyCodexRouteWouldGrow: false,
   gateEntered: true
 });
@@ -1999,7 +1999,7 @@ test('generated PR/CODE route content carries generalized target-context text an
   }
 });
 
-test('fixer/coordinator prompts keep undeclared dependency files read-only and require per-round verification', () => {
+test('fixer/coordinator prompts keep undeclared dependency files read-only and define optional Verification', () => {
   const fixer = read('shared/prompts/fixer.md');
   const coordinator = read('shared/prompts/coordinator.md');
   // PR/CODE routes cannot currently register new dependency files before begin-fix.
@@ -2011,8 +2011,10 @@ test('fixer/coordinator prompts keep undeclared dependency files read-only and r
   assert.doesNotMatch(fixer, /present in the monitored file set before its first write/i);
   assert.doesNotMatch(coordinator, /recorded necessary dependency files for PR\/CODE routes/i);
   // Per-round verification recording.
-  assert.match(fixer, /record the verification command or inspection method used/i);
-  assert.match(coordinator, /record the verification command or inspection method used/i);
+  assert.match(fixer, /optional Verification section/i);
+  assert.match(fixer, /omit this section/i);
+  assert.match(coordinator, /optional `Verification:` section/i);
+  assert.match(coordinator, /omit that section/i);
   // Never PASS from read-only/advisory/diff-review-only/unverified.
   assert.match(coordinator, /Never claim PASS from a read-only, advisory-only, diff-review-only, or otherwise unverified path/i);
 });

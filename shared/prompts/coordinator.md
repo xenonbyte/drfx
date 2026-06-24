@@ -73,7 +73,7 @@ Loop:
 12. Acquire the target lock before any target modification.
 13. Run the pre-fix guard: confirm the current target fingerprint matches the lock and manifest state.
 14. Fix accepted issues directly by default, or with one bounded serial fixer subagent.
-15. Review the diff. Confirm fixes map to accepted issue IDs and introduce no unrelated scope. For every fix round, record the verification command or inspection method used, its result, and the residual risk when no suitable verification can run.
+15. Review the diff. Confirm fixes map to accepted issue IDs and introduce no unrelated scope. When verification is performed, include the fix report's optional `Verification:` section with the command or inspection method and its result; when no suitable verification can run, omit that section and record the reason as residual risk.
 16. Run a full target-context re-review through a fresh isolated read-only reviewer. Never claim PASS from a read-only, advisory-only, diff-review-only, or otherwise unverified path.
 17. Repeat triage, fix, diff review, and full re-review until a terminal or pause state.
 

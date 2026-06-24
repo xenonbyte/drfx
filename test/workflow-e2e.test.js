@@ -69,6 +69,23 @@ const FIX_REPORT = [
   '- none identified'
 ].join('\n');
 
+const FIX_REPORT_WITH_VERIFICATION = [
+  'Fixed:',
+  '- ISSUE-001: Clarified the target wording.',
+  '',
+  'Files changed:',
+  '- docs/practical-target.md',
+  '',
+  'Not fixed:',
+  '- none',
+  '',
+  'Verification:',
+  '- node --test test/workflow-e2e.test.js: passed',
+  '',
+  'Residual risk:',
+  '- none identified'
+].join('\n');
+
 const DIFF_OK = 'DIFF-OK\nSummary: Target-only edit addresses ISSUE-001.\n';
 const DIFF_FAIL = [
   'DIFF-FAIL',
@@ -395,6 +412,52 @@ test('deterministic practical workflow reaches pass with target-only diff', asyn
   assert.deepEqual(git(fixture.root, ['diff', '--name-only']).trim().split('\n').filter(Boolean), [
     'docs/practical-target.md'
   ]);
+});
+
+test('document end-fix accepts optional Verification in the fix report', async (t) => {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex');
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  assert.equal(start.ok, true, JSON.stringify(start));
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [
+    ...startArgs,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [
+    ...startArgs,
+    '--triage-stdin'
+  ], workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], workflowOptions(fixture, {
+    now: new Date('2026-05-21T00:00:00.000Z')
+  }));
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+  fs.writeFileSync(
+    fixture.target,
+    [
+      '# Practical Workflow Target',
+      '',
+      'The document now states the expected behavior directly for implementers.',
+      '',
+      '## Acceptance',
+      '',
+      '- The final wording names the expected behavior.',
+      ''
+    ].join('\n')
+  );
+
+  const endFix = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], workflowOptions(fixture, { stdin: FIX_REPORT_WITH_VERIFICATION }));
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+  assert.equal(endFix.status, 'end-fix');
+  assertFileExists(endFix.fixReportPath);
+  const normalizedReport = fs.readFileSync(endFix.fixReportPath, 'utf8');
+  assert.match(normalizedReport, /"verification": \[\n\s+"node --test test\/workflow-e2e\.test\.js: passed"\n\s+\]/);
 });
 
 test('persistent finalize refuses a symlinked archive root and reports repair action', async (t) => {

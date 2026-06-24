@@ -681,7 +681,7 @@ test('PR file-set full re-review refreshes stale identity (incl head) before fin
   assert.equal(final.status, 'pass');
 });
 
-test('PR file-set end-fix blocks a fix report missing per-round verification', async (t) => {
+test('PR file-set end-fix accepts a fix report missing optional Verification', async (t) => {
   const root = makePrRepo(t);
   const start = await runWorkflowCommand('start', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
   await runWorkflowCommand('context', practicalArgs(['review-fix-pr', 'base=main']), { cwd: root });
@@ -719,8 +719,10 @@ test('PR file-set end-fix blocks a fix report missing per-round verification', a
     '--fix-report-stdin',
     '--json'
   ], { cwd: root, stdin: noVerification });
-  assert.equal(endFix.ok, false);
-  assert.equal(endFix.status, 'blocked');
+  assert.equal(endFix.ok, true, JSON.stringify(endFix));
+  assert.equal(endFix.status, 'end-fix');
+  assert.equal(Object.hasOwn(endFix, 'verification'), false);
+  assert.doesNotMatch(fs.readFileSync(endFix.fixReportPath, 'utf8'), /"verification"/);
 });
 
 test('PR file-set end-fix blocks a fix that writes outside the recorded file set', async (t) => {

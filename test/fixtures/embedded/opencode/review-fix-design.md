@@ -618,10 +618,13 @@ Files changed:
 Not fixed:
 - ISSUE-002: <reason, or none>
 
+Verification:
+- <command or inspection method and result; omit this section if no verification was performed>
+
 Residual risk:
 - <risk, or none identified>
 
-For every fix round, record the verification command or inspection method used, its result, and the residual risk when no suitable verification can run.
+When verification is performed, include the optional Verification section between Not fixed and Residual risk with at least one non-empty list item. When no suitable verification can run, omit this section and record the reason as residual risk.
 
 If a requested fix cannot be made within the target context, leave the affected files unchanged for that issue and report it under Not fixed.
 ```
@@ -705,7 +708,7 @@ Loop:
 12. Acquire the target lock before any target modification.
 13. Run the pre-fix guard: confirm the current target fingerprint matches the lock and manifest state.
 14. Fix accepted issues directly by default, or with one bounded serial fixer subagent.
-15. Review the diff. Confirm fixes map to accepted issue IDs and introduce no unrelated scope. For every fix round, record the verification command or inspection method used, its result, and the residual risk when no suitable verification can run.
+15. Review the diff. Confirm fixes map to accepted issue IDs and introduce no unrelated scope. When verification is performed, include the fix report's optional `Verification:` section with the command or inspection method and its result; when no suitable verification can run, omit that section and record the reason as residual risk.
 16. Run a full target-context re-review through a fresh isolated read-only reviewer. Never claim PASS from a read-only, advisory-only, diff-review-only, or otherwise unverified path.
 17. Repeat triage, fix, diff review, and full re-review until a terminal or pause state.
 
