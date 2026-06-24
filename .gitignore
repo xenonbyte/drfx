@@ -3,7 +3,6 @@ CONTINUITY.md
 !CLAUDE.md
 !AGENTS.md
 .drfx/
-.req-to-plan/
 .DS_Store
 *.tgz
 npm-debug.log*
