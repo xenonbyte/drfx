@@ -28,7 +28,7 @@ const test = require('node:test');
 
 const { runWorkflowCommand } = require('../lib/workflow');
 const { parseManifestV2 } = require('../lib/workflow-state');
-const { resolveR2qTarget } = require('../lib/target-context');
+const { buildR2qIdentity, resolveR2qTarget } = require('../lib/target-context');
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -293,6 +293,34 @@ test('r2q persistent cwd-relative target remains stable after project-root disco
     '.req-to-plan/WF-20260624-relative-target',
     'context must use the originally resolved requirement directory, not rebase target= against project root'
   );
+
+  const resumeArgs = args.slice();
+  resumeArgs.splice(3, 0, 'resume');
+  const resume = await runWorkflowCommand('start', resumeArgs, opts);
+  assert.equal(resume.ok, true, JSON.stringify(resume));
+  assert.equal(resume.status, 'review');
+  assert.equal(resume.targetKey, start.targetKey);
+});
+
+test('r2q identity normalizes requirementDir to posix separators before manifest persistence', () => {
+  const originalRelative = path.relative;
+  path.relative = () => '.req-to-plan\\WF-20260624-windows';
+  try {
+    const identity = buildR2qIdentity({
+      context: {
+        routeKind: 'r2q',
+        projectRoot: 'C:\\repo',
+        requirementDir: 'C:\\repo\\.req-to-plan\\WF-20260624-windows',
+        runMdSha256: 'run-sha',
+        fileSetFingerprint: 'set-sha'
+      },
+      guardMode: 'snapshot',
+      roundLimit: null
+    });
+    assert.equal(identity.requirementDir, '.req-to-plan/WF-20260624-windows');
+  } finally {
+    path.relative = originalRelative;
+  }
 });
 
 // ---------------------------------------------------------------------------

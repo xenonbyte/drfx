@@ -434,6 +434,35 @@ test('r2q write eligibility preflight monitors project-root-relative owner doc p
   assert.equal(result.targetOnlyGuard.monitoredFileCount, R2Q_EDITABLE_DOCS.length);
 });
 
+test('r2q write eligibility preflight accepts cwd-relative targets from project subdirectories', async (t) => {
+  const root = freshR2qProject(t);
+  const subdir = path.join(root, 'sub');
+  fs.mkdirSync(subdir);
+
+  const result = await runWorkflowCommand('preflight', [
+    'review-fix-r2q',
+    'target=../.req-to-plan/WF-1',
+    'review-and-fix',
+    'guard=snapshot',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    '--json'
+  ], { cwd: subdir });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.status, 'write-eligible');
+  assert.equal(result.routeKind, 'r2q');
+  assert.equal(result.targetOnlyGuard.status, 'passed');
+  assert.equal(result.targetOnlyGuard.guardMode, 'snapshot');
+  assert.equal(result.targetOnlyGuard.monitoredFileCount, R2Q_EDITABLE_DOCS.length);
+});
+
 test('an unsupported r2q file-set lifecycle command names the generic file-set loop, not PR/CODE only', async (t) => {
   const root = freshR2qProject(t);
   // `finalize` is a file-set persistent command with no wired r2q lifecycle path yet
