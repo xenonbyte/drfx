@@ -3,15 +3,17 @@
 // Golden-snapshot support for generated route SHELLS.
 //
 // A route "shell" is the rendered platform route with the {{EMBEDDED_SHARED_CONTENT}}
-// expansion replaced by a stable sentinel. The embedded shared content
-// (shared/core.md, long-task.md, prompts, rubrics) is owned by a separate task
-// (PLAN-TASK-009); masking it here keeps the shell snapshot focused on the
-// route protocol/contract text that PLAN-TASK-008 owns.
+// expansion replaced by a stable sentinel. Non-Codex routes embed shared
+// content (shared/core.md, long-task.md, prompts, rubrics). Codex routes use a
+// compact copied-shared-source bootstrap section because the generated skill
+// directory carries those files separately. Masking keeps the shell snapshot
+// focused on route protocol/contract text.
 //
 // Masking markers (verified against the three templates):
-// - Claude/Codex: the `## Embedded Shared Content` heading begins the expansion,
-//   which then contains generated `<!-- shared/... -->` chunk markers. Everything
-//   from that heading to end-of-file is the expansion.
+// - Claude/Codex/opencode: the `## Embedded Shared Content` heading begins the
+//   expansion. For Claude/opencode it contains generated `<!-- shared/... -->`
+//   chunk markers; for Codex it contains copied-source fail-closed bootstrap
+//   instructions. Everything from that heading to end-of-file is the expansion.
 // - Gemini: `Embedded shared content:` begins the expansion inside the TOML
 //   prompt string; the expansion runs to the closing `'''` line.
 

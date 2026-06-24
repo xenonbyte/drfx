@@ -16,9 +16,241 @@ const {
 } = require('./helpers/route-shell-snapshot');
 
 const ROOT = path.join(__dirname, '..');
+const SNAPSHOT_VERSION = '0.0.0-snapshot';
+const ROUTE_PLATFORMS = ['claude', 'codex', 'gemini', 'opencode'];
+const GENERATED_SHELL_BASELINE_BYTES = Object.freeze({
+  claude: Object.freeze({
+    'review-fix-spec': 21775,
+    'review-fix-plan': 21775,
+    'review-fix-design': 21819,
+    'review-fix-doc': 21759,
+    'review-fix-pr': 21708,
+    'review-fix-code': 29070,
+    'review-fix-r2q': 21906
+  }),
+  codex: Object.freeze({
+    'review-fix-spec': 21858,
+    'review-fix-plan': 21858,
+    'review-fix-design': 21906,
+    'review-fix-doc': 21843,
+    'review-fix-pr': 21758,
+    'review-fix-code': 29103,
+    'review-fix-r2q': 21903
+  }),
+  gemini: Object.freeze({
+    'review-fix-spec': 9286,
+    'review-fix-plan': 9286,
+    'review-fix-design': 9314,
+    'review-fix-doc': 9284,
+    'review-fix-pr': 9805,
+    'review-fix-code': 13147,
+    'review-fix-r2q': 10148
+  }),
+  opencode: Object.freeze({
+    'review-fix-spec': 22180,
+    'review-fix-plan': 22180,
+    'review-fix-design': 22226,
+    'review-fix-doc': 22163,
+    'review-fix-pr': 22114,
+    'review-fix-code': 29466,
+    'review-fix-r2q': 22325
+  })
+});
+const CODEX_SHARED_DEDUP_EXPECTED_MEASUREMENT = Object.freeze({
+  routes: Object.freeze({
+    'review-fix-spec': Object.freeze({
+      routeBytes: 80973,
+      embeddedSharedBytes: 58905,
+      copiedSharedBytes: 58607,
+      duplicateBytes: 58607,
+      copiedRouteBytes: 23274,
+      shrinkBytes: 57699,
+      shrinkPercent: 71.26,
+      wouldGrow: false
+    }),
+    'review-fix-plan': Object.freeze({
+      routeBytes: 81281,
+      embeddedSharedBytes: 59213,
+      copiedSharedBytes: 58915,
+      duplicateBytes: 58915,
+      copiedRouteBytes: 23274,
+      shrinkBytes: 58007,
+      shrinkPercent: 71.37,
+      wouldGrow: false
+    }),
+    'review-fix-design': Object.freeze({
+      routeBytes: 81083,
+      embeddedSharedBytes: 58967,
+      copiedSharedBytes: 58667,
+      duplicateBytes: 58667,
+      copiedRouteBytes: 23324,
+      shrinkBytes: 57759,
+      shrinkPercent: 71.23,
+      wouldGrow: false
+    }),
+    'review-fix-doc': Object.freeze({
+      routeBytes: 77780,
+      embeddedSharedBytes: 55727,
+      copiedSharedBytes: 55468,
+      duplicateBytes: 55468,
+      copiedRouteBytes: 23232,
+      shrinkBytes: 54548,
+      shrinkPercent: 70.13,
+      wouldGrow: false
+    }),
+    'review-fix-pr': Object.freeze({
+      routeBytes: 78122,
+      embeddedSharedBytes: 56232,
+      copiedSharedBytes: 55977,
+      duplicateBytes: 55977,
+      copiedRouteBytes: 23065,
+      shrinkBytes: 55057,
+      shrinkPercent: 70.48,
+      wouldGrow: false
+    }),
+    'review-fix-code': Object.freeze({
+      routeBytes: 89107,
+      embeddedSharedBytes: 59832,
+      copiedSharedBytes: 59575,
+      duplicateBytes: 59575,
+      copiedRouteBytes: 30452,
+      shrinkBytes: 58655,
+      shrinkPercent: 65.83,
+      wouldGrow: false
+    }),
+    'review-fix-r2q': Object.freeze({
+      routeBytes: 81216,
+      embeddedSharedBytes: 59213,
+      copiedSharedBytes: 58915,
+      duplicateBytes: 58915,
+      copiedRouteBytes: 23209,
+      shrinkBytes: 58007,
+      shrinkPercent: 71.42,
+      wouldGrow: false
+    })
+  }),
+  totals: Object.freeze({
+    routeBytes: 569562,
+    embeddedSharedBytes: 408089,
+    copiedSharedBytes: 406124,
+    duplicateBytes: 406124
+  }),
+  largestShellShrinkBytes: 58655,
+  largestShellShrinkPercent: 65.83,
+  anyCodexRouteWouldGrow: false,
+  gateEntered: true
+});
+const CODEX_SHARED_DEDUP_GATE = Object.freeze({
+  minLargestShellShrinkBytes: 16 * 1024,
+  minLargestShellShrinkPercent: 12
+});
 
 function read(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
+}
+
+function byteLength(text) {
+  return Buffer.byteLength(text, 'utf8');
+}
+
+function roundPercent(numerator, denominator) {
+  return Number(((numerator / denominator) * 100).toFixed(2));
+}
+
+function codexSkill(routeName, options = {}) {
+  return generatePlatformFiles('codex', {
+    packageVersion: options.packageVersion || SNAPSHOT_VERSION,
+    codexSharedMode: options.codexSharedMode
+  }).find((entry) => entry.routeName === routeName);
+}
+
+function codexCopiedSharedBytes(routeName) {
+  return codexSkill(routeName)
+    .files
+    .filter((file) => file.sourcePath)
+    .reduce((total, file) => total + byteLength(file.content), 0);
+}
+
+function codexCopiedSharedText(routeName) {
+  return codexSkill(routeName)
+    .files
+    .filter((file) => file.sourcePath)
+    .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+    .map((file) => `<!-- ${file.relativePath.split(path.sep).join('/')} -->\n\n${file.content.trimEnd()}`)
+    .join('\n\n---\n\n');
+}
+
+function routeSharedProtocolText(platform, routeName, rendered) {
+  if (platform === 'codex') return codexCopiedSharedText(routeName);
+  return extractEmbeddedSharedContent(platform, rendered);
+}
+
+function codexSharedDedupMeasurement() {
+  const measurement = {
+    routes: {},
+    totals: {
+      routeBytes: 0,
+      embeddedSharedBytes: 0,
+      copiedSharedBytes: 0,
+      duplicateBytes: 0
+    },
+    largestShellShrinkBytes: 0,
+    largestShellShrinkPercent: 0,
+    anyCodexRouteWouldGrow: false,
+    gateEntered: false
+  };
+
+  for (const route of listRoutes()) {
+    const embeddedRoute = renderPlatformRoute('codex', route.routeName, {
+      packageVersion: SNAPSHOT_VERSION,
+      codexSharedMode: 'embedded'
+    });
+    const copiedRoute = renderPlatformRoute('codex', route.routeName, {
+      packageVersion: SNAPSHOT_VERSION,
+      codexSharedMode: 'copied'
+    });
+    const routeBytes = byteLength(embeddedRoute);
+    const copiedRouteBytes = byteLength(copiedRoute);
+    const shrinkBytes = routeBytes - copiedRouteBytes;
+    const copiedSharedBytes = codexCopiedSharedBytes(route.routeName);
+    const row = {
+      routeBytes,
+      embeddedSharedBytes: byteLength(extractEmbeddedSharedContent('codex', embeddedRoute)),
+      copiedSharedBytes,
+      duplicateBytes: copiedSharedBytes,
+      copiedRouteBytes,
+      shrinkBytes,
+      shrinkPercent: roundPercent(shrinkBytes, routeBytes),
+      wouldGrow: copiedRouteBytes > routeBytes
+    };
+
+    measurement.routes[route.routeName] = row;
+    measurement.totals.routeBytes += row.routeBytes;
+    measurement.totals.embeddedSharedBytes += row.embeddedSharedBytes;
+    measurement.totals.copiedSharedBytes += row.copiedSharedBytes;
+    measurement.totals.duplicateBytes += row.duplicateBytes;
+    if (row.shrinkBytes > measurement.largestShellShrinkBytes) {
+      measurement.largestShellShrinkBytes = row.shrinkBytes;
+      measurement.largestShellShrinkPercent = row.shrinkPercent;
+    }
+    if (row.wouldGrow) measurement.anyCodexRouteWouldGrow = true;
+  }
+
+  measurement.gateEntered =
+    measurement.largestShellShrinkBytes >= CODEX_SHARED_DEDUP_GATE.minLargestShellShrinkBytes &&
+    measurement.largestShellShrinkPercent >= CODEX_SHARED_DEDUP_GATE.minLargestShellShrinkPercent &&
+    !measurement.anyCodexRouteWouldGrow;
+
+  return measurement;
+}
+
+function generatedWorkflowCommandLines(rendered) {
+  return rendered
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.includes('drfx workflow '))
+    .filter((line) => !line.includes('drfx workflow ...'))
+    .filter((line) => !/debug|relevant/i.test(line));
 }
 
 // Some route-protocol text moved out of the platform `.tmpl` files into
@@ -45,9 +277,7 @@ function renderedDocumentTemplates() {
 // ---------------------------------------------------------------------------
 
 test('document-route generated shells equal golden snapshots except additive rounds=<n>', () => {
-  const SNAPSHOT_VERSION = '0.0.0-snapshot';
-
-  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
+  for (const platform of ROUTE_PLATFORMS) {
     for (const route of listDocumentRoutes()) {
       const rendered = renderPlatformRoute(platform, route.routeName, { packageVersion: SNAPSHOT_VERSION });
       const shell = maskEmbeddedSharedContent(platform, rendered);
@@ -63,9 +293,7 @@ test('document-route generated shells equal golden snapshots except additive rou
 });
 
 test('code-route generated shells equal golden snapshots byte-for-byte', () => {
-  const SNAPSHOT_VERSION = '0.0.0-snapshot';
-
-  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
+  for (const platform of ROUTE_PLATFORMS) {
     for (const route of listRoutes()) {
       if (route.routeKind === 'document') continue;
       const rendered = renderPlatformRoute(platform, route.routeName, { packageVersion: SNAPSHOT_VERSION });
@@ -75,6 +303,81 @@ test('code-route generated shells equal golden snapshots byte-for-byte', () => {
       assert.equal(shell, snapshot, `${platform}:${route.routeName} code shell drifted from snapshot`);
     }
   }
+});
+
+test('generated route workflow commands use compact JSON for automated route chaining', () => {
+  for (const platform of ROUTE_PLATFORMS) {
+    for (const route of listRoutes()) {
+      const rendered = renderPlatformRoute(platform, route.routeName, { packageVersion: SNAPSHOT_VERSION });
+      const commandLines = generatedWorkflowCommandLines(rendered);
+      assert.ok(commandLines.length > 0, `${platform}:${route.routeName} must render workflow command lines`);
+      for (const line of commandLines) {
+        if (line.includes('drfx doctor')) continue;
+        if (!line.includes('--json')) continue;
+        assert.doesNotMatch(
+          line,
+          /--json(?:\s|`|$)/,
+          `${platform}:${route.routeName} automated workflow command must use --json=compact: ${line}`
+        );
+        assert.doesNotMatch(
+          line,
+          /--json=full/,
+          `${platform}:${route.routeName} automated workflow command must reserve --json=full for debug guidance: ${line}`
+        );
+        assert.match(
+          line,
+          /--json=compact(?:\s|`|$)/,
+          `${platform}:${route.routeName} automated workflow command must request compact JSON: ${line}`
+        );
+      }
+      assert.match(
+        rendered,
+        /debug[\s\S]{0,260}--json=full|--json=full[\s\S]{0,260}debug/i,
+        `${platform}:${route.routeName} must keep debug guidance for full JSON diagnostics`
+      );
+    }
+  }
+});
+
+test('generated route shell sizes stay within platform-route growth budgets', () => {
+  for (const platform of ROUTE_PLATFORMS) {
+    for (const route of listRoutes()) {
+      const rendered = renderPlatformRoute(platform, route.routeName, { packageVersion: SNAPSHOT_VERSION });
+      const shell = maskEmbeddedSharedContent(platform, rendered);
+      const baselineBytes = GENERATED_SHELL_BASELINE_BYTES[platform][route.routeName];
+      const actualBytes = byteLength(shell);
+      const allowedBytes = Math.max(4096, Math.ceil(baselineBytes * 0.08));
+      const growth = actualBytes - baselineBytes;
+      assert.ok(
+        growth <= allowedBytes,
+        [
+          'generated route shell size budget exceeded',
+          `platform=${platform}`,
+          `route=${route.routeName}`,
+          `baselineBytes=${baselineBytes}`,
+          `actualBytes=${actualBytes}`,
+          `allowedBytes=${allowedBytes}`,
+          `growth=${growth}`
+        ].join(' ')
+      );
+    }
+  }
+});
+
+test('Codex copied shared source de-dup measurement crosses the guarded implementation gate', () => {
+  const measurement = codexSharedDedupMeasurement();
+
+  assert.deepEqual(measurement, CODEX_SHARED_DEDUP_EXPECTED_MEASUREMENT);
+  assert.equal(measurement.gateEntered, true, 'Codex shared source de-dup must enter the guarded implementation phase');
+  assert.equal(measurement.anyCodexRouteWouldGrow, false, 'Codex shared source de-dup must not grow any route');
+  assert.ok(
+    measurement.largestShellShrinkBytes >= CODEX_SHARED_DEDUP_GATE.minLargestShellShrinkBytes,
+    `largest Codex shell shrink ${measurement.largestShellShrinkBytes} bytes is below gate`
+  );
+  assert.ok(
+    measurement.largestShellShrinkPercent >= CODEX_SHARED_DEDUP_GATE.minLargestShellShrinkPercent,
+    `largest Codex shell shrink ${measurement.largestShellShrinkPercent}% is below gate`
+  );
 });
 
 test('Claude and Codex generated starts preserve materialized rounds and state-control tokens', () => {
@@ -106,7 +409,7 @@ test('Claude and Codex file-set review-and-fix routes require full re-review aft
 
       assert.match(
         rendered,
-        /If initial `record-review` returns `PASS`[\s\S]*?--phase full-re-review --json[\s\S]*?--phase full-re-review --result-stdin/,
+        /If initial `record-review` returns `PASS`[\s\S]*?--phase full-re-review --json=compact[\s\S]*?--phase full-re-review --result-stdin/,
         `${platform}:${routeName} must document the clean review-and-fix full re-review path`
       );
     }
@@ -414,9 +717,10 @@ test('coverage-incomplete is consistent across core.md, generated/embedded CODE 
       `${platform} generated review-fix-code shell must carry the coverage-incomplete finalize note`
     );
 
-    // Embedded CODE skill text (the core.md expansion).
-    const embedded = extractEmbeddedSharedContent(platform, rendered);
-    assert.match(embedded, /coverage-incomplete/, `${platform} embedded review-fix-code core must mention coverage-incomplete`);
+    // Embedded/copied CODE shared text (the core.md expansion for non-Codex,
+    // copied shared source files for Codex).
+    const sharedProtocol = routeSharedProtocolText(platform, 'review-fix-code', rendered);
+    assert.match(sharedProtocol, /coverage-incomplete/, `${platform} review-fix-code shared protocol must mention coverage-incomplete`);
 
     // Committed fixtures match the rendered output.
     assert.equal(
@@ -424,13 +728,18 @@ test('coverage-incomplete is consistent across core.md, generated/embedded CODE 
       readSnapshot(platform, 'review-fix-code'),
       `${platform} review-fix-code generated fixture must carry coverage-incomplete`
     );
-    assert.equal(
-      embedded,
-      readEmbeddedSnapshot(platform, 'review-fix-code'),
-      `${platform} review-fix-code embedded fixture must carry coverage-incomplete`
-    );
     assert.match(readSnapshot(platform, 'review-fix-code'), /coverage-incomplete/);
-    assert.match(readEmbeddedSnapshot(platform, 'review-fix-code'), /coverage-incomplete/);
+    if (platform === 'codex') {
+      assert.match(codexCopiedSharedText('review-fix-code'), /coverage-incomplete/);
+    } else {
+      const embedded = extractEmbeddedSharedContent(platform, rendered);
+      assert.equal(
+        embedded,
+        readEmbeddedSnapshot(platform, 'review-fix-code'),
+        `${platform} review-fix-code embedded fixture must carry coverage-incomplete`
+      );
+      assert.match(readEmbeddedSnapshot(platform, 'review-fix-code'), /coverage-incomplete/);
+    }
   }
 });
 
@@ -970,7 +1279,7 @@ test('generated route text separates advisory no-state read-only commands', () =
     assert.match(template, /Do not use the practical\/strict-verified ready-probe commands for advisory read-only/i);
     assert.match(
       template,
-      new RegExp(`drfx workflow context --no-state ${routeName} target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform ${platform} --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json`)
+      new RegExp(`drfx workflow context --no-state ${routeName} target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform ${platform} --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json=compact`)
     );
     assert.match(
       template,
@@ -1429,13 +1738,14 @@ function generatedCodeRoutes() {
 
 test('generated code routes use self-contained PR/CODE rubrics without embedding COMMON', () => {
   for (const output of generatedCodeRoutes()) {
+    const sharedProtocol = routeSharedProtocolText(output.platform, output.routeName, output.body);
     assert.doesNotMatch(
-      output.body,
+      sharedProtocol,
       /<!-- shared\/rubrics\/common\.md -->/,
       `${output.platform}:${output.routeName} must not embed the COMMON rubric`
     );
     assert.match(
-      output.body,
+      sharedProtocol,
       new RegExp(`<!-- shared/rubrics/${output.routeKind}\\.md -->`),
       `${output.platform}:${output.routeName} must embed its route-kind rubric`
     );
@@ -1669,18 +1979,21 @@ test('long-task.md does not leak document-only claims as universal target contex
 
 test('generated PR/CODE route content carries generalized target-context text and no document-only leak', () => {
   for (const output of generatedCodeRoutes()) {
+    const packageText = output.platform === 'codex'
+      ? `${output.body}\n\n${codexCopiedSharedText(output.routeName)}`
+      : output.body;
     // The embedded long-task content (route target contexts) reaches the generated route.
-    assert.match(output.body, /Route Target Contexts/i, `${output.platform}:${output.routeName}`);
-    assert.match(output.body, /Target context kind/i, `${output.platform}:${output.routeName}`);
-    assert.match(output.body, /file-set fingerprint/i, `${output.platform}:${output.routeName}`);
+    assert.match(packageText, /Route Target Contexts/i, `${output.platform}:${output.routeName}`);
+    assert.match(packageText, /Target context kind/i, `${output.platform}:${output.routeName}`);
+    assert.match(packageText, /file-set fingerprint/i, `${output.platform}:${output.routeName}`);
     // Must NOT leak the document-only target-key derivation claim verbatim.
     assert.doesNotMatch(
-      output.body,
+      packageText,
       /target key is derived from the normalized target path relative to the document project root/i,
       `${output.platform}:${output.routeName} leaks document-only target-key claim`
     );
     // Must NOT present single-file sha/size-only state as the only manifest identity.
-    assert.match(output.body, /File-set \(PR\/CODE\) target context identity/i, `${output.platform}:${output.routeName}`);
+    assert.match(packageText, /File-set \(PR\/CODE\) target context identity/i, `${output.platform}:${output.routeName}`);
   }
 });
 
@@ -1763,21 +2076,22 @@ test('codex generated skills copy shared assets byte-for-byte from source', () =
 test('rendered review-fix-code route carries partitioned-review markers on every platform', () => {
   for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     const body = renderPlatformRoute(platform, 'review-fix-code', { packageVersion: '0.0.0-test' });
+    const packageText = platform === 'codex' ? `${body}\n\n${codexCopiedSharedText('review-fix-code')}` : body;
 
     // Core partitioned-review markers (from rubric + route contract)
-    assert.match(body, /partitioned project review/i, `${platform}:review-fix-code must mention partitioned project review`);
-    assert.match(body, /unit PASS/i, `${platform}:review-fix-code must state unit PASS`);
-    assert.match(body, /coverage-incomplete/i, `${platform}:review-fix-code must mention coverage-incomplete`);
-    assert.match(body, /coverage_risk/i, `${platform}:review-fix-code must mention coverage_risk`);
+    assert.match(packageText, /partitioned project review/i, `${platform}:review-fix-code must mention partitioned project review`);
+    assert.match(packageText, /unit PASS/i, `${platform}:review-fix-code must state unit PASS`);
+    assert.match(packageText, /coverage-incomplete/i, `${platform}:review-fix-code must mention coverage-incomplete`);
+    assert.match(packageText, /coverage_risk/i, `${platform}:review-fix-code must mention coverage_risk`);
 
     // Four locally-checkable disciplines (from rubric, embedded in generated route)
-    assert.match(body, /redaction-at-write-boundary/i, `${platform}:review-fix-code must list discipline: redaction-at-write-boundary`);
-    assert.match(body, /identity-field-coverage/i, `${platform}:review-fix-code must list discipline: identity-field-coverage`);
-    assert.match(body, /allowlist-only-git/i, `${platform}:review-fix-code must list discipline: allowlist-only-git`);
-    assert.match(body, /status\/phase legality/i, `${platform}:review-fix-code must list discipline: status/phase legality`);
+    assert.match(packageText, /redaction-at-write-boundary/i, `${platform}:review-fix-code must list discipline: redaction-at-write-boundary`);
+    assert.match(packageText, /identity-field-coverage/i, `${platform}:review-fix-code must list discipline: identity-field-coverage`);
+    assert.match(packageText, /allowlist-only-git/i, `${platform}:review-fix-code must list discipline: allowlist-only-git`);
+    assert.match(packageText, /status\/phase legality/i, `${platform}:review-fix-code must list discipline: status/phase legality`);
 
     // PASS-is-earned reinforcement
-    assert.match(body, /unit PASS is NOT a project PASS|unit PASS.*not.*project PASS/i, `${platform}:review-fix-code must assert unit PASS != project PASS`);
+    assert.match(packageText, /unit PASS is NOT a project PASS|unit PASS.*not.*project PASS/i, `${platform}:review-fix-code must assert unit PASS != project PASS`);
 
     if (platform === 'claude' || platform === 'codex' || platform === 'opencode') {
       assert.match(body, /Partitioned CODE Review Flow/, `${platform}:review-fix-code must include the executable partitioned flow`);

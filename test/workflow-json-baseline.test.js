@@ -569,6 +569,16 @@ function assertCompactResponseFields(label, response, { scope, command, required
   }
 }
 
+function assertCompactByteRatio(label, fullText, compactText, maxRatio) {
+  const fullBytes = Buffer.byteLength(fullText, 'utf8');
+  const compactBytes = Buffer.byteLength(compactText, 'utf8');
+  const allowedBytes = Math.ceil(fullBytes * maxRatio);
+  assert.ok(
+    compactBytes <= allowedBytes,
+    `${label} compact/full byte ratio too large: fullBytes=${fullBytes} compactBytes=${compactBytes} allowedBytes=${allowedBytes} maxRatio=${maxRatio}`
+  );
+}
+
 async function runGeneratedRouteContinuationSmoke(t, { jsonMode }) {
   const fixture = freshRouteFixture(t);
   const common = routeArgs({ jsonMode, root: fixture.root, target: fixture.target });
@@ -719,8 +729,24 @@ test('SCOPE-IN-001 compact context output keeps paths and omits skeleton bodies'
   assert.ok(compact.contextManifestPath);
 });
 
+test('SCOPE-IN-003 compact context output stays within the full-output byte ratio budget', async (t) => {
+  const fixture = freshRouteFixture(t);
+  const args = routeArgs({ jsonMode: 'bare', root: fixture.root, target: fixture.target });
+  const start = await runWorkflowCommand('start', args, { cwd: fixture.root });
+  assert.equal(start.ok, true, JSON.stringify(start));
+  const contextResult = await runWorkflowCommand('context', args, { cwd: fixture.root });
+  assert.equal(contextResult.ok, true, JSON.stringify(contextResult));
+
+  assertCompactByteRatio(
+    'persistent context',
+    formatWorkflowJson(contextResult, { mode: 'full', subcommand: 'context' }),
+    formatWorkflowJson(contextResult, { mode: 'compact', subcommand: 'context' }),
+    0.72
+  );
+});
+
 test('SCOPE-IN-001 compact no-state partitioned context keeps partition plan fields', () => {
-  const compact = JSON.parse(formatWorkflowJson({
+  const partitionedContext = {
     ok: true,
     status: 'partitioned-review',
     targetStateDir: null,
@@ -742,7 +768,8 @@ test('SCOPE-IN-001 compact no-state partitioned context keeps partition plan fie
     units: [{ unit_id: 'unit-001' }, { unit_id: 'unit-002' }],
     crosscuttingBackstops: ['security-redaction'],
     projectReviewFingerprint: 'project-fingerprint'
-  }, { mode: 'compact', subcommand: 'context' }));
+  };
+  const compact = JSON.parse(formatWorkflowJson(partitionedContext, { mode: 'compact', subcommand: 'context' }));
 
   assert.equal(compact.reviewMode, 'partitioned');
   assert.equal(compact.unitCount, 2);
@@ -753,6 +780,49 @@ test('SCOPE-IN-001 compact no-state partitioned context keeps partition plan fie
   assert.equal(compact.userExcludes, undefined);
   assert.equal(compact.runtimeCheck, undefined);
   assert.equal(compact.contextPackSkeleton, undefined);
+});
+
+test('SCOPE-IN-004 compact partitioned context output stays within the full-output byte ratio budget', () => {
+  const partitionedContext = {
+    ok: true,
+    status: 'partitioned-review',
+    targetStateDir: '/tmp/drfx/state',
+    targetKey: 'project',
+    manifestPath: '/tmp/drfx/state/MANIFEST.md',
+    ledgerPath: '/tmp/drfx/state/ledger.json',
+    round: 1,
+    documentType: 'none',
+    strictness: 'normal',
+    requestedMode: 'review-and-fix',
+    mode: 'review-and-fix',
+    guardMode: 'snapshot',
+    requestedAssurance: 'practical',
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    runtimeCheck: { subagentProbe: { status: 'ready' }, stdinHandoff: { status: 'ready' } },
+    contextManifestPath: '/tmp/drfx/state/context.json',
+    contextPackSkeleton: {
+      targetContext: 'partitioned',
+      body: 'debug-only context body '.repeat(300)
+    },
+    userExcludes: ['dist', 'coverage'],
+    reviewMode: 'partitioned',
+    unitCount: 12,
+    unitByteBudget: 128000,
+    units: Array.from({ length: 12 }, (_, index) => ({
+      unit_id: `unit-${String(index + 1).padStart(3, '0')}`,
+      members: [`src/file-${index + 1}.js`]
+    })),
+    crosscuttingBackstops: ['security-redaction', 'state-machine'],
+    projectReviewFingerprint: 'project-fingerprint'
+  };
+
+  assertCompactByteRatio(
+    'partitioned context',
+    formatWorkflowJson(partitionedContext, { mode: 'full', subcommand: 'context' }),
+    formatWorkflowJson(partitionedContext, { mode: 'compact', subcommand: 'context' }),
+    0.35
+  );
 });
 
 test('SCOPE-IN-001 compact formatter fails closed without workflow subcommand', () => {

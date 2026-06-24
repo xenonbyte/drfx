@@ -135,7 +135,7 @@ Archive warning: state directory could not be archived; it remains at <state-dir
 Next: delete or reset the leftover state directory, then rerun.
 ```
 
-When `debug` is present, generated routes may print the final-response machine block, target state directory, receipt paths, normalized blocker/status reason, runtime probe results, relevant `drfx workflow ... --json` outputs, report paths, issue IDs, and the redacted `archiveWarning` field when present. Debug output must still redact sensitive values and must not print raw target body, must not print raw reference body, must not print raw prompts, must not print raw subagent transcripts, and must not print secrets, tokens, or raw logs. Debug must not change final status, effective mode, assurance, validation behavior, or persisted state.
+When `debug` is present, generated routes may print the final-response machine block, target state directory, receipt paths, normalized blocker/status reason, runtime probe results, artifact paths, relevant `drfx workflow ... --json=full` outputs, report paths, issue IDs, and the redacted `archiveWarning` field when present. Debug output must still redact sensitive values and must not print raw target body, must not print raw reference body, must not print raw prompts, must not print raw subagent transcripts, and must not print secrets, tokens, or raw logs. Debug must not change final status, effective mode, assurance, validation behavior, or persisted state.
 
 ## Subagent Quality
 
@@ -146,7 +146,7 @@ Generated routes must not pin concrete model names. Runtime readiness probes may
 When effective mode is `review-and-fix`, run write eligibility preflight before runtime readiness probe, semantic reviewer dispatch, semantic document review, and target-local workflow state creation:
 
 ```text
-drfx workflow preflight review-fix-plan target=<path> review-and-fix guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform opencode --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --json
+drfx workflow preflight review-fix-plan target=<path> review-and-fix guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform opencode --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --json=compact
 ```
 
 This generated opencode route uses `--runtime-platform opencode`.
@@ -196,7 +196,7 @@ drfx doctor --platform opencode --json
 Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.opencode.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate, including defaults and advisory override. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Materialize `<stateControlToken>` as `reset` only when the current invocation includes `reset`; otherwise omit it. Pass those current-run values to workflow start:
 
 ```text
-drfx workflow start review-fix-plan target=<path> <selectedMode> <stateControlToken> rounds=<roundLimit> guard=<selectedGuard> --assurance strict-verified --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json
+drfx workflow start review-fix-plan target=<path> <selectedMode> <stateControlToken> rounds=<roundLimit> guard=<selectedGuard> --assurance strict-verified --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json=compact
 ```
 
 For `review-and-fix assurance=strict-verified`, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
@@ -208,27 +208,27 @@ Do not scrape human-readable `drfx doctor` output. Do not reuse a cached descrip
 For `assurance=practical`, after successful probes, start persistent state:
 
 ```text
-drfx workflow start review-fix-plan target=<path> review-and-fix <stateControlToken> rounds=<roundLimit> guard=<selectedGuard> --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json
+drfx workflow start review-fix-plan target=<path> review-and-fix <stateControlToken> rounds=<roundLimit> guard=<selectedGuard> --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json=compact
 ```
 
 This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, `<selectedGuard>` is explicit guard or default `git`, and `<stateControlToken>` is `reset` only for explicit reset starts. For `assurance=strict-verified`, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
 
 Then coordinate this loop:
 
-1. Run persistent context with `drfx workflow context review-fix-plan target=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json`.
+1. Run persistent context with `drfx workflow context review-fix-plan target=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json=compact`.
 2. Build the reviewer prompt in memory from the context manifest plus target/reference reads. Do not write prompt text or document bodies to disk.
-3. Spawn a read-only reviewer subagent and submit its exact output with `drfx workflow record-review review-fix-plan target=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --result-stdin --json`.
-4. Triage every finding semantically and submit the triage with `drfx workflow record-triage review-fix-plan target=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --triage-stdin --json`.
-5. For accepted or reopened blocking issues, run `drfx workflow begin-fix <targetStateDir> --json`.
+3. Spawn a read-only reviewer subagent and submit its exact output with `drfx workflow record-review review-fix-plan target=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --result-stdin --json=compact`.
+4. Triage every finding semantically and submit the triage with `drfx workflow record-triage review-fix-plan target=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --triage-stdin --json=compact`.
+5. For accepted or reopened blocking issues, run `drfx workflow begin-fix <targetStateDir> --json=compact`.
 6. Edit only the target directly by default. Use a bounded serial fixer only when lock refresh rules can be satisfied and the issue list is scoped.
-7. Run `drfx workflow refresh-lock <targetStateDir> --json` before writes after 60 seconds, before a delegated fixer writes, and before ending a long fix.
-8. Submit a valid fix report with `drfx workflow end-fix <targetStateDir> --fix-report-stdin --json`.
-9. If interruption, blocker, checkpoint, context pressure, or user stop happens before a valid fix report, run `drfx workflow abort-fix <targetStateDir> --status checkpoint --reason checkpoint-requested --next-action <redacted next action> --json` or use `--status blocked` with an allowed blocking reason.
-10. Review the diff and submit with `drfx workflow record-diff-review <targetStateDir> --result-stdin --json`.
-11. If initial `record-review` returns `PASS`, the workflow is not terminal yet: run full re-review using `drfx workflow context review-fix-plan target=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --json`, then record the full re-review with `--phase full-re-review --result-stdin` before finalization.
-12. After `DIFF-OK`, run full re-review using `drfx workflow context review-fix-plan target=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --json`, then record the full re-review with `--phase full-re-review --result-stdin`.
+7. Run `drfx workflow refresh-lock <targetStateDir> --json=compact` before writes after 60 seconds, before a delegated fixer writes, and before ending a long fix.
+8. Submit a valid fix report with `drfx workflow end-fix <targetStateDir> --fix-report-stdin --json=compact`.
+9. If interruption, blocker, checkpoint, context pressure, or user stop happens before a valid fix report, run `drfx workflow abort-fix <targetStateDir> --status checkpoint --reason checkpoint-requested --next-action <redacted next action> --json=compact` or use `--status blocked` with an allowed blocking reason.
+10. Review the diff and submit with `drfx workflow record-diff-review <targetStateDir> --result-stdin --json=compact`.
+11. If initial `record-review` returns `PASS`, the workflow is not terminal yet: run full re-review using `drfx workflow context review-fix-plan target=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --json=compact`, then record the full re-review with `--phase full-re-review --result-stdin` before finalization.
+12. After `DIFF-OK`, run full re-review using `drfx workflow context review-fix-plan target=<path> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --json=compact`, then record the full re-review with `--phase full-re-review --result-stdin`.
 13. Repeat triage, fix, diff review, and full re-review until terminal status (`pass`, `stopped-with-deferrals`, `stopped-no-progress`, `read-only-findings`, `blocked`, `unsupported`, `externally-changed`, `possible-target-replacement`, user stop, or `checkpoint`).
-14. Finalize only through `drfx workflow finalize <targetStateDir> --final-response-stdin --json`.
+14. Finalize only through `drfx workflow finalize <targetStateDir> --final-response-stdin --json=compact`.
 
 Automatic target writes require `review-and-fix` and a selected guard mode: use `guard=git` with a tracked, clean, HEAD-backed git target, or `guard=snapshot` with a valid snapshot rollback anchor. The target-only guard must remain available and parseable before and after writes.
 
@@ -247,29 +247,29 @@ Use the materialized `<selectedAssurance>` to choose runtime fields, and pass th
 Advisory read-only no-state path starts with:
 
 ```text
-drfx workflow context --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform opencode --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
+drfx workflow context --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform opencode --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json=compact
 ```
 
 Submit advisory review, triage, and final response by repeating the same advisory runtime fields:
 
 ```text
-drfx workflow record-review --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform opencode --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
-drfx workflow record-triage --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform opencode --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
-drfx workflow finalize --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform opencode --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
+drfx workflow record-review --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform opencode --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json=compact
+drfx workflow record-triage --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform opencode --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json=compact
+drfx workflow finalize --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance advisory --runtime-platform opencode --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json=compact
 ```
 
 Practical read-only no-state path starts with:
 
 ```text
-drfx workflow context --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
+drfx workflow context --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json=compact
 ```
 
 Submit practical review, triage, and final response by repeating the same practical runtime fields:
 
 ```text
-drfx workflow record-review --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
-drfx workflow record-triage --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
-drfx workflow finalize --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
+drfx workflow record-review --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json=compact
+drfx workflow record-triage --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json=compact
+drfx workflow finalize --no-state review-fix-plan target=<path> read-only guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json=compact
 ```
 
 No-state final status is `read-only-clean`, `read-only-findings`, `blocked`, or `unsupported`; never `pass`.

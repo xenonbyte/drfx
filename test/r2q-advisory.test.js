@@ -15,7 +15,7 @@
 //     never `pass`, and writes NOTHING (no 03–07 / run.md mutation, no .drfx state).
 //   - The validated final output references the owning upstream doc for a finding
 //     whose root cause is upstream (acceptance/behavior -> 06-spec.md).
-//   - The generated route prompt embeds the finding->owner-doc map.
+//   - The generated route prompt/package carries the finding->owner-doc map.
 //   - run.md gate failures (incomplete plan / archived dir) surface as blockers and
 //     never reach reviewer-recording.
 // ---------------------------------------------------------------------------
@@ -28,7 +28,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const { runWorkflowCommand } = require('../lib/workflow');
-const { renderPlatformRoute } = require('../lib/generator');
+const { generatePlatformFiles, renderPlatformRoute } = require('../lib/generator');
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -264,12 +264,23 @@ test('r2q advisory record-review blocks when protected run.md drifts after conte
 });
 
 // ---------------------------------------------------------------------------
-// Generated route prompt embeds the finding->owner-doc map.
+// Generated route prompt/package carries the finding->owner-doc map.
 // ---------------------------------------------------------------------------
 
-test('generated r2q route prompt embeds the finding-to-owner-doc map', () => {
+function renderedR2qRoutePackage(platform) {
+  if (platform !== 'codex') {
+    return renderPlatformRoute(platform, 'review-fix-r2q', { packageVersion: '0.0.0-snapshot' });
+  }
+
+  const packageFiles = generatePlatformFiles('codex', { packageVersion: '0.0.0-snapshot' });
+  const r2qSkill = packageFiles.find((entry) => entry.routeName === 'review-fix-r2q');
+  assert.ok(r2qSkill, 'codex r2q skill package exists');
+  return r2qSkill.files.map((file) => file.content).join('\n');
+}
+
+test('generated r2q route prompt/package carries the finding-to-owner-doc map', () => {
   for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
-    const rendered = renderPlatformRoute(platform, 'review-fix-r2q', { packageVersion: '0.0.0-snapshot' });
+    const rendered = renderedR2qRoutePackage(platform);
     assert.match(rendered, /finding-to-owner-doc map/i, `${platform} r2q prompt must carry the map heading`);
     assert.match(rendered, /acceptance criteria \/ observable behavior gap -> `06-spec\.md`/, `${platform}: 06-spec mapping`);
     assert.match(rendered, /architecture, interface, or sequencing gap -> `05-design\.md`/, `${platform}: 05-design mapping`);

@@ -104,11 +104,11 @@ Archive warning: state directory could not be archived; it remains at <state-dir
 
 Next: delete or reset the leftover state directory, then rerun.
 
-When debug is present, generated routes may print the final-response machine block, target state directory, receipt paths, normalized blocker/status reason, runtime probe results, relevant drfx workflow --json outputs, report paths, issue IDs, and the redacted archiveWarning field when present. Debug output must still redact sensitive values and must not print raw target body, must not print raw reference body, must not print raw prompts, must not print raw subagent transcripts, and must not print secrets, tokens, or raw logs. Debug must not change final status, effective mode, assurance, validation behavior, or persisted state.
+When debug is present, generated routes may print the final-response machine block, target state directory, receipt paths, normalized blocker/status reason, runtime probe results, artifact paths, relevant drfx workflow --json=full outputs, report paths, issue IDs, and the redacted archiveWarning field when present. Debug output must still redact sensitive values and must not print raw target body, must not print raw reference body, must not print raw prompts, must not print raw subagent transcripts, and must not print secrets, tokens, or raw logs. Debug must not change final status, effective mode, assurance, validation behavior, or persisted state.
 
 review-and-fix is unsupported on Gemini. Before reading target/reference bodies or generating any semantic payload, return the unsupported result through no-state preflight:
 
-drfx workflow preflight --no-state review-fix-pr base=<branch> review-and-fix guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --terminal-status unsupported --blocking-reason none --status-reason unsupported-runtime-capability --json
+drfx workflow preflight --no-state review-fix-pr base=<branch> review-and-fix guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --terminal-status unsupported --blocking-reason none --status-reason unsupported-runtime-capability --json=compact
 
 If the user requests strict verified assurance, explain that Gemini remains advisory-only and do not issue a strict verified workflow command.
 
@@ -117,15 +117,15 @@ Read-only advisory flow:
 2. On stdin handoff failure, fail closed as unsafe-handoff-file before semantic handoff. Do not use shell pipes, heredocs, herestrings, command substitution, argv, environment variables, env vars, or raw temp files for semantic payloads.
 3. Start review-backed no-state context:
 
-drfx workflow context --no-state review-fix-pr base=<branch> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json
+drfx workflow context --no-state review-fix-pr base=<branch> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json=compact
 
 4. Keep reviewGuard and stateToken in coordinator memory only. Never write tokens to the filesystem and never hand-edit tokens.
 5. Build the reviewer prompt in memory from the context skeleton plus target/reference reads. Gemini produces advisory review content; it must not claim workflow PASS.
 6. Submit review, triage, and final response by repeating the same runtime fields:
 
-drfx workflow record-review --no-state review-fix-pr base=<branch> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json
-drfx workflow record-triage --no-state review-fix-pr base=<branch> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json
-drfx workflow finalize --no-state review-fix-pr base=<branch> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json
+drfx workflow record-review --no-state review-fix-pr base=<branch> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json=compact
+drfx workflow record-triage --no-state review-fix-pr base=<branch> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json=compact
+drfx workflow finalize --no-state review-fix-pr base=<branch> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json=compact
 
 No-state final status is read-only-clean, read-only-findings, blocked, or unsupported; never pass. (Review-and-fix terminal states such as stopped-no-progress, stopped-with-deferrals, and pass are unavailable in Gemini advisory-only mode.)
 

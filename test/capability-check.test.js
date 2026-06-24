@@ -790,7 +790,12 @@ test('install writes manifests and installer-default descriptors into isolated h
   }
 
   assert.equal(fs.existsSync(path.join(platformRoots.claude, 'review-fix-spec.md')), true);
-  assert.equal(fs.existsSync(path.join(platformRoots.codexSkills, 'review-fix-spec', 'SKILL.md')), true);
+  const codexSpecDir = path.join(platformRoots.codexSkills, 'review-fix-spec');
+  assert.equal(fs.existsSync(path.join(codexSpecDir, 'SKILL.md')), true);
+  assert.equal(fs.existsSync(path.join(codexSpecDir, '.drfx-owned')), true);
+  assert.equal(fs.existsSync(path.join(codexSpecDir, 'shared', '.drfx-owned')), true);
+  assert.equal(fs.existsSync(path.join(codexSpecDir, 'shared', 'core.md')), true);
+  assert.match(fs.readFileSync(path.join(codexSpecDir, 'SKILL.md'), 'utf8'), /fail closed/i);
   assert.equal(fs.existsSync(path.join(platformRoots.gemini, 'review-fix-spec.toml')), true);
   assert.equal(fs.existsSync(path.join(platformRoots.opencode, 'review-fix-spec.md')), true);
 });
@@ -1223,22 +1228,33 @@ test('generated Claude commands use fixed type, current checks, target-local res
   assert.match(text, /\.drfx\/targets\/<target-key>\//);
 });
 
-test('generated Codex skills embed shared content and do not depend on home shared assets at runtime', () => {
+test('generated Codex skills use manifest-owned copied shared source and fail-closed guidance', () => {
   const files = generatePlatformFiles('codex', { packageVersion: PACKAGE_VERSION });
   const specSkill = files.find((entry) => entry.routeName === 'review-fix-spec');
 
   assert.equal(specSkill.kind, 'directory');
+  assert.equal(specSkill.requiresOwnedSharedSource, true);
   assert.equal(specSkill.relativePath, path.join('skills', 'review-fix-spec'));
   assert.ok(specSkill.files.some((file) => file.relativePath === 'SKILL.md'));
   assert.ok(specSkill.files.some((file) => file.relativePath === '.drfx-owned'));
+  assert.ok(specSkill.files.some((file) => file.relativePath === path.join('shared', '.drfx-owned')));
   assert.ok(specSkill.files.some((file) => file.relativePath === path.join('shared', 'core.md')));
   assert.ok(specSkill.files.some((file) => file.relativePath === path.join('shared', 'long-task.md')));
   assert.ok(specSkill.files.some((file) => file.relativePath === path.join('shared', 'rubrics', 'spec.md')));
 
   const skillText = specSkill.files.find((file) => file.relativePath === 'SKILL.md').content;
-  assert.match(skillText, /Document Review Loop Core/);
-  assert.match(skillText, /Reviewer Prompt Template/);
-  assert.doesNotMatch(skillText, /~\/\.drfx\/shared/);
+  const copiedCore = specSkill.files.find((file) => file.relativePath === path.join('shared', 'core.md')).content;
+  const copiedReviewer = specSkill.files.find((file) => file.relativePath === path.join('shared', 'prompts', 'reviewer.md')).content;
+  assert.doesNotMatch(skillText, /Document Review Loop Core/);
+  assert.doesNotMatch(skillText, /Reviewer Prompt Template/);
+  assert.match(copiedCore, /Document Review Loop Core/);
+  assert.match(copiedReviewer, /Reviewer Prompt Template/);
+  assert.match(skillText, /Codex copied shared source mode is active/);
+  assert.match(skillText, /shared\/\.drfx-owned/);
+  assert.match(skillText, /fail closed/i);
+  assert.match(skillText, /Do not silently fall back/i);
+  assert.match(skillText, /`~\/\.drfx\/shared`/);
+  assert.match(skillText, /this skill directory offline/i);
 });
 
 test('copySharedAssets copies minimal shared references into a Codex skill directory', (t) => {
