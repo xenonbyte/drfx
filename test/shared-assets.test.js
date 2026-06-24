@@ -346,10 +346,11 @@ test('generated route shell sizes stay within platform-route growth budgets', ()
       const shell = maskEmbeddedSharedContent(platform, rendered);
       const baselineBytes = GENERATED_SHELL_BASELINE_BYTES[platform][route.routeName];
       const actualBytes = byteLength(shell);
-      const allowedBytes = Math.max(4096, Math.ceil(baselineBytes * 0.08));
+      const growthBudgetBytes = Math.max(4096, Math.ceil(baselineBytes * 0.08));
+      const allowedBytes = baselineBytes + growthBudgetBytes;
       const growth = actualBytes - baselineBytes;
       assert.ok(
-        growth <= allowedBytes,
+        actualBytes <= allowedBytes,
         [
           'generated route shell size budget exceeded',
           `platform=${platform}`,
@@ -357,6 +358,7 @@ test('generated route shell sizes stay within platform-route growth budgets', ()
           `baselineBytes=${baselineBytes}`,
           `actualBytes=${actualBytes}`,
           `allowedBytes=${allowedBytes}`,
+          `growthBudgetBytes=${growthBudgetBytes}`,
           `growth=${growth}`
         ].join(' ')
       );
