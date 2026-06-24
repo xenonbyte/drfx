@@ -112,6 +112,26 @@ test('workflow CLI forwards semantic stdin payloads to the dispatcher', (t) => {
   assert.equal(review.status, 'recorded-review');
 });
 
+test('SCOPE-IN-001 doctor and status keep --json as a boolean user-command flag', (t) => {
+  const home = tmpDir(t, 'drfx-cli-json-home-');
+
+  const doctor = JSON.parse(run(['doctor', '--platform', 'codex', '--json'], { home }).stdout);
+  assert.equal(typeof doctor.runId, 'string');
+  assert.deepEqual(Object.keys(doctor.platforms), ['codex']);
+  assert.ok(doctor.platforms.codex.descriptorPath);
+
+  const status = JSON.parse(run(['status', '--platform', 'codex', '--json'], { home }).stdout);
+  assert.equal(status.ok, true);
+  assert.deepEqual(Object.keys(status.platforms), ['codex']);
+  assert.equal(status.platforms.codex.installed, false);
+
+  for (const command of ['doctor', 'status']) {
+    const result = run([command, '--json=compact'], { home, expectFail: true });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /Unknown option: --json=compact/);
+  }
+});
+
 test('drfx status reports not installed for every platform when nothing is installed', (t) => {
   const home = tmpDir(t, 'drfx-cli-home-');
   const out = run(['status'], { home }).stdout;

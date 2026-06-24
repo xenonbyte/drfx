@@ -11,7 +11,8 @@ const { deriveTargetKey } = require('../lib/target-state');
 const {
   formatWorkflowError,
   runWorkflowCommand,
-  parseWorkflowArgs
+  parseWorkflowArgs,
+  parseWorkflowJsonMode
 } = require('../lib/workflow');
 const { BLOCKING_REASONS, STATUS_REASONS, workflowJson } = require('../lib/workflow-state');
 
@@ -109,6 +110,51 @@ test('parses practical start flags with runtime platform, subagent, stdin, and j
   assert.equal(parsed.runtimePlatform, 'codex');
   assert.equal(parsed.runtimeCheck.subagentProbe.status, 'ready');
   assert.equal(parsed.runtimeCheck.stdinHandoff.status, 'ready');
+});
+
+function workflowJsonModeArgs(jsonFlag) {
+  return [
+    'review-fix-spec',
+    'target=docs/spec.md',
+    'read-only',
+    '--assurance',
+    'advisory',
+    '--runtime-platform',
+    'manual',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    jsonFlag
+  ];
+}
+
+test('SCOPE-IN-001 workflow JSON mode accepts full and compact while preserving bare json', () => {
+  assert.equal(parseWorkflowJsonMode(['--json']), 'full');
+  assert.equal(parseWorkflowJsonMode(['--json=full']), 'full');
+  assert.equal(parseWorkflowJsonMode(['--json=compact']), 'compact');
+  assert.throws(() => parseWorkflowJsonMode(['--json=bad']), /ERR_WORKFLOW_FLAG/);
+
+  const bare = parseWorkflowArgs('context', workflowJsonModeArgs('--json'));
+  assert.equal(bare.json, true);
+  assert.equal(bare.jsonMode, 'full');
+
+  const full = parseWorkflowArgs('context', workflowJsonModeArgs('--json=full'));
+  assert.equal(full.json, true);
+  assert.equal(full.jsonMode, 'full');
+
+  const compact = parseWorkflowArgs('context', workflowJsonModeArgs('--json=compact'));
+  assert.equal(compact.json, true);
+  assert.equal(compact.jsonMode, 'compact');
+
+  assert.throws(
+    () => parseWorkflowArgs('context', workflowJsonModeArgs('--json=bad')),
+    (error) => {
+      assert.equal(error.code, 'ERR_WORKFLOW_FLAG');
+      assert.match(error.message, /--json/);
+      return true;
+    }
+  );
 });
 
 test('practical without ready assertions rejects', () => {
