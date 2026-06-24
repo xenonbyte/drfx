@@ -102,6 +102,7 @@
   - 新增 `--json=compact`，作为 route 内部默认使用的短输出格式。
   - 非法取值必须 fail closed，输出明确错误，不回退到 full 或 compact。
   - compact 与 full 只影响 stdout JSON 形状，不影响状态文件、manifest、receipt、guard 或审查 payload。
+  - `--json=compact|full` 仅作用于 `workflow` 子命令；`doctor` / `status` 的 `--json`（boolean，喂给 strict-verified proof 流）不在本需求范围，保持现状不变。
 - 验收：
   - `--json`、`--json=full`、`--json=compact` 均有测试。
   - `--json=bad` 被拒绝。
@@ -225,7 +226,7 @@
 #### E1 删除重复输出路径
 
 - 需求：
-  - 对 workflow 输出字段做一次字段级审查，标记 `stdout required`、`path readable`、`user status`、`debug only` 四类；该分类必须落到 A0 的 per-command allowlist 或等价测试数据中。
+  - 对 workflow 输出字段做一次字段级审查，标记 `stdout required`、`path readable`、`user status`、`debug only` 四类。该四类分类的唯一真相源是 A0 的 per-command allowlist（及其测试数据）；本条不得形成与 A0 并行的第二份字段清单，只负责把该分类以可读注释或文档形式固化。
   - 默认 stdout 只保留 `stdout required`、`user status` 和 `path readable` 的路径值。
   - `path readable` 字段保留文件路径，不重复输出文件正文。
   - `debug only` 字段只在 full 或 debug 输出中出现。
@@ -247,16 +248,17 @@
 
 #### F1 统一 document fix report 契约与 route 提示
 
-- 现状：document fix path 只解析四段 fix report，但 fixer prompt 要求每轮记录 verification，file-set fix path 还额外支持 `Verification:`。
+- 现状：document fix path 只解析四段 fix report（`runEndFix` 调用 `parseFixReport(payload)`，不开 `allowVerification`），但 `fixer.md` 与 `coordinator.md` 无条件要求每轮记录 verification，file-set fix path 已支持可选 `Verification:` 段。结果是 prompt 要求与 parser 接受范围不一致：coordinator 把 `Verification:` 写入 document fix report 时，`end-fix` 以 `fix-report-mismatch` 阻塞。
+- 决议（2026-06-25）：采用「对称可选」修法——让 document fix report 与 file-set 完全一致地接受**可选**的 `Verification:` 段，而不是把它做成 document 专属的强制段。这样无条件的 prompt 指令对两类 route 同时为真，彻底消除 schema 分叉，也不引入「document 比 file-set 更严」的新非对称。
 - 需求：
-  - document `end-fix` 必须接受并要求 `Verification:` 段，位置与 file-set fix path 一致，位于 `Not fixed:` 与 `Residual risk:` 之间。
-  - `Verification:` 至少记录一个实际验证命令、检查方法和结果；如果无法运行验证，也必须写明未能运行的原因，不能留空或省略。
-  - parser 可以继续用 `allowVerification` 控制 schema，但 document `runEndFix` 在 review-and-fix 路径必须启用 verification 解析，并在缺失 `Verification:` 时 fail closed 为 `fix-report-mismatch`。
-  - shared fixer prompt、generated route fixture、parser 测试和 workflow 测试必须描述同一份 document fix report schema。
+  - document `runEndFix` 在 review-and-fix 路径启用 `allowVerification` 解析，使 document fix report 与 file-set 共用同一份 section schema：`Verification:` 为可选段，位于 `Not fixed:` 与 `Residual risk:` 之间。
+  - `Verification:` 一旦出现必须非空（沿用既有 `requireListLines` / `redactText` 非空守卫，无需新增校验），内容为实际验证命令/检查方法加结果，或在无法运行验证时写明原因；缺失该段不阻塞（与 file-set 行为一致）。
+  - parser 继续用 `allowVerification` 控制 schema，但 document 与 file-set 都开启它；两者 fix report schema 的差异仅允许体现在 target/file-set 语义（单文档 vs 文件集）上。
+  - shared fixer prompt、coordinator prompt、generated route fixture、parser 测试和 workflow 测试必须描述同一份 fix report schema，且 `fixer.md` / `coordinator.md` 中「每轮记录 verification」的指令对 document 与 file-set 都可满足。
 - 验收：
-  - 含 `Verification:` 的 document fix report 能被 parser 和 workflow 接受。
-  - 缺失 `Verification:`、section 顺序错误或 verification 为空时，document `end-fix` 以 `fix-report-mismatch` 阻塞，并给出可恢复下一步。
-  - document 与 file-set 的 fix report schema 差异只允许体现在 target/file-set 语义上，不允许再出现 prompt 要求但 parser 拒绝的 section。
+  - 含 `Verification:` 的 document fix report 能被 parser 和 workflow 接受；不含 `Verification:` 的 document fix report 仍按四段被接受，不阻塞。
+  - `Verification:` 出现但为空、section 顺序错误或出现未知 section 时，document `end-fix` 以 `fix-report-mismatch` 阻塞，并给出可恢复下一步。
+  - document 与 file-set 共用同一 section schema 测试夹具；任何一侧新增或删减 section 必须同步另一侧，或显式说明这是 target 语义差异。
 
 #### F2 `fix-report-mismatch` 支持安全重提
 
@@ -276,6 +278,7 @@
 #### F3 修复提示与解析器的契约回归测试
 
 - 需求：
+  - 本项作为批次 F 的锚点优先落地：它能自动拦下 prompt 与 parser 之间的 schema 漂移（含 F1 修复后的回归），F1/F2 的契约改动都应先有 F3 守护。
   - 增加一组“prompt schema vs parser schema”测试，至少覆盖 reviewer result、triage result、document fix report、file-set fix report、diff review 和 final response。
   - 测试不需要理解自然语言质量，只检查 route/prompt 中给出的机器 payload section 名、顺序和必填字段是否能被 parser 接受。
   - 当 shared prompt 或 parser 任一侧修改 schema 时，fixture diff 必须显式显示两边同步变更。
@@ -320,7 +323,8 @@
 - Codex shared 去重如果收益不足，反而会把一次静态嵌入变成运行时文件读取风险。D1 必须允许“测量后不改行为”作为合格结论。
 - 体量预算阈值过紧会制造维护噪音，过松又拦不住回归。初始阈值应基于当前 fixture 加合理余量，并在增长时要求显式说明。
 - `fix-report-mismatch` retry 如果设计过宽，可能把真实状态漂移误判为可恢复错误。retry 必须绑定原 begin-fix baseline、target-only guard 和 reference fingerprint。
-- document 与 file-set fix report schema 若继续分叉，route 生成文本、shared prompt 和 parser 测试必须把差异显式化。
+- document 与 file-set fix report schema 现统一为同一份（仅 target 语义不同，见 F1 决议）；若未来再分叉，route 生成文本、shared prompt 和 parser 测试必须把差异显式化。
+- 开工前需确认 2026-06-23 已批准的加固批次（P2/P3/PLAN-rubric）若涉及 `shared/prompts/*` 与 `embedded/` fixture 再生已全部落地；本需求的 F1/D2/B1 也会再生这些 fixture，未落地的前序改动会造成 fixture 冲突。`fixer.md` 现含 “Surfacing is a valid fix”（3b 标志），据此判断前序大概率已落地，仍需开工前核对。
 - 本需求无新增第三方 runtime 依赖。`rtk-ai/rtk` 仅作为设计参考，不纳入依赖树。
 
 ## 完成定义
