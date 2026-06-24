@@ -648,6 +648,25 @@ test('CLI workflow --json errors emit one stable JSON object', () => {
   assert.equal(parsed.nextAction, null);
 });
 
+test('CLI workflow --json=compact invalid subcommands emit the original JSON error', () => {
+  const bin = path.join(__dirname, '..', 'bin', 'drfx.js');
+  const result = spawnSync(process.execPath, [bin, 'workflow', 'not-a-command', '--json=compact'], {
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr, '');
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.status, 'blocked');
+  assert.equal(parsed.errorCode, 'ERR_WORKFLOW_COMMAND');
+  assert.match(parsed.message, /Unknown workflow command: not-a-command/);
+  assert.equal(parsed.blockingReason, 'state-validation-failed');
+  assert.equal(parsed.statusReason, 'none');
+  assert.equal(Object.hasOwn(parsed, 'nextAction'), true);
+  assert.equal(parsed.nextAction, null);
+});
+
 test('write eligibility preflight passes for clean tracked target without creating state', async (t) => {
   const fixture = makeGitFixture(t);
   const result = await runWorkflowCommand('preflight', writePreflightArgs(fixture.target), { cwd: fixture.root });

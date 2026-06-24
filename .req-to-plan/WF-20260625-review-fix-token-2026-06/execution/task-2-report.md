@@ -5,6 +5,8 @@ Status: complete
 Files changed:
 - `bin/drfx.js`
 - `lib/workflow/index.js`
+- `test/workflow-json-baseline.test.js`
+- `test/workflow-args.test.js`
 - `.req-to-plan/WF-20260625-review-fix-token-2026-06/execution/task-2-report.md`
 
 Implementation notes:
@@ -21,12 +23,17 @@ Review follow-up (2026-06-25):
 - Added regression coverage for compact formatting of no-state partitioned `context` output. The compact row must preserve partition plan essentials (`reviewMode`, `unitCount`, `unitByteBudget`, `crosscuttingBackstops`) and omit full/debug fields (`units`, `projectReviewFingerprint`, `userExcludes`, `runtimeCheck`, `contextPackSkeleton`).
 - Added fail-closed coverage for direct compact formatting without a valid workflow subcommand; expected error code is `ERR_WORKFLOW_JSON_COMPACT`.
 - Fixed `lib/workflow/index.js` so partitioned compact rows are selected before generic no-state rows, and unknown compact row keys no longer return full JSON.
+- Added CLI regression coverage for `node bin/drfx.js workflow not-a-command --json=compact` so invalid workflow subcommands preserve the original `ERR_WORKFLOW_COMMAND` JSON error instead of surfacing a compact formatter stack trace.
+- Fixed `bin/drfx.js` JSON error handling so compact workflow error output falls back to full JSON for original `ERR_WORKFLOW_COMMAND` failures while preserving direct compact formatter fail-closed behavior.
 
 RED evidence:
 - `node --test test/workflow-json-baseline.test.js` failed before the production fix: 5/7 passed, 2 failed.
 - Failures: `compact no-state partitioned context keeps partition plan fields` had `reviewMode` as `undefined`; `compact formatter fails closed without workflow subcommand` reported `Missing expected exception`.
+- `node --test --test-name-pattern="CLI workflow --json=compact invalid subcommands emit the original JSON error" test/workflow-args.test.js` failed before the production fix: 0/1 passed, 1 failed.
+- Failure: `stderr` contained a Node stack trace ending in `ERR_WORKFLOW_JSON_COMPACT` from `compactWorkflowJson`, proving the compact formatter error masked the original workflow command error.
 
 GREEN verification:
 - `node --test test/workflow-json-baseline.test.js` passed: 7/7 tests.
-- `node --test test/workflow-args.test.js test/workflow-json-baseline.test.js test/cli.test.js` passed: 71/71 tests.
+- `node --test test/workflow-args.test.js test/workflow-json-baseline.test.js test/cli.test.js` passed: 72/72 tests.
 - `npm run syntaxcheck` passed: 98 files checked.
+- `node --test --test-name-pattern="CLI workflow --json=compact invalid subcommands emit the original JSON error" test/workflow-args.test.js` passed: 1/1 test.

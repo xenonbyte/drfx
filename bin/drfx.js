@@ -179,9 +179,11 @@ function workflowJsonRequested(argv) {
   return argv.slice(4).some((arg) => arg === '--json' || arg.startsWith('--json='));
 }
 
-function workflowJsonModeForError(argv) {
+function workflowJsonModeForError(argv, error = null) {
   try {
-    return parseWorkflowJsonMode(argv.slice(4));
+    const mode = parseWorkflowJsonMode(argv.slice(4));
+    if (mode === 'compact' && error && error.code === 'ERR_WORKFLOW_COMMAND') return 'full';
+    return mode;
   } catch {
     return 'full';
   }
@@ -192,7 +194,7 @@ main(process.argv)
   .catch((error) => {
     if (workflowJsonRequested(process.argv)) {
       process.stdout.write(formatWorkflowJson(formatWorkflowError({ error }), {
-        mode: workflowJsonModeForError(process.argv),
+        mode: workflowJsonModeForError(process.argv, error),
         subcommand: process.argv[3] || null
       }));
       process.exitCode = 1;
