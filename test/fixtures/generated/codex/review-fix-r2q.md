@@ -25,7 +25,7 @@ Help-style or invalid invocations explain usage without reading files, running p
 - This route has a fixed document type: `PLAN`. Users must not pass `type`, and must not infer type from filename or path.
 - Users must not pass `ref=`, `assurance=`, `strict`, `normal`, `ledger=`, `scope=`, or `base=`; this route has a fixed PLAN rubric and no reference-document surface.
 - The review judges the requirement plan (`07-plan.md`) against its owning upstream docs (`03–06`) inside the same requirement directory; fixes flow backward into `03–06` when an upstream doc owns the gap.
-- Edit only `07-plan.md` and the owning upstream doc (`03–06`); never edit `run.md` or any file outside `03–07`.
+- The write boundary is the resolved `03–07` file set: fix plan-local defects in `07-plan.md`, and for an upstream root cause edit the owning upstream doc (`03–06`) and re-align `07-plan.md`. Never edit `run.md` or any file outside `03–07`.
 - `run.md` is a protected read-only gate: it is read to confirm the plan stage is generated/approved, never written, and any drift in `run.md` makes stored eligibility stale.
 - The file-set guard defaults to `snapshot`; `guard=git` requires a clean worktree before the first fix and route-owned changes that stay inside the resolved `03–07` file set.
 - Public CLI commands are `drfx doctor`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.

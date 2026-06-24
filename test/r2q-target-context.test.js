@@ -156,6 +156,67 @@ test('parseRunMdGate: plan not generated returns planApproved=false', () => {
   assert.equal(result.planApproved, false);
 });
 
+// Regression: the parser must accept the REAL r2p serializer shape — status
+// token `closed_at_plan_checkpoint` plus a markdown-table "## Active Artifacts"
+// — not just drfx's own simplified bullet fixtures.
+const realR2pRunMd = fs.readFileSync(
+  path.join(__dirname, 'fixtures', 'r2q', 'real-r2p-run.md'),
+  'utf8'
+);
+
+test('parseRunMdGate: real r2p run.md (closed_at_plan_checkpoint) => planApproved=true', () => {
+  const result = parseRunMdGate(realR2pRunMd);
+  assert.deepEqual(result, { planApproved: true, status: 'closed_at_plan_checkpoint' });
+});
+
+test('parseRunMdGate: real r2p markdown-table Active Artifacts satisfies the plan-approved fallback', () => {
+  // Force the status off the closed token so the gate must rely on the
+  // "## Active Artifacts" fallback. The plan row `| plan | 07-plan.md | N |
+  // approved |` lives below the table header, so this only passes once
+  // activeArtifactsSection captures the whole section (not just the header row).
+  const openTable = realR2pRunMd.replace('closed_at_plan_checkpoint', 'active_at_plan_stage');
+  const result = parseRunMdGate(openTable);
+  assert.equal(result.status, 'active_at_plan_stage');
+  assert.equal(result.planApproved, true);
+});
+
+test('parseRunMdGate: malformed status containing closed token is not approved', () => {
+  const malformedStatusRunMd = planNotApprovedRunMd.replace(
+    'active_at_spec_stage',
+    'not_closed_at_plan_checkpoint'
+  );
+
+  const result = parseRunMdGate(malformedStatusRunMd);
+
+  assert.equal(result.status, 'not_closed_at_plan_checkpoint');
+  assert.equal(result.planApproved, false);
+});
+
+test('parseRunMdGate: Active Artifacts plan state must be an exact approved token', () => {
+  const malformedPlanStateRunMd = `# Requirement Run
+
+## Status
+active_at_plan_stage
+
+## Active Artifacts
+| kind | path | revision | state |
+| --- | --- | --- | --- |
+| plan | 07-plan.md | 1 | not approved |
+`;
+
+  const result = parseRunMdGate(malformedPlanStateRunMd);
+
+  assert.equal(result.status, 'active_at_plan_stage');
+  assert.equal(result.planApproved, false);
+});
+
+test('activeArtifactsSection: captures full markdown table and stops at the next heading', () => {
+  const section = activeArtifactsSection(realR2pRunMd);
+  assert.match(section, /\|\s*plan\s*\|\s*07-plan\.md\s*\|\s*\d+\s*\|\s*approved\s*\|/);
+  // Sibling sections must never bleed into the captured Active Artifacts body.
+  assert.doesNotMatch(section, /Stale|Superseded|Open Routes/);
+});
+
 // ---------------------------------------------------------------------------
 // Tests: activeArtifactsSection
 // ---------------------------------------------------------------------------

@@ -15,13 +15,13 @@ Invocation syntax:
 review-fix-r2q target=<requirement-dir> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<project-root>] [debug]
 ```
 
-Full form: `review-fix-r2q target=<requirement-dir> ...`. The target is the requirement directory, not a single `.md` file.
+Full form: `review-fix-r2q target=<requirement-dir> ...`. A bare requirement directory is shorthand for `target=<requirement-dir>`. The target is the requirement directory, not a single `.md` file.
 
 This route accepts only the tokens above. It does not accept `ref=`, `strict`, `normal`, `assurance=`, `ledger=`, `scope=`, or `base=`; it has a fixed PLAN rubric and no reference-document surface.
 
 Valid target invocations may omit mode. Codex, Claude Code, and opencode generated routes select `review-and-fix` (internally materializing `practical` assurance) by default when mode is omitted. Gemini generated routes select `read-only` and are advisory-only. Help-style or invalid invocations explain usage only and do not read files, run workflow commands, run probes, create state, or declare review results.
 
-Review anchor and backward-fix scope: the review judges `07-plan.md`; fixes flow backward into the owning upstream doc (`03–06`) when an upstream doc owns the gap. Fixers and coordinators may edit only `07-plan.md` and the owning upstream doc inside the resolved requirement directory; never edit `run.md` or any file outside `03–07`.
+Review anchor and backward-fix scope: the review judges `07-plan.md`. The deterministic write boundary is the resolved `03–07` file set — fix plan-local execution defects directly in `07-plan.md`, and when a finding's root cause is upstream edit the owning upstream doc (`03–06`) and re-align the affected `07-plan.md` section. Never edit `run.md` or any file outside `03–07`.
 
 `run.md` is a protected read-only gate: it is read to confirm the plan stage is generated/approved, never written. Any drift in `run.md` (or in the `03–07` file set) makes stored eligibility stale, so a drifted run can never claim a workflow PASS.
 

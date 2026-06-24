@@ -384,6 +384,20 @@ test('resolveRouteTargetMetadata derives an r2q-<hash> file-set key, never colla
   assert.equal(metadata.requirementDir, '.req-to-plan/WF-1');
 });
 
+test('resolveRouteTargetMetadata rejects symlinked r2q requirement directories before canonicalizing', (t) => {
+  const root = freshR2qProject(t);
+  fs.symlinkSync(
+    path.join(root, '.req-to-plan', 'WF-1'),
+    path.join(root, '.req-to-plan', 'WF-link')
+  );
+  const parsed = parsedFor('review-fix-r2q', ['target=.req-to-plan/WF-link', 'read-only']);
+
+  assert.throws(
+    () => resolveRouteTargetMetadata(parsed, { cwd: root }),
+    (error) => error.code === 'ERR_R2Q_TARGET_SYMLINK'
+  );
+});
+
 test('an r2q advisory review-and-fix start dispatches to unsupported with routeKind r2q (not code)', async (t) => {
   const root = freshR2qProject(t);
   const result = await runWorkflowCommand('start', [
