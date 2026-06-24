@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.1 - 2026-06-24
+
+Hardening fixes from code review. Broadens secret redaction to more credential keyword variants, makes install rollback and the workflow `finalize` guard fail loudly instead of silently, and drops two dead code paths.
+
+### Fixed
+
+- Secret redaction now covers `api`/`auth`/`jwt`/`app`/`session`/`client` secret variants and `secret_key` across credential assignment/key patterns (`lib/redaction.js`) and the api-derived fragment patterns in both receipts (`lib/receipts.js`) and the ledger (`lib/ledger.js`).
+- Install rollback no longer lets a best-effort replaced-directory cleanup failure mask the original error (`lib/install.js`).
+- `workflow finalize` without a target-state directory (or `--no-state`) now fails with `ERR_WORKFLOW_COMMAND` instead of silently starting a fresh run (`lib/workflow/index.js`).
+- Manifest reference parsing no longer applies a redundant index decrement (`lib/target-state.js`).
+
+### Removed
+
+- Dropped the never-wired vestigial `fingerprintSummary` state-token field (`lib/no-state.js`).
+
 ## 0.8.0 - 2026-06-24
 
 Adds the seventh route, `review-fix-r2q`: a requirement-to-PLAN review-fix loop over an r2p requirement directory. It reviews the requirement plan (`07-plan.md`) with the PLAN rubric and fixes findings in place across the `03–07` edit set, treating `run.md` as a read-only, fingerprinted gate.
