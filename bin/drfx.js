@@ -4,7 +4,12 @@
 const { runCheck, formatCheckReport, formatCheckJson } = require('../lib/check');
 const { runStatus, formatStatusReport, formatStatusJson } = require('../lib/status');
 const { installPlatforms, uninstallPlatforms, parsePlatformList } = require('../lib/install');
-const { runWorkflowCommand, formatWorkflowJson, formatWorkflowError } = require('../lib/workflow');
+const {
+  runWorkflowCommand,
+  parseWorkflowJsonMode,
+  formatWorkflowJson,
+  formatWorkflowError
+} = require('../lib/workflow');
 
 const USER_COMMANDS = new Set(['version', 'help', 'doctor', 'status', 'install', 'uninstall']);
 const PLATFORM_HELP = 'claude,codex,gemini,opencode';
@@ -119,8 +124,9 @@ async function main(argv) {
     const options = workflowNeedsStdin(workflowArgs)
       ? { stdin: await readProcessStdin() }
       : {};
+    const jsonMode = parseWorkflowJsonMode(workflowArgs);
     const result = await runWorkflowCommand(workflowSubcommand, workflowArgs, options);
-    process.stdout.write(formatWorkflowJson(result));
+    process.stdout.write(formatWorkflowJson(result, { mode: jsonMode, subcommand: workflowSubcommand }));
     return 0;
   }
 
@@ -173,11 +179,22 @@ function workflowJsonRequested(argv) {
   return argv.slice(4).some((arg) => arg === '--json' || arg.startsWith('--json='));
 }
 
+function workflowJsonModeForError(argv) {
+  try {
+    return parseWorkflowJsonMode(argv.slice(4));
+  } catch {
+    return 'full';
+  }
+}
+
 main(process.argv)
   .then((code) => { process.exitCode = code; })
   .catch((error) => {
     if (workflowJsonRequested(process.argv)) {
-      process.stdout.write(formatWorkflowJson(formatWorkflowError({ error })));
+      process.stdout.write(formatWorkflowJson(formatWorkflowError({ error }), {
+        mode: workflowJsonModeForError(process.argv),
+        subcommand: process.argv[3] || null
+      }));
       process.exitCode = 1;
       return;
     }
