@@ -240,6 +240,18 @@ test('r2q persistent start resolves relative root from the original cwd when bas
   assert.equal(start.ok, true, JSON.stringify(start));
   assert.equal(start.routeKind, 'r2q');
   assert.equal(start.targetKey, parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).targetKey);
+
+  const resumeArgs = args.slice();
+  resumeArgs.splice(3, 0, 'resume');
+  const resume = await runWorkflowCommand('start', resumeArgs, { cwd: root, homeDir });
+  assert.equal(resume.ok, true, JSON.stringify(resume));
+  assert.equal(resume.status, 'review');
+  assert.equal(resume.targetKey, start.targetKey);
+
+  const context = await runWorkflowCommand('context', args, { cwd: root, homeDir });
+  assert.equal(context.ok, true, JSON.stringify(context));
+  assert.equal(context.status, 'context');
+  assert.equal(context.targetKey, start.targetKey);
 });
 
 // ---------------------------------------------------------------------------
