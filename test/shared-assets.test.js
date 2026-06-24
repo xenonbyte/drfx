@@ -123,6 +123,16 @@ test('generated r2q practical start text keeps snapshot as the materialized defa
       /persistent practical command[\s\S]*?<selectedGuard>` is explicit guard or default `snapshot`/,
       `${platform}:review-fix-r2q practical path must preserve snapshot as the default guard`
     );
+    assert.match(
+      rendered,
+      /bare requirement directory[^\n]*shorthand for `target=<requirement-dir>`/i,
+      `${platform}:review-fix-r2q must document the valid bare requirement-dir target shorthand`
+    );
+    assert.doesNotMatch(
+      rendered,
+      /no bare-path/i,
+      `${platform}:review-fix-r2q must not reject the documented bare target shorthand`
+    );
   }
 });
 

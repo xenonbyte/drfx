@@ -123,6 +123,23 @@ function r2qArgs(wfDir) {
   ];
 }
 
+function r2qArgsForTarget(target) {
+  return [
+    'review-fix-r2q',
+    `target=${target}`,
+    'review-and-fix',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--json'
+  ];
+}
+
 // ---------------------------------------------------------------------------
 // Persistent context: editable set is exactly 03–07; run.md is protected.
 // ---------------------------------------------------------------------------
@@ -254,6 +271,30 @@ test('r2q persistent start resolves relative root from the original cwd when bas
   assert.equal(context.targetKey, start.targetKey);
 });
 
+test('r2q persistent cwd-relative target remains stable after project-root discovery', async (t) => {
+  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-relative-target');
+  const subdir = path.join(root, 'subdir');
+  fs.mkdirSync(subdir);
+  const relativeTarget = path.relative(subdir, wfDir).split(path.sep).join('/');
+  const opts = { cwd: subdir, homeDir };
+  const args = r2qArgsForTarget(relativeTarget);
+
+  const start = await runWorkflowCommand('start', args, opts);
+  assert.equal(start.ok, true, JSON.stringify(start));
+  assert.equal(start.status, 'review');
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.requirementDir, '.req-to-plan/WF-20260624-relative-target');
+
+  const context = await runWorkflowCommand('context', args, opts);
+  assert.equal(context.ok, true, JSON.stringify(context));
+  assert.equal(context.contextPackSkeleton.fileSet.routeKind, 'r2q');
+  assert.equal(
+    context.contextPackSkeleton.fileSet.requirementDir,
+    '.req-to-plan/WF-20260624-relative-target',
+    'context must use the originally resolved requirement directory, not rebase target= against project root'
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Persisted manifest round-trips as targetContextKind:'r2q' with run.md
 // fingerprint + editable-set fingerprint.
@@ -350,4 +391,36 @@ test('r2q persistent start blocks on an incomplete-plan run.md and writes no sta
   assert.equal(start.errorCode, 'ERR_R2Q_GATE_PLAN_INCOMPLETE');
   assert.equal(start.manifestPath, null);
   assert.equal(fs.existsSync(path.join(root, '.drfx')), false);
+});
+
+test('r2q persistent context returns structured blocked when run.md is deleted after start', async (t) => {
+  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-missing-run');
+  const opts = { cwd: root, homeDir };
+  const args = r2qArgs(wfDir);
+
+  const start = await runWorkflowCommand('start', args, opts);
+  assert.equal(start.ok, true, JSON.stringify(start));
+  fs.rmSync(path.join(wfDir, 'run.md'));
+
+  const context = await runWorkflowCommand('context', args, opts);
+  assert.equal(context.ok, false, JSON.stringify(context));
+  assert.equal(context.status, 'blocked');
+  assert.equal(context.blockingReason, 'state-validation-failed');
+  assert.equal(context.errorCode, 'ERR_R2Q_RUNMD_MISSING');
+});
+
+test('r2q persistent context returns structured blocked when an owner doc is deleted after start', async (t) => {
+  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-missing-doc');
+  const opts = { cwd: root, homeDir };
+  const args = r2qArgs(wfDir);
+
+  const start = await runWorkflowCommand('start', args, opts);
+  assert.equal(start.ok, true, JSON.stringify(start));
+  fs.rmSync(path.join(wfDir, '05-design.md'));
+
+  const context = await runWorkflowCommand('context', args, opts);
+  assert.equal(context.ok, false, JSON.stringify(context));
+  assert.equal(context.status, 'blocked');
+  assert.equal(context.blockingReason, 'state-validation-failed');
+  assert.equal(context.errorCode, 'ERR_R2Q_DOC_CHAIN_INCOMPLETE');
 });

@@ -376,6 +376,21 @@ test('r2q-kind manifest round-trips through format/parse/normalize', () => {
   assert.equal(formatManifestV2(parsed), text);
 });
 
+test('r2q-kind manifest rejects absolute or escaping requirementDir values', () => {
+  for (const requirementDir of [
+    '/tmp/outside/WF-unsafe',
+    '../outside/WF-unsafe',
+    '.req-to-plan/../outside/WF-unsafe',
+    'safe/../../outside/WF-unsafe'
+  ]) {
+    assert.throws(
+      () => formatManifestV2(makeR2qManifest({ requirementDir })),
+      /Requirement dir/,
+      requirementDir
+    );
+  }
+});
+
 test('r2q-kind manifest does not emit single-file identity fields', () => {
   const text = formatManifestV2(makeR2qManifest());
   assert.doesNotMatch(text, /^Initial content sha256:/m);
