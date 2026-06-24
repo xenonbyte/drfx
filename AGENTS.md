@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is a Node.js 20 CommonJS package for installing document and code review-fix routes.
+This repository is a Node.js 20 CommonJS package for installing document and code review-fix routes. This file covers commands and conventions; deep architecture (data flow, key design constraints) lives in `CLAUDE.md` — read it before changing install, capability, manifest, or workflow code.
 
 - `bin/drfx.js` is the CLI entry point.
 - `lib/` contains implementation modules: input parsing, install/uninstall, manifests, capabilities, locks, ledgers, receipts, redaction, rulebooks, and route generation.
@@ -16,6 +16,7 @@ This repository is a Node.js 20 CommonJS package for installing document and cod
 ## Build, Test, and Development Commands
 
 - `npm test` runs the full `node --test` suite.
+- `node --test test/<file>.test.js` runs one test file; append `--test-name-pattern="<regex>"` to run a single test by name (e.g. `node --test --test-name-pattern="r2q finalize refuses PASS" test/r2q-finalize.test.js`).
 - `npm run syntaxcheck` parse-checks (`node --check`) every `.js` file under `bin/`, `lib/`, and `test/` without executing it.
 - `node bin/drfx.js doctor` runs local capability checks and validates advisory/pass capability reporting.
 - `assurance=strict-verified` is unreachable today: all adapters report reviewer capabilities as `unverified`, so `drfx doctor` never emits a verified proof. Use `assurance=practical` for automatic fixes; strict-verified stays wired for when an adapter supplies verified proof.
@@ -32,7 +33,7 @@ Use CommonJS (`require`, `module.exports`) and keep files plain JavaScript. Foll
 
 ## Testing Guidelines
 
-Tests use Node's built-in `node:test` and `assert`. Name test files as `*.test.js` under `test/`. Add focused tests beside the behavior being changed: parser changes in `input-parsing.test.js`, manifest/state changes in `target-state.test.js`, route text checks in `shared-assets.test.js`, install behavior in `capability-check.test.js`, file-set PR/CODE lifecycle in `workflow-fileset-lifecycle.test.js`, and CLI command behavior in `cli.test.js`.
+Tests use Node's built-in `node:test` and `assert`. Name test files as `*.test.js` under `test/`. Add focused tests beside the behavior being changed: parser changes in `input-parsing.test.js`, manifest/state changes in `target-state.test.js`, route text checks in `shared-assets.test.js`, install behavior in `capability-check.test.js`, file-set PR/CODE lifecycle in `workflow-fileset-lifecycle.test.js`, and CLI command behavior in `cli.test.js`. Golden output under `test/fixtures/{generated,embedded}/<platform>/` is hand-maintained — there is no regeneration script. `test/shared-assets.test.js` catches most drift, so after changing `lib/generator.js`, `templates/`, or `shared/`, update the affected fixtures by hand (run the generator, then copy the new output into the fixture dirs).
 
 ## Documentation Synchronization
 
