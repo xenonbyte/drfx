@@ -200,6 +200,25 @@ test('redacts secret-derived fragments in formatted ledger cells without deletin
   assert.doesNotMatch(text, /sk-live-|suffix abcdef|checksum deadbeef|checksum: abc123|hash: 0123456789abcdef/);
 });
 
+test('redacts compound secret-keyword derived fragments (client_secret, jwt_secret, secret_key)', () => {
+  const text = formatLedger({
+    issues: [
+      {
+        id: 'ISSUE-001',
+        severity: 'high',
+        status: 'accepted',
+        location: 'client_secret prefix: shhhh and secret_key checksum: aaa111',
+        summary: 'jwt_secret hash: bbb222 leaked',
+        resolution: 'rotate session-secret suffix: ccc333; keep build anchor deadbeef'
+      }
+    ]
+  });
+
+  assert.match(text, /\[REDACTED:api-token\]/);
+  assert.match(text, /keep build anchor deadbeef/);
+  assert.doesNotMatch(text, /shhhh|aaa111|bbb222|ccc333/);
+});
+
 test('round-trips literal br tags newlines pipes and backslashes', () => {
   const ledger = {
     issues: [
