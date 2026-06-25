@@ -518,7 +518,7 @@ Guard blocker wording:
 
 `Blocked: fix-report-mismatch.`
 
-The submitted fix report did not match the required schema. When the document workflow is blocked in the fix phase with blocking reason `fix-report-mismatch`, `begin-fix` may perform a safe retry: it reuses the original passed guard baseline, verifies references and target-only guard results, reacquires the lock, and returns `nextAction: retry end-fix with a valid fix report`. This safe retry is only a report-resubmission path; it does not increment `fixAttemptCount` or `currentRound`, does not mark issues fixed, and a corrected `end-fix` still advances to diff-review instead of PASS.
+The submitted fix report did not match the required schema. When the document workflow is blocked in the fix phase with blocking reason `fix-report-mismatch`, `begin-fix` may perform a safe retry: it reuses the original passed guard baseline, verifies references and target-only guard results, revalidates that the rollback snapshot body still exists and matches the begin-fix target fingerprint, reacquires the lock, and returns `nextAction: retry end-fix with a valid fix report`. This safe retry is only a report-resubmission path; it does not increment `fixAttemptCount` or `currentRound`, does not mark issues fixed, and a corrected `end-fix` still advances to diff-review instead of PASS.
 
 If safe retry is refused, use recovery instead: resolve the reported blocker and retry, use `reset` to archive the state and start fresh, or perform manual recovery when the target or state needs human repair. `reset` and manual recovery are broader recovery tools, not substitutes for safe retry when the existing state is still eligible.
 

@@ -669,6 +669,40 @@ const FIX_REPORT_RETRY_BASELINE_CASES = [
     }
   },
   {
+    name: 'missing rollback snapshot path',
+    expectedReason: 'target-only-guard-unavailable',
+    mutate: ({ baselinePath }) => {
+      const report = readJsonReport(baselinePath);
+      delete report.rollbackAnchor.snapshotPath;
+      writeJsonReport(baselinePath, report);
+    }
+  },
+  {
+    name: 'missing rollback snapshot body',
+    expectedReason: 'target-only-guard-unavailable',
+    mutate: ({ baselinePath, start }) => {
+      const report = readJsonReport(baselinePath);
+      fs.rmSync(path.join(start.targetStateDir, report.rollbackAnchor.snapshotPath), { force: true });
+    }
+  },
+  {
+    name: 'corrupted rollback snapshot body',
+    expectedReason: 'target-only-guard-unavailable',
+    mutate: ({ baselinePath, start }) => {
+      const report = readJsonReport(baselinePath);
+      fs.writeFileSync(path.join(start.targetStateDir, report.rollbackAnchor.snapshotPath), 'corrupted rollback body\n');
+    }
+  },
+  {
+    name: 'string rollback snapshot expected size',
+    expectedReason: 'target-only-guard-unavailable',
+    mutate: ({ baselinePath }) => {
+      const report = readJsonReport(baselinePath);
+      report.targetFingerprint.size = String(report.targetFingerprint.size);
+      writeJsonReport(baselinePath, report);
+    }
+  },
+  {
     name: 'missing passed target-only guard result',
     expectedReason: 'target-only-guard-unavailable',
     mutate: ({ baselinePath }) => {

@@ -517,7 +517,7 @@ Guard blocker wording:
 
 `Blocked: fix-report-mismatch.`
 
-提交的 fix report 不符合所需 schema。当 document workflow 在 fix phase 以 blocking reason `fix-report-mismatch` 阻断时，`begin-fix` 可以执行 safe retry：它复用原先通过的 guard baseline，验证 references 和 target-only guard results，重新获取 lock，并返回 `nextAction: retry end-fix with a valid fix report`。这个 safe retry 只是 report-resubmission path；它不会递增 `fixAttemptCount` 或 `currentRound`，不会把 issues 标记为 fixed，并且修正后的 `end-fix` 仍然进入 diff-review，而不是 PASS。
+提交的 fix report 不符合所需 schema。当 document workflow 在 fix phase 以 blocking reason `fix-report-mismatch` 阻断时，`begin-fix` 可以执行 safe retry：它复用原先通过的 guard baseline，验证 references 和 target-only guard results，重新校验 rollback snapshot body 仍存在且与 begin-fix target 指纹一致，重新获取 lock，并返回 `nextAction: retry end-fix with a valid fix report`。这个 safe retry 只是 report-resubmission path；它不会递增 `fixAttemptCount` 或 `currentRound`，不会把 issues 标记为 fixed，并且修正后的 `end-fix` 仍然进入 diff-review，而不是 PASS。
 
 如果 safe retry 被拒绝，请改用 recovery：解决报告的 blocker 后重试，使用 `reset` 归档 state 并重新开始，或在 target/state 需要人工修复时执行 manual recovery。`reset` 和 manual recovery 是更宽泛的 recovery tools；当现有 state 仍符合条件时，它们不是 safe retry 的替代品。
 
