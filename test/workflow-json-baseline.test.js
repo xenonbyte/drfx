@@ -1050,6 +1050,28 @@ test('SCOPE-IN-001 compact finalize prefers matching final receipt over stale la
   assert.equal(compact.receiptPath, finalReceiptPath);
 });
 
+test('SCOPE-IN-001 compact finalize skips unsafe final receipt artifacts', (t) => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-final-safe-receipt-'));
+  t.after(() => fs.rmSync(stateDir, { recursive: true, force: true }));
+  const roundsDir = path.join(stateDir, 'rounds');
+  fs.mkdirSync(roundsDir, { recursive: true });
+  const safeReceiptPath = path.join(roundsDir, '001-final-blocked.md');
+  const outsideReceiptPath = path.join(stateDir, 'outside.md');
+  fs.writeFileSync(safeReceiptPath, '# safe final blocker\n');
+  fs.writeFileSync(outsideReceiptPath, '# outside target\n');
+  fs.mkdirSync(path.join(roundsDir, '002-final-blocked.md'));
+  fs.symlinkSync(outsideReceiptPath, path.join(roundsDir, '003-final-blocked.md'));
+
+  const compact = JSON.parse(formatWorkflowJson({
+    ok: false,
+    status: 'blocked',
+    targetStateDir: stateDir,
+    finalResponse: { finalStatus: 'blocked' }
+  }, { mode: 'compact', subcommand: 'finalize' }));
+
+  assert.equal(compact.receiptPath, safeReceiptPath);
+});
+
 test('SCOPE-IN-001 compact finalize picks the highest numeric final receipt attempt', (t) => {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-final-attempt-artifact-'));
   t.after(() => fs.rmSync(stateDir, { recursive: true, force: true }));
