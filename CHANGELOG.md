@@ -1,11 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 - 2026-06-25
+
+Adds a compact JSON output mode — now the generated-route default — for token-lean automated continuation, reworks `drfx install` into a clean reinstall with full rollback, and renames the seventh route to `review-fix-r2p`.
+
+### Added
+
+- **Compact JSON output mode for the `workflow` dispatcher**, now the generated-route default (`--json=compact`). It keeps status, `nextAction`, and the state/report/context artifact paths needed for continuation while omitting debug-only bodies such as `contextPackSkeleton`, raw prompts, transcripts, logs, and target bodies. `drfx workflow ... --json` and `--json=full` still produce the full JSON shape for operator and debug CLI use.
+- **Safe document fix-report retry.** When a document workflow blocks in the fix phase with blocking reason `fix-report-mismatch`, `begin-fix` performs a report-resubmission retry: it reuses the original passed guard baseline, revalidates references and the rollback snapshot body against the recorded post-fix target fingerprint, reacquires the lock, and returns to diff-review (never PASS). It does not increment `fixAttemptCount` or `currentRound` or mark issues fixed, and it now also recognizes a mismatch receipt written to an attempt path.
 
 ### Changed
 
 - **Renamed the seventh route `review-fix-r2q` → `review-fix-r2p`**, naming it after the r2p (requirement-to-PLAN) workflow it reviews, in line with the `review-fix-pr`/`review-fix-code` convention. BREAKING: the route name, its generated command/skill files, and the persisted `routeKind`/`targetContextKind` discriminator all change. Reinstall to pick up the new route; an in-progress `review-fix-r2q` workflow state is not migrated.
-- `drfx install` now removes the previous install first (uninstall-then-install), so routes dropped or renamed between versions are no longer left orphaned. User-modified route files are preserved via the partial-uninstall path.
+- **`drfx install` is now a clean reinstall.** It preflights every requested platform before mutating anything, then per platform uninstalls the previous manifest-owned install before writing the new plan, so routes dropped or renamed between versions are no longer left orphaned. User-modified route files are preserved via the partial-uninstall path. The prior install is backed up before the uninstall and restored in full if the reinstall fails; the safety backups are discarded once the reinstall commits.
 
 ## 0.8.1 - 2026-06-24
 
