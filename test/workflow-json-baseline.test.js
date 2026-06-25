@@ -171,6 +171,14 @@ const FINALIZATION_STATUS_FIELDS = [
   'continuityWarning',
   'originalBlockingReason'
 ];
+const RESUME_STATUS_FIELDS = [
+  'requiresFullReview',
+  'requiresUserDecision',
+  'conflict',
+  'continuityWarning',
+  'archivedStatePath',
+  'archiveWarning'
+];
 const PARTITION_PLAN_FIELDS = [
   'reviewMode',
   'reviewPlanPath',
@@ -264,7 +272,11 @@ function compactRow(scope, command, fields) {
 
 const COMPACT_ALLOWLIST_MATRIX = [
   compactRow('state', 'preflight', [...STATUS_COMPACT_FIELDS, ...WORKFLOW_IDENTITY_COMPACT_FIELDS]),
-  compactRow('state', 'start', [...STATUS_COMPACT_FIELDS, ...WORKFLOW_IDENTITY_COMPACT_FIELDS]),
+  compactRow('state', 'start', [
+    ...STATUS_COMPACT_FIELDS,
+    ...WORKFLOW_IDENTITY_COMPACT_FIELDS,
+    ...RESUME_STATUS_FIELDS
+  ]),
   compactRow('state', 'context', [
     ...STATUS_COMPACT_FIELDS,
     ...WORKFLOW_IDENTITY_COMPACT_FIELDS,
@@ -319,6 +331,7 @@ const COMPACT_ALLOWLIST_MATRIX = [
   compactRow('file-set', 'start-or-resume', [
     ...STATUS_COMPACT_FIELDS,
     ...WORKFLOW_IDENTITY_COMPACT_FIELDS,
+    ...RESUME_STATUS_FIELDS,
     'reviewMode',
     'reviewPlanPath'
   ]),
@@ -799,6 +812,62 @@ test('SCOPE-IN-001 test compact allowlist matrix matches the production source o
   );
 });
 
+test('SCOPE-IN-001 compact start output preserves resume and archive routing signals', () => {
+  const resumeSignals = {
+    requiresFullReview: true,
+    requiresUserDecision: true,
+    conflict: { requestedMode: 'read-only', manifestMode: 'review-and-fix' },
+    continuityWarning: 'continuity ledger exists',
+    archivedStatePath: '/tmp/drfx/archive/target-001',
+    archiveWarning: 'archive failed'
+  };
+  const baseResult = {
+    ok: false,
+    status: 'externally-changed',
+    errorCode: null,
+    message: null,
+    targetStateDir: '/tmp/drfx/state/target-001',
+    targetKey: 'target-001',
+    manifestPath: '/tmp/drfx/state/target-001/MANIFEST.md',
+    ledgerPath: '/tmp/drfx/state/target-001/ledger.json',
+    round: 1,
+    strictness: 'normal',
+    requestedMode: 'review-and-fix',
+    mode: 'review-and-fix',
+    guardMode: 'git',
+    modeSource: 'explicit',
+    modeNormalizedFrom: null,
+    requestedAssurance: 'practical',
+    assuranceSource: 'explicit',
+    assuranceNormalizedFrom: null,
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    descriptorPlatform: 'none',
+    assuranceProof: 'none',
+    strictProofError: null,
+    currentPhase: 'review',
+    blockingReason: 'none',
+    statusReason: 'target-edited-externally',
+    nextAction: 'confirm external edits before restarting review',
+    warnings: [],
+    ...resumeSignals
+  };
+
+  for (const [label, documentType] of [
+    ['document start', 'SPEC'],
+    ['file-set start-or-resume', 'none']
+  ]) {
+    const compact = JSON.parse(formatWorkflowJson({
+      ...baseResult,
+      documentType
+    }, { mode: 'compact', subcommand: 'start' }));
+
+    for (const [field, value] of Object.entries(resumeSignals)) {
+      assert.deepEqual(compact[field], value, `${label} compact output must preserve ${field}`);
+    }
+  }
+});
+
 test('SCOPE-IN-001 compact context output keeps paths and omits skeleton bodies', async (t) => {
   const fixture = freshRouteFixture(t);
   const args = routeArgs({ jsonMode: 'bare', root: fixture.root, target: fixture.target });
@@ -979,6 +1048,42 @@ test('SCOPE-IN-001 compact finalize prefers matching final receipt over stale la
   }, { mode: 'compact', subcommand: 'finalize' }));
 
   assert.equal(compact.receiptPath, finalReceiptPath);
+});
+
+test('SCOPE-IN-001 compact finalize picks the highest numeric final receipt attempt', (t) => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-final-attempt-artifact-'));
+  t.after(() => fs.rmSync(stateDir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(stateDir, 'rounds'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'rounds', '001-final-blocked-attempt-9.md'), '# stale final blocker\n');
+  const latestAttemptPath = path.join(stateDir, 'rounds', '001-final-blocked-attempt-10.md');
+  fs.writeFileSync(latestAttemptPath, '# latest final blocker\n');
+
+  const compact = JSON.parse(formatWorkflowJson({
+    ok: false,
+    status: 'blocked',
+    targetStateDir: stateDir,
+    finalResponse: { finalStatus: 'blocked' }
+  }, { mode: 'compact', subcommand: 'finalize' }));
+
+  assert.equal(compact.receiptPath, latestAttemptPath);
+});
+
+test('SCOPE-IN-001 compact finalize picks the highest numeric final receipt round', (t) => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-final-round-artifact-'));
+  t.after(() => fs.rmSync(stateDir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(stateDir, 'rounds'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'rounds', '9-final-blocked.md'), '# stale final blocker\n');
+  const latestRoundPath = path.join(stateDir, 'rounds', '10-final-blocked.md');
+  fs.writeFileSync(latestRoundPath, '# latest final blocker\n');
+
+  const compact = JSON.parse(formatWorkflowJson({
+    ok: false,
+    status: 'blocked',
+    targetStateDir: stateDir,
+    finalResponse: { finalStatus: 'blocked' }
+  }, { mode: 'compact', subcommand: 'finalize' }));
+
+  assert.equal(compact.receiptPath, latestRoundPath);
 });
 
 test('SCOPE-IN-001 compact finalize ignores stale gate-drift receipt for validation blockers', (t) => {
