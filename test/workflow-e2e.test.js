@@ -749,6 +749,17 @@ test('begin-fix retry fails closed for fix-report-mismatch non-target mutation',
   assertManifestPhase(state.start.manifestPath, 'blocked', 'fix');
 });
 
+test('begin-fix retry fails closed for fix-report-mismatch target mutation', async (t) => {
+  const state = await reachFixReportMismatchBlock(t);
+  fs.writeFileSync(state.fixture.target, fixedTargetBody('Tampered after the failed end-fix released the lease.'));
+
+  const retry = await retryBeginFix(state);
+
+  assertBlockedRetry(retry, 'unexpected-worktree-change');
+  assertManifestPhase(state.start.manifestPath, 'blocked', 'fix');
+  assert.equal(readLease({ projectRoot: state.fixture.root, targetKey: state.start.targetKey }), null);
+});
+
 test('begin-fix retry fails closed for fix-report-mismatch target-only guard unavailable', async (t) => {
   const state = await reachFixReportMismatchBlock(t, { guardMode: 'snapshot' });
   const report = readJsonReport(state.baselinePath);
