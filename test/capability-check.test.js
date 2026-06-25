@@ -935,6 +935,42 @@ test('install preflights the new plan before uninstalling the previous install',
   assert.equal(fs.readFileSync(path.join(blockedRoute, 'SKILL.md'), 'utf8'), '# user-owned skill\n');
 });
 
+test('install restores the previous install when reinstall fails after uninstall', async (t) => {
+  const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
+  await installPlatforms({ homeDir, platformRoots, cwd, packageVersion: PACKAGE_VERSION, platforms: ['codex'] });
+
+  const oldRoute = path.join(platformRoots.codexSkills, 'review-fix-spec');
+  const oldRouteSkill = path.join(oldRoute, 'SKILL.md');
+  const manifestPath = manifestPathForPlatform('codex', { homeDir });
+  const descriptorPath = path.join(homeDir, '.drfx', 'capabilities', 'codex.json');
+  const beforeManifest = fs.readFileSync(manifestPath, 'utf8');
+  const beforeDescriptor = fs.readFileSync(descriptorPath, 'utf8');
+  const beforeSkill = fs.readFileSync(oldRouteSkill, 'utf8');
+  let failed = false;
+
+  await assert.rejects(
+    () =>
+      installPlatforms({
+        homeDir,
+        platformRoots,
+        cwd,
+        packageVersion: PACKAGE_VERSION,
+        platforms: ['codex'],
+        _onBeforeReplaceGeneratedDirectory: () => {
+          if (!failed) {
+            failed = true;
+            throw new Error('simulated generated directory write failure');
+          }
+        }
+      }),
+    /simulated generated directory write failure/
+  );
+
+  assert.equal(fs.readFileSync(oldRouteSkill, 'utf8'), beforeSkill, 'previous route restored');
+  assert.equal(fs.readFileSync(manifestPath, 'utf8'), beforeManifest, 'previous manifest restored');
+  assert.equal(fs.readFileSync(descriptorPath, 'utf8'), beforeDescriptor, 'previous descriptor restored');
+});
+
 test('install refuses symlink targets', async (t) => {
   const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
   const target = path.join(homeDir, 'user-command.md');
