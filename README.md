@@ -290,6 +290,10 @@ Code routes (`review-fix-pr`, `review-fix-code`) on Gemini are advisory-only: `r
 
 Default output is designed to be short and usable by another AI agent.
 
+Generated routes call `drfx workflow` with `--json=compact` for automated continuation. Compact JSON is the generated-route default: it keeps status, `nextAction`, state/report/context artifact paths, and other continuation fields, while omitting debug-only bodies such as `contextPackSkeleton`, raw prompts, transcripts, logs, and target bodies. For operator and debug CLI use, `drfx workflow ... --json` and `drfx workflow ... --json=full` produce the full JSON shape. Use `drfx workflow ... --json=compact` directly when you want the smaller continuation-safe shape.
+
+Full JSON and debug output are diagnostic surfaces. `--json=full` exposes redacted artifact paths such as target state directories, manifests, ledgers, reports, guard reports, locks, and context artifacts so you can inspect those files on disk. `debug` prints redacted workflow audit details, blocker codes, runtime probe status, and relevant artifact paths. Neither surface should include raw target bodies, raw prompts, subagent transcripts, secrets, or unredacted sensitive logs.
+
 Clean read-only review:
 
 ```text
@@ -511,6 +515,12 @@ Guard blocker wording:
 - `rollback-unavailable`: the target lacks a clean rollback anchor. Commit or restore the target, rerun read-only, or use `guard=snapshot` when Git rollback is unavailable.
 - `target-only-guard-unavailable`: the target-only guard is unavailable or unparseable. Restore guard inputs or rerun after guard data can be read.
 - `unexpected-worktree-change`: non-target worktree changes make automatic fixing unsafe. Commit, stash, or restore unrelated changes before retrying.
+
+`Blocked: fix-report-mismatch.`
+
+The submitted fix report did not match the required schema. When the document workflow is blocked in the fix phase with blocking reason `fix-report-mismatch`, `begin-fix` may perform a safe retry: it reuses the original passed guard baseline, verifies references and target-only guard results, reacquires the lock, and returns `nextAction: retry end-fix with a valid fix report`. This safe retry is only a report-resubmission path; it does not increment `fixAttemptCount` or `currentRound`, does not mark issues fixed, and a corrected `end-fix` still advances to diff-review instead of PASS.
+
+If safe retry is refused, use recovery instead: resolve the reported blocker and retry, use `reset` to archive the state and start fresh, or perform manual recovery when the target or state needs human repair. `reset` and manual recovery are broader recovery tools, not substitutes for safe retry when the existing state is still eligible.
 
 `Blocked: state-validation-failed.`
 

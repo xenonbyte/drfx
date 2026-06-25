@@ -330,6 +330,37 @@ test('both READMEs include an explicit resume example for code routes', () => {
   assert.match(zh, /review-fix-(?:pr|code)[\s\S]{0,600}resume/);
 });
 
+test('both READMEs document workflow compact and full JSON modes', () => {
+  const en = read('README.md');
+  const zh = read('README.zh-CN.md');
+  for (const literal of ['drfx workflow', '--json', '--json=full', '--json=compact']) {
+    assert.match(en, new RegExp(escapeRegExp(literal)), `README.md missing literal: ${literal}`);
+    assert.match(zh, new RegExp(escapeRegExp(literal)), `README.zh-CN.md missing literal: ${literal}`);
+  }
+  assert.match(en, /generated routes[\s\S]{0,300}`--json=compact`|`--json=compact`[\s\S]{0,300}generated routes/i);
+  assert.match(zh, /generated routes[\s\S]{0,300}`--json=compact`|`--json=compact`[\s\S]{0,300}generated routes/i);
+});
+
+test('both READMEs document full JSON and debug artifact paths for diagnosis', () => {
+  const en = read('README.md');
+  const zh = read('README.zh-CN.md');
+  assert.match(en, /`--json=full`[\s\S]{0,400}artifact paths|artifact paths[\s\S]{0,400}`--json=full`/i);
+  assert.match(zh, /`--json=full`[\s\S]{0,400}artifact paths|artifact paths[\s\S]{0,400}`--json=full`/i);
+  assert.match(en, /`debug`[\s\S]{0,400}artifact paths|artifact paths[\s\S]{0,400}`debug`/i);
+  assert.match(zh, /`debug`[\s\S]{0,400}artifact paths|artifact paths[\s\S]{0,400}`debug`/i);
+});
+
+test('both READMEs distinguish safe fix-report-mismatch retry from reset and manual recovery', () => {
+  const en = read('README.md');
+  const zh = read('README.zh-CN.md');
+  for (const literal of ['fix-report-mismatch', 'retry end-fix with a valid fix report', 'reset']) {
+    assert.match(en, new RegExp(escapeRegExp(literal)), `README.md missing literal: ${literal}`);
+    assert.match(zh, new RegExp(escapeRegExp(literal)), `README.zh-CN.md missing literal: ${literal}`);
+  }
+  assert.match(en, /safe retry[\s\S]{0,500}manual recovery|manual recovery[\s\S]{0,500}safe retry/i);
+  assert.match(zh, /safe retry[\s\S]{0,500}manual recovery|manual recovery[\s\S]{0,500}safe retry/i);
+});
+
 // ---------------------------------------------------------------------------
 // Section-level alignment: both files must have the same ## and ### headings
 // ---------------------------------------------------------------------------
@@ -365,6 +396,9 @@ test('critical technical literals are identical in both READMEs', () => {
     'read-only',
     'review-and-fix',
     '.drfxignore',
+    '--json=full',
+    '--json=compact',
+    'fix-report-mismatch',
     '~/.drfx/rules/PR.md',
     '~/.drfx/rules/CODE.md',
     '.drfx/rules/PR.md',

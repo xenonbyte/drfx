@@ -289,6 +289,10 @@ Code routes（`review-fix-pr`、`review-fix-code`）在 Gemini 上为 advisory-o
 
 默认输出设计为简短，并且方便另一个 AI agent 使用。
 
+Generated routes 会在自动续跑时调用带 `--json=compact` 的 `drfx workflow`。Compact JSON 是 generated-route default：它保留 status、`nextAction`、state/report/context artifact paths 和其他 continuation fields，同时省略 `contextPackSkeleton`、raw prompts、transcripts、logs、target bodies 等 debug-only bodies。面向 operator 和 debug CLI 使用时，`drfx workflow ... --json` 与 `drfx workflow ... --json=full` 输出 full JSON shape。需要更小且可安全续跑的 shape 时，可直接使用 `drfx workflow ... --json=compact`。
+
+Full JSON 和 debug output 是诊断入口。`--json=full` 会暴露 redacted artifact paths，例如 target state directories、manifests、ledgers、reports、guard reports、locks 和 context artifacts，便于在磁盘上检查这些文件。`debug` 会打印 redacted workflow audit details、blocker codes、runtime probe status 和相关 artifact paths。两者都不应包含 raw target bodies、raw prompts、subagent transcripts、secrets 或 unredacted sensitive logs。
+
 Clean read-only review:
 
 ```text
@@ -510,6 +514,12 @@ Guard blocker wording:
 - `rollback-unavailable`: target 缺少 clean rollback anchor。Commit 或 restore target，重跑 read-only，或在 Git rollback 不可用时使用 `guard=snapshot`。
 - `target-only-guard-unavailable`: target-only guard 不可用或无法解析。恢复 guard inputs，或在 guard data 可读取后重跑。
 - `unexpected-worktree-change`: non-target worktree changes 让自动修复不安全。Commit、stash 或 restore unrelated changes 后重试。
+
+`Blocked: fix-report-mismatch.`
+
+提交的 fix report 不符合所需 schema。当 document workflow 在 fix phase 以 blocking reason `fix-report-mismatch` 阻断时，`begin-fix` 可以执行 safe retry：它复用原先通过的 guard baseline，验证 references 和 target-only guard results，重新获取 lock，并返回 `nextAction: retry end-fix with a valid fix report`。这个 safe retry 只是 report-resubmission path；它不会递增 `fixAttemptCount` 或 `currentRound`，不会把 issues 标记为 fixed，并且修正后的 `end-fix` 仍然进入 diff-review，而不是 PASS。
+
+如果 safe retry 被拒绝，请改用 recovery：解决报告的 blocker 后重试，使用 `reset` 归档 state 并重新开始，或在 target/state 需要人工修复时执行 manual recovery。`reset` 和 manual recovery 是更宽泛的 recovery tools；当现有 state 仍符合条件时，它们不是 safe retry 的替代品。
 
 `Blocked: state-validation-failed.`
 
