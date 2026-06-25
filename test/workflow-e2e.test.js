@@ -261,6 +261,31 @@ function fixedTargetBody(body = 'The document now states the expected behavior d
   ].join('\n');
 }
 
+function writePriorFixBlockedReceipt(targetStateDir, blockingReason) {
+  const roundsDir = path.join(targetStateDir, 'rounds');
+  fs.mkdirSync(roundsDir, { recursive: true });
+  fs.writeFileSync(path.join(roundsDir, '001-fix-blocked.md'), [
+    '# Round 001 Fix-blocked Receipt',
+    '',
+    '- Round: 1',
+    '- Kind: fix-blocked',
+    '- Status: blocked',
+    '- Target: docs/practical-target.md',
+    '- Issue IDs: none',
+    '- Files changed: none',
+    '- Verification: none',
+    `- Blocking reason: ${blockingReason}`,
+    '- Status reason: none',
+    '',
+    '## Summary',
+    'prior same-round blocker',
+    '',
+    '## Next Action',
+    'retry begin-fix',
+    ''
+  ].join('\n'));
+}
+
 async function reachFixReportMismatchBlock(t, options = {}) {
   const fixture = makeWorkflowRepo(t);
   const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', {
@@ -291,6 +316,9 @@ async function reachFixReportMismatchBlock(t, options = {}) {
   const beforeBlockLedger = parseLedger(fs.readFileSync(start.ledgerPath, 'utf8'));
 
   fs.writeFileSync(fixture.target, fixedTargetBody(options.targetBody));
+  if (options.priorFixBlockedReceipt) {
+    writePriorFixBlockedReceipt(start.targetStateDir, options.priorFixBlockedReceipt);
+  }
   const blocked = await runWorkflowCommand('end-fix', [
     start.targetStateDir,
     '--fix-report-stdin',
@@ -560,6 +588,22 @@ test('document end-fix accepts optional Verification in the fix report', async (
   assertFileExists(endFix.fixReportPath);
   const normalizedReport = fs.readFileSync(endFix.fixReportPath, 'utf8');
   assert.match(normalizedReport, /"verification": \[\n\s+"node --test test\/workflow-e2e\.test\.js: passed"\n\s+\]/);
+});
+
+test('fix-report-mismatch begin-fix retry accepts a mismatch receipt written to an attempt path', async (t) => {
+  const state = await reachFixReportMismatchBlock(t, {
+    priorFixBlockedReceipt: 'target-only-guard-unavailable'
+  });
+  const attemptReceiptPath = path.join(state.start.targetStateDir, 'rounds', '001-fix-blocked-attempt-001.md');
+  assertFileExists(attemptReceiptPath);
+  assert.match(fs.readFileSync(attemptReceiptPath, 'utf8'), /Blocking reason: fix-report-mismatch/);
+
+  const retry = await retryBeginFix(state);
+
+  assert.equal(retry.ok, true, JSON.stringify(retry));
+  assert.equal(retry.status, 'begin-fix');
+  assert.equal(retry.nextAction, 'retry end-fix with a valid fix report');
+  assert.equal(retry.fixGuardReportPath, state.baselinePath);
 });
 
 test('fix-report-mismatch begin-fix retry reuses original guard baseline and returns only to diff-review', async (t) => {
