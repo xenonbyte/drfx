@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.1 - 2026-06-25
+
+Fixes a crash in the partitioned-review `aggregate-review` command when the target-state manifest is unreadable.
+
+### Fixed
+
+- **`aggregate-review` no longer throws on an unreadable target-state manifest.** `runAggregateReview` was the only `resolveFileSetStateMetadata` caller that did not guard the lookup, so a missing or corrupt `MANIFEST.md` crashed the command instead of returning a result. It now maps the failure through `stateValidationResult`, returning a structured `blocked` result (`blockingReason: state-validation-failed`) like every other state-directory command (`lib/workflow/partitioned-review.js`).
+
 ## 0.9.0 - 2026-06-25
 
 Adds a compact JSON output mode — now the generated-route default — for token-lean automated continuation, reworks `drfx install` into a clean reinstall with full rollback, and renames the seventh route to `review-fix-r2p`.
