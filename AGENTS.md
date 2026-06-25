@@ -23,6 +23,7 @@ This repository is a Node.js 20 CommonJS package for installing document and cod
 - `node bin/drfx.js status` reports which generated routes are installed per platform.
 - `node bin/drfx.js install [--platform claude,codex,gemini,opencode]` installs generated routes for local manual testing (`--platform` is optional; omit it for all platforms).
 - `node bin/drfx.js uninstall [--platform claude,codex,gemini,opencode]` removes manifest-owned generated routes.
+- `install` is a clean reinstall, not in-place overwrite: it uninstalls the previous manifest-owned install before writing the new plan (so renamed/dropped routes don't orphan), preflights every requested platform before touching any, and restores the prior install from the captured rollback if the reinstall fails (`lib/install.js`).
 - `npm pack --dry-run` verifies package contents before publishing or release checks.
 
 CI (`.github/workflows/ci.yml`) runs `npm run syntaxcheck` and `npm test` on Node 20, 22, and 24 for pushes to `main` and pull requests.
