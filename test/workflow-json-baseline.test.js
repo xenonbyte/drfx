@@ -7,7 +7,12 @@ const path = require('node:path');
 const { execFileSync, spawnSync } = require('node:child_process');
 const test = require('node:test');
 
-const { formatWorkflowJson, runWorkflowCommand } = require('../lib/workflow');
+const {
+  formatWorkflowJson,
+  runWorkflowCommand,
+  FULL_OUTPUT_FIELD_PURPOSES: PRODUCTION_FIELD_PURPOSES,
+  COMPACT_ALLOWLIST_MATRIX: PRODUCTION_COMPACT_ALLOWLIST_MATRIX
+} = require('../lib/workflow');
 
 const FIXTURE_PATH = path.join(__dirname, 'fixtures', 'workflow-json', 'start-snapshot.json');
 const BIN = path.join(__dirname, '..', 'bin', 'drfx.js');
@@ -33,6 +38,7 @@ const REQUIRED_COMPACT_ALLOWLIST_ROWS = [
   ['partitioned', 'unit-review'],
   ['partitioned', 'crosscutting'],
   ['partitioned', 'aggregate'],
+  ['no-state', 'partitioned-context'],
   ['no-state', 'preflight'],
   ['no-state', 'context'],
   ['no-state', 'record-review'],
@@ -105,8 +111,8 @@ const FULL_OUTPUT_FIELD_PURPOSES = new Map([
   ['reviewerReportPath', 'path readable'],
   ['unitCount', 'user status'],
   ['unitByteBudget', 'user status'],
-  ['units', 'debug only'],
-  ['projectReviewFingerprint', 'debug only'],
+  ['units', 'stdout required'],
+  ['projectReviewFingerprint', 'stdout required'],
   ['unitId', 'stdout required'],
   ['oversize', 'user status'],
   ['reused', 'user status'],
@@ -178,14 +184,17 @@ const PARTITION_PLAN_FIELDS = [
   'crosscuttingBackstops'
 ];
 const PARTITION_UNIT_FIELDS = ['reused'];
+const NO_STATE_PARTITION_PLAN_FIELDS = [
+  ...PARTITION_PLAN_FIELDS,
+  'units',
+  'projectReviewFingerprint'
+];
 const NO_STATE_TOKEN_FIELDS = ['reviewGuard', 'stateToken'];
 const DEBUG_ONLY_FULL_FIELDS_OMITTED_FROM_COMPACT_MATRIX = new Set([
   'runtimeCheck',
   'contextPackSkeleton',
   'userExcludes',
   'scopeIgnoreOverrides',
-  'units',
-  'projectReviewFingerprint',
   'summaries',
   'coverageProof'
 ]);
@@ -374,6 +383,11 @@ const COMPACT_ALLOWLIST_MATRIX = [
     'aggregatePath',
     'uncoveredUnitIds',
     'uncoveredBackstops'
+  ]),
+  compactRow('no-state', 'partitioned-context', [
+    ...STATUS_COMPACT_FIELDS,
+    ...WORKFLOW_IDENTITY_COMPACT_FIELDS,
+    ...NO_STATE_PARTITION_PLAN_FIELDS
   ]),
   compactRow('no-state', 'preflight', [...STATUS_COMPACT_FIELDS, ...NO_STATE_TOKEN_FIELDS]),
   compactRow('no-state', 'context', [...STATUS_COMPACT_FIELDS, ...STATE_CONTEXT_FIELDS, ...NO_STATE_TOKEN_FIELDS]),
@@ -714,6 +728,45 @@ test('SCOPE-IN-001 compact formatter matrix classifies every route-automated ful
   }
 });
 
+// No-state (advisory) partitioned context has no manifest to persist the partition plan,
+// so it is the ONLY compact row allowed to carry the large `units` array and the
+// `projectReviewFingerprint`. State-backed partitioned context reads them from the
+// manifest. This invariant locks the widening to that single row so a future edit cannot
+// silently leak the full unit plan into every partitioned/file-set/state compact output.
+test('SCOPE-IN-001 units and projectReviewFingerprint are compact-allowlisted for no-state partitioned context ONLY', () => {
+  for (const field of ['units', 'projectReviewFingerprint']) {
+    const rowsWithField = COMPACT_ALLOWLIST_MATRIX
+      .filter((row) => row.fields.includes(field))
+      .map((row) => `${row.scope}:${row.command}`);
+    assert.deepEqual(
+      rowsWithField,
+      ['no-state:partitioned-context'],
+      `${field} must appear in exactly the no-state:partitioned-context compact row, not ${rowsWithField.join(', ') || 'none'}`
+    );
+  }
+});
+
+// This file keeps an independent spec copy of the field-purpose classification and the
+// compact allowlist matrix so reviewers must look at both sides when either changes.
+// These parity assertions anchor that copy to the production source of truth in
+// lib/workflow/index.js: if production drifts from the spec (or vice versa), the diff is
+// forced into this file instead of passing silently against a stale local copy.
+test('SCOPE-IN-001 test field-purpose spec matches the production source of truth', () => {
+  assert.deepEqual(
+    FULL_OUTPUT_FIELD_PURPOSES,
+    PRODUCTION_FIELD_PURPOSES,
+    'test FULL_OUTPUT_FIELD_PURPOSES drifted from lib/workflow/index.js — sync both sides intentionally'
+  );
+});
+
+test('SCOPE-IN-001 test compact allowlist matrix matches the production source of truth', () => {
+  assert.deepEqual(
+    COMPACT_ALLOWLIST_MATRIX,
+    PRODUCTION_COMPACT_ALLOWLIST_MATRIX,
+    'test COMPACT_ALLOWLIST_MATRIX drifted from lib/workflow/index.js — sync both sides intentionally'
+  );
+});
+
 test('SCOPE-IN-001 compact context output keeps paths and omits skeleton bodies', async (t) => {
   const fixture = freshRouteFixture(t);
   const args = routeArgs({ jsonMode: 'bare', root: fixture.root, target: fixture.target });
@@ -774,12 +827,50 @@ test('SCOPE-IN-001 compact no-state partitioned context keeps partition plan fie
   assert.equal(compact.reviewMode, 'partitioned');
   assert.equal(compact.unitCount, 2);
   assert.equal(compact.unitByteBudget, 128000);
+  assert.deepEqual(compact.units, [{ unit_id: 'unit-001' }, { unit_id: 'unit-002' }]);
   assert.deepEqual(compact.crosscuttingBackstops, ['security-redaction']);
-  assert.equal(compact.units, undefined);
-  assert.equal(compact.projectReviewFingerprint, undefined);
+  assert.equal(compact.projectReviewFingerprint, 'project-fingerprint');
   assert.equal(compact.userExcludes, undefined);
   assert.equal(compact.runtimeCheck, undefined);
   assert.equal(compact.contextPackSkeleton, undefined);
+});
+
+test('SCOPE-IN-001 compact finalize prefers PASS summary over stale round receipts', (t) => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-final-pass-artifact-'));
+  t.after(() => fs.rmSync(stateDir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(stateDir, 'rounds'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'rounds', '001-fix-blocked.md'), '# stale fix blocker\n');
+  const summaryPath = path.join(stateDir, 'SUMMARY.md');
+  fs.writeFileSync(summaryPath, '# Final summary\n');
+
+  const compact = JSON.parse(formatWorkflowJson({
+    ok: true,
+    status: 'pass',
+    targetStateDir: stateDir,
+    finalResponse: { finalStatus: 'pass' },
+    fixedIssueIds: ['ISSUE-001']
+  }, { mode: 'compact', subcommand: 'finalize' }));
+
+  assert.equal(compact.receiptPath, summaryPath);
+});
+
+test('SCOPE-IN-001 compact finalize prefers matching final receipt over stale later-sorting receipts', (t) => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-final-receipt-artifact-'));
+  t.after(() => fs.rmSync(stateDir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(stateDir, 'rounds'), { recursive: true });
+  const finalReceiptPath = path.join(stateDir, 'rounds', '001-final-blocked.md');
+  fs.writeFileSync(finalReceiptPath, '# final blocker\n');
+  fs.writeFileSync(path.join(stateDir, 'rounds', '001-fix-applied.md'), '# stale fix receipt\n');
+  fs.writeFileSync(path.join(stateDir, 'SUMMARY.md'), '# Final summary\n');
+
+  const compact = JSON.parse(formatWorkflowJson({
+    ok: false,
+    status: 'blocked',
+    targetStateDir: stateDir,
+    finalResponse: { finalStatus: 'blocked' }
+  }, { mode: 'compact', subcommand: 'finalize' }));
+
+  assert.equal(compact.receiptPath, finalReceiptPath);
 });
 
 test('SCOPE-IN-004 compact partitioned context output stays within the full-output byte ratio budget', () => {
