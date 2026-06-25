@@ -164,7 +164,7 @@ Only the exact single line means ready. Map failures exactly:
 
 Explicit `assurance=advisory read-only` skips the subagent probe and passes `--runtime-subagent-probe not-required --runtime-downgrade-reason none`.
 
-Before any semantic payload command, prove real stdin handoff: start the command as a process/session, obtain a stdin handle, write payload bytes, send EOF, and read exit code plus stdout/stderr. On failure, fail closed as `unsafe-handoff-file` before semantic handoff. Do not use shell pipes, heredocs, herestrings, command substitution, argv, environment variables, env vars, or raw temp files for semantic payloads.
+Before any semantic payload command, prove real stdin handoff: start the command as a process/session, obtain a stdin handle, write payload bytes, send EOF, and read exit code plus stdout/stderr. On failure, fail closed as `unsafe-handoff-file` before semantic handoff. Do not use shell pipes, heredocs, herestrings, command substitution, argv, environment variables, env vars, or raw temp files for semantic payloads; the one permitted file channel is the workflow-validated safe OS-temp `--payload-file` used for partitioned coverage receipts.
 
 Fingerprint guard failure is not a downgrade path. If workflow start or context reports `fingerprint-guard-unavailable` or `fingerprint-guard-output-invalid`, stop on that blocker, do not rerun a no-guard advisory flow, and do not edit the target.
 

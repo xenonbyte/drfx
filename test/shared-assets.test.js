@@ -59,84 +59,84 @@ const GENERATED_SHELL_BASELINE_BYTES = Object.freeze({
 const CODEX_SHARED_DEDUP_EXPECTED_MEASUREMENT = Object.freeze({
   routes: Object.freeze({
     'review-fix-spec': Object.freeze({
-      routeBytes: 81265,
+      routeBytes: 81392,
       embeddedSharedBytes: 59197,
       copiedSharedBytes: 58899,
       duplicateBytes: 58899,
-      copiedRouteBytes: 23274,
+      copiedRouteBytes: 23401,
       shrinkBytes: 57991,
-      shrinkPercent: 71.36,
+      shrinkPercent: 71.25,
       wouldGrow: false
     }),
     'review-fix-plan': Object.freeze({
-      routeBytes: 81573,
+      routeBytes: 81700,
       embeddedSharedBytes: 59505,
       copiedSharedBytes: 59207,
       duplicateBytes: 59207,
-      copiedRouteBytes: 23274,
+      copiedRouteBytes: 23401,
       shrinkBytes: 58299,
-      shrinkPercent: 71.47,
+      shrinkPercent: 71.36,
       wouldGrow: false
     }),
     'review-fix-design': Object.freeze({
-      routeBytes: 81375,
+      routeBytes: 81502,
       embeddedSharedBytes: 59259,
       copiedSharedBytes: 58959,
       duplicateBytes: 58959,
-      copiedRouteBytes: 23324,
+      copiedRouteBytes: 23451,
       shrinkBytes: 58051,
-      shrinkPercent: 71.34,
+      shrinkPercent: 71.23,
       wouldGrow: false
     }),
     'review-fix-doc': Object.freeze({
-      routeBytes: 78072,
+      routeBytes: 78199,
       embeddedSharedBytes: 56019,
       copiedSharedBytes: 55760,
       duplicateBytes: 55760,
-      copiedRouteBytes: 23232,
+      copiedRouteBytes: 23359,
       shrinkBytes: 54840,
-      shrinkPercent: 70.24,
+      shrinkPercent: 70.13,
       wouldGrow: false
     }),
     'review-fix-pr': Object.freeze({
-      routeBytes: 78414,
+      routeBytes: 78541,
       embeddedSharedBytes: 56524,
       copiedSharedBytes: 56269,
       duplicateBytes: 56269,
-      copiedRouteBytes: 23065,
+      copiedRouteBytes: 23192,
       shrinkBytes: 55349,
-      shrinkPercent: 70.59,
+      shrinkPercent: 70.47,
       wouldGrow: false
     }),
     'review-fix-code': Object.freeze({
-      routeBytes: 89399,
+      routeBytes: 89526,
       embeddedSharedBytes: 60124,
       copiedSharedBytes: 59867,
       duplicateBytes: 59867,
-      copiedRouteBytes: 30452,
+      copiedRouteBytes: 30579,
       shrinkBytes: 58947,
-      shrinkPercent: 65.94,
+      shrinkPercent: 65.84,
       wouldGrow: false
     }),
     'review-fix-r2q': Object.freeze({
-      routeBytes: 81508,
+      routeBytes: 81635,
       embeddedSharedBytes: 59505,
       copiedSharedBytes: 59207,
       duplicateBytes: 59207,
-      copiedRouteBytes: 23209,
+      copiedRouteBytes: 23336,
       shrinkBytes: 58299,
-      shrinkPercent: 71.53,
+      shrinkPercent: 71.41,
       wouldGrow: false
     })
   }),
   totals: Object.freeze({
-    routeBytes: 571606,
+    routeBytes: 572495,
     embeddedSharedBytes: 410133,
     copiedSharedBytes: 408168,
     duplicateBytes: 408168
   }),
   largestShellShrinkBytes: 58947,
-  largestShellShrinkPercent: 65.94,
+  largestShellShrinkPercent: 65.84,
   anyCodexRouteWouldGrow: false,
   gateEntered: true
 });
