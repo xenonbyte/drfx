@@ -8,9 +8,9 @@ const { execFileSync } = require('node:child_process');
 const test = require('node:test');
 
 const { parseLedger } = require('../lib/ledger');
-const { readLease } = require('../lib/lock');
+const { acquireLock, readLease } = require('../lib/lock');
 const { runWorkflowCommand } = require('../lib/workflow');
-const { parseManifestV2 } = require('../lib/workflow-state');
+const { formatManifestV2, parseManifestV2 } = require('../lib/workflow-state');
 
 const FIXTURE_ROOT = path.join(__dirname, 'fixtures', 'workflow');
 
@@ -85,6 +85,7 @@ const FIX_REPORT_WITH_VERIFICATION = [
   'Residual risk:',
   '- none identified'
 ].join('\n');
+const INVALID_FIX_REPORT = 'this is not a normalized fix report';
 
 const DIFF_OK = 'DIFF-OK\nSummary: Target-only edit addresses ISSUE-001.\n';
 const DIFF_FAIL = [
@@ -214,6 +215,28 @@ function manifestAt(manifestPath) {
   return parseManifestV2(fs.readFileSync(manifestPath, 'utf8'));
 }
 
+function writeManifest(manifestPath, mutator) {
+  const manifest = manifestAt(manifestPath);
+  const next = mutator({ ...manifest });
+  fs.writeFileSync(manifestPath, formatManifestV2(next));
+  return manifestAt(manifestPath);
+}
+
+function readJsonReport(reportPath) {
+  const text = fs.readFileSync(reportPath, 'utf8');
+  const match = text.match(/```json\n([\s\S]*?)\n```/);
+  assert.ok(match, `missing json block in ${reportPath}`);
+  return JSON.parse(match[1]);
+}
+
+function writeJsonReport(reportPath, report) {
+  const text = fs.readFileSync(reportPath, 'utf8');
+  fs.writeFileSync(
+    reportPath,
+    text.replace(/```json\n[\s\S]*?\n```/, '```json\n' + JSON.stringify(report, null, 2) + '\n```')
+  );
+}
+
 function assertManifestPhase(manifestPath, status, currentPhase) {
   const manifest = manifestAt(manifestPath);
   assert.equal(manifest.status, status);
@@ -223,6 +246,85 @@ function assertManifestPhase(manifestPath, status, currentPhase) {
 
 function assertFileExists(filePath) {
   assert.equal(fs.existsSync(filePath), true, filePath);
+}
+
+function fixedTargetBody(body = 'The document now states the expected behavior directly for implementers.') {
+  return [
+    '# Practical Workflow Target',
+    '',
+    body,
+    '',
+    '## Acceptance',
+    '',
+    '- The final wording names the expected behavior.',
+    ''
+  ].join('\n');
+}
+
+async function reachFixReportMismatchBlock(t, options = {}) {
+  const fixture = makeWorkflowRepo(t);
+  const startArgs = workflowStartArgs(fixture, 'review-and-fix', 'practical', 'codex', {
+    guardMode: options.guardMode || 'git'
+  });
+  const opts = (overrides = {}) => workflowOptions(fixture, {
+    now: new Date('2026-05-21T00:00:00.000Z'),
+    ...overrides
+  });
+  const start = await runWorkflowCommand('start', startArgs, workflowOptions(fixture));
+  assert.equal(start.ok, true, JSON.stringify(start));
+  await runWorkflowCommand('context', startArgs, workflowOptions(fixture));
+  await runWorkflowCommand('record-review', [
+    ...startArgs,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], workflowOptions(fixture, { stdin: REVIEW_FAIL }));
+  await runWorkflowCommand('record-triage', [
+    ...startArgs,
+    '--triage-stdin'
+  ], workflowOptions(fixture, { stdin: TRIAGE_ACCEPT }));
+
+  const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], opts());
+  assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
+  const baselinePath = beginFix.fixGuardReportPath;
+  const beforeBlockManifest = manifestAt(start.manifestPath);
+  const beforeBlockLedger = parseLedger(fs.readFileSync(start.ledgerPath, 'utf8'));
+
+  fs.writeFileSync(fixture.target, fixedTargetBody(options.targetBody));
+  const blocked = await runWorkflowCommand('end-fix', [
+    start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], workflowOptions(fixture, { stdin: INVALID_FIX_REPORT }));
+
+  assert.equal(blocked.ok, false, JSON.stringify(blocked));
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.blockingReason, 'fix-report-mismatch');
+  assert.doesNotMatch(JSON.stringify(blocked), /this is not a normalized fix report/);
+  assert.equal(readLease({ projectRoot: fixture.root, targetKey: start.targetKey }), null);
+
+  return {
+    fixture,
+    start,
+    startArgs,
+    opts,
+    beginFix,
+    baselinePath,
+    beforeBlockManifest,
+    beforeBlockLedger,
+    blocked
+  };
+}
+
+async function retryBeginFix(state) {
+  return runWorkflowCommand('begin-fix', [state.start.targetStateDir, '--json'], state.opts());
+}
+
+function assertBlockedRetry(result, expectedReason) {
+  assert.equal(result.ok, false, JSON.stringify(result));
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, expectedReason);
+  assert.notEqual(result.nextAction, null);
 }
 
 async function reachPersistentPassReady(fixture) {
@@ -458,6 +560,250 @@ test('document end-fix accepts optional Verification in the fix report', async (
   assertFileExists(endFix.fixReportPath);
   const normalizedReport = fs.readFileSync(endFix.fixReportPath, 'utf8');
   assert.match(normalizedReport, /"verification": \[\n\s+"node --test test\/workflow-e2e\.test\.js: passed"\n\s+\]/);
+});
+
+test('fix-report-mismatch begin-fix retry reuses original guard baseline and returns only to diff-review', async (t) => {
+  const state = await reachFixReportMismatchBlock(t);
+  const beforeRetryManifest = manifestAt(state.start.manifestPath);
+  const beforeRetryLedger = parseLedger(fs.readFileSync(state.start.ledgerPath, 'utf8'));
+
+  const retry = await retryBeginFix(state);
+
+  assert.equal(retry.ok, true, JSON.stringify(retry));
+  assert.equal(retry.status, 'begin-fix');
+  assert.equal(retry.nextAction, 'retry end-fix with a valid fix report');
+  assert.equal(retry.fixGuardReportPath, state.baselinePath);
+  assert.notEqual(retry.lockOwnerId, state.beginFix.lockOwnerId);
+  assert.notEqual(readLease({ projectRoot: state.fixture.root, targetKey: state.start.targetKey }), null);
+
+  const afterRetryManifest = assertManifestPhase(state.start.manifestPath, 'fix', 'fix');
+  assert.equal(afterRetryManifest.blockingReason, 'none');
+  assert.equal(Number(afterRetryManifest.fixAttemptCount), Number(beforeRetryManifest.fixAttemptCount));
+  assert.equal(Number(afterRetryManifest.currentRound), Number(beforeRetryManifest.currentRound));
+  assert.equal(afterRetryManifest.currentReportPath, beforeRetryManifest.currentReportPath);
+
+  const afterRetryLedger = parseLedger(fs.readFileSync(state.start.ledgerPath, 'utf8'));
+  assert.deepEqual(afterRetryLedger.issues.map((issue) => [issue.id, issue.status]), [
+    ['ISSUE-001', 'accepted']
+  ]);
+  assert.deepEqual(afterRetryLedger.issues.map((issue) => issue.id), beforeRetryLedger.issues.map((issue) => issue.id));
+  assert.deepEqual(afterRetryLedger.issues.map((issue) => issue.status), beforeRetryLedger.issues.map((issue) => issue.status));
+
+  const correctedEndFix = await runWorkflowCommand('end-fix', [
+    state.start.targetStateDir,
+    '--fix-report-stdin',
+    '--json'
+  ], workflowOptions(state.fixture, { stdin: FIX_REPORT }));
+
+  assert.equal(correctedEndFix.ok, true, JSON.stringify(correctedEndFix));
+  assert.equal(correctedEndFix.status, 'end-fix');
+  const afterEndManifest = assertManifestPhase(state.start.manifestPath, 'diff-review', 'diff-review');
+  assert.notEqual(afterEndManifest.status, 'pass');
+
+  const diff = await runWorkflowCommand('record-diff-review', [
+    state.start.targetStateDir,
+    '--result-stdin',
+    '--json'
+  ], workflowOptions(state.fixture, { stdin: DIFF_OK }));
+  assert.equal(diff.ok, true, JSON.stringify(diff));
+  assertManifestPhase(state.start.manifestPath, 'full-re-review', 'full-re-review');
+
+  await runWorkflowCommand('context', [
+    ...state.startArgs,
+    '--phase',
+    'full-re-review'
+  ], workflowOptions(state.fixture));
+  const fullReview = await runWorkflowCommand('record-review', [
+    ...state.startArgs,
+    '--phase',
+    'full-re-review',
+    '--result-stdin'
+  ], workflowOptions(state.fixture, { stdin: REVIEW_PASS }));
+  assert.equal(fullReview.ok, true, JSON.stringify(fullReview));
+
+  const final = await runWorkflowCommand('finalize', [
+    state.start.targetStateDir,
+    '--final-response-stdin',
+    '--json'
+  ], workflowOptions(state.fixture, { stdin: FINAL_PASS }));
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'pass');
+});
+
+const FIX_REPORT_RETRY_BASELINE_CASES = [
+  {
+    name: 'missing baseline',
+    expectedReason: 'target-only-guard-unavailable',
+    mutate: ({ baselinePath }) => fs.rmSync(baselinePath, { force: true })
+  },
+  {
+    name: 'unparseable baseline',
+    expectedReason: 'target-only-guard-unavailable',
+    mutate: ({ baselinePath }) => fs.writeFileSync(baselinePath, '# Fix Guard Report\n\nnot json\n')
+  },
+  {
+    name: 'failed baseline',
+    expectedReason: 'target-only-guard-unavailable',
+    mutate: ({ baselinePath }) => {
+      const report = readJsonReport(baselinePath);
+      report.status = 'blocked';
+      writeJsonReport(baselinePath, report);
+    }
+  },
+  {
+    name: 'baseline target mismatch',
+    expectedReason: 'target-only-guard-unavailable',
+    mutate: ({ baselinePath }) => {
+      const report = readJsonReport(baselinePath);
+      report.normalizedTarget = 'docs/other.md';
+      writeJsonReport(baselinePath, report);
+    }
+  },
+  {
+    name: 'missing passed rollback anchor',
+    expectedReason: 'target-only-guard-unavailable',
+    mutate: ({ baselinePath }) => {
+      const report = readJsonReport(baselinePath);
+      report.rollbackAnchor = { status: 'blocked', blockingReason: 'rollback-unavailable' };
+      writeJsonReport(baselinePath, report);
+    }
+  },
+  {
+    name: 'missing passed target-only guard result',
+    expectedReason: 'target-only-guard-unavailable',
+    mutate: ({ baselinePath }) => {
+      const report = readJsonReport(baselinePath);
+      report.targetOnlyGuard = { status: 'blocked', blockingReason: 'unexpected-worktree-change' };
+      writeJsonReport(baselinePath, report);
+    }
+  }
+];
+
+for (const entry of FIX_REPORT_RETRY_BASELINE_CASES) {
+  test(`begin-fix retry fails closed for fix-report-mismatch ${entry.name}`, async (t) => {
+    const state = await reachFixReportMismatchBlock(t);
+    const before = manifestAt(state.start.manifestPath);
+    entry.mutate(state);
+
+    const retry = await retryBeginFix(state);
+
+    assertBlockedRetry(retry, entry.expectedReason);
+    const after = assertManifestPhase(state.start.manifestPath, 'blocked', 'fix');
+    assert.equal(after.blockingReason, entry.expectedReason);
+    assert.equal(Number(after.fixAttemptCount), Number(before.fixAttemptCount));
+    assert.equal(Number(after.currentRound), Number(before.currentRound));
+  });
+}
+
+test('begin-fix retry fails closed for fix-report-mismatch reference mutation', async (t) => {
+  const state = await reachFixReportMismatchBlock(t);
+  fs.writeFileSync(state.fixture.reference, '# Reference\n\nTampered during blocked retry.\n');
+
+  const retry = await retryBeginFix(state);
+
+  assertBlockedRetry(retry, 'reference-mutated-file');
+  assertManifestPhase(state.start.manifestPath, 'blocked', 'fix');
+});
+
+test('begin-fix retry fails closed for fix-report-mismatch non-target mutation', async (t) => {
+  const state = await reachFixReportMismatchBlock(t);
+  fs.writeFileSync(path.join(state.fixture.root, 'docs', 'unrelated.md'), '# Unrelated\n');
+
+  const retry = await retryBeginFix(state);
+
+  assertBlockedRetry(retry, 'unexpected-worktree-change');
+  assertManifestPhase(state.start.manifestPath, 'blocked', 'fix');
+});
+
+test('begin-fix retry fails closed for fix-report-mismatch target-only guard unavailable', async (t) => {
+  const state = await reachFixReportMismatchBlock(t, { guardMode: 'snapshot' });
+  const report = readJsonReport(state.baselinePath);
+  delete report.targetOnlyGuard.entries;
+  writeJsonReport(state.baselinePath, report);
+
+  const retry = await retryBeginFix(state);
+
+  assertBlockedRetry(retry, 'target-only-guard-unavailable');
+  assertManifestPhase(state.start.manifestPath, 'blocked', 'fix');
+});
+
+test('begin-fix retry preserves fix counters and ledger before corrected end-fix', async (t) => {
+  const state = await reachFixReportMismatchBlock(t);
+  const beforeManifest = manifestAt(state.start.manifestPath);
+  const beforeLedger = parseLedger(fs.readFileSync(state.start.ledgerPath, 'utf8'));
+
+  const retry = await retryBeginFix(state);
+
+  assert.equal(retry.ok, true, JSON.stringify(retry));
+  const afterManifest = manifestAt(state.start.manifestPath);
+  const afterLedger = parseLedger(fs.readFileSync(state.start.ledgerPath, 'utf8'));
+  assert.equal(Number(afterManifest.fixAttemptCount), Number(state.beforeBlockManifest.fixAttemptCount));
+  assert.equal(Number(afterManifest.fixAttemptCount), Number(beforeManifest.fixAttemptCount));
+  assert.equal(Number(afterManifest.currentRound), Number(beforeManifest.currentRound));
+  assert.deepEqual(afterLedger.issues.map((issue) => issue.id), beforeLedger.issues.map((issue) => issue.id));
+  assert.deepEqual(afterLedger.issues.map((issue) => issue.status), ['accepted']);
+  assert.deepEqual(afterLedger.issues.map((issue) => issue.status), state.beforeBlockLedger.issues.map((issue) => issue.status));
+});
+
+test('begin-fix retry fails closed when lock reacquisition fails after fix-report-mismatch', async (t) => {
+  const state = await reachFixReportMismatchBlock(t);
+  acquireLock({
+    projectRoot: state.fixture.root,
+    targetKey: state.start.targetKey,
+    targetPath: state.fixture.target,
+    ownerId: 'external-owner',
+    now: new Date('2026-05-21T00:01:00.000Z'),
+    manifest: manifestAt(state.start.manifestPath)
+  });
+
+  const retry = await retryBeginFix(state);
+
+  assertBlockedRetry(retry, 'lock-held');
+  assertManifestPhase(state.start.manifestPath, 'blocked', 'fix');
+  const lease = readLease({ projectRoot: state.fixture.root, targetKey: state.start.targetKey });
+  assert.equal(lease.ownerId, 'external-owner');
+});
+
+test('begin-fix retry is unavailable for non-retryable fix-report-mismatch manifest states', async (t) => {
+  const cases = [
+    {
+      name: 'non-retryable status',
+      mutate: (manifest) => ({
+        ...manifest,
+        status: 'review',
+        currentPhase: 'review',
+        blockingReason: 'none'
+      })
+    },
+    {
+      name: 'wrong currentPhase',
+      mutate: (manifest) => ({ ...manifest, currentPhase: 'diff-review' })
+    },
+    {
+      name: 'wrong blockingReason',
+      mutate: (manifest) => ({ ...manifest, blockingReason: 'diff-review-failed' })
+    },
+    {
+      name: 'missing immediately preceding invalid end-fix receipt',
+      mutate: (manifest, state) => {
+        fs.rmSync(path.join(state.start.targetStateDir, 'rounds', '001-fix-blocked.md'), { force: true });
+        return manifest;
+      }
+    }
+  ];
+
+  for (const entry of cases) {
+    await t.test(entry.name, async () => {
+      const state = await reachFixReportMismatchBlock(t);
+      writeManifest(state.start.manifestPath, (manifest) => entry.mutate(manifest, state));
+
+      const retry = await retryBeginFix(state);
+
+      assert.equal(retry.ok, false, JSON.stringify(retry));
+      assert.notEqual(retry.nextAction, 'retry end-fix with a valid fix report');
+      assert.equal(readLease({ projectRoot: state.fixture.root, targetKey: state.start.targetKey }), null);
+    });
+  }
 });
 
 test('persistent finalize refuses a symlinked archive root and reports repair action', async (t) => {
