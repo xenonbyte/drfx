@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -853,6 +854,52 @@ test('install backs up existing Claude and Gemini files and records overwritten 
     assert.equal(fs.readFileSync(backup.backupPath, 'utf8'), original, platform);
     assert.notEqual(fs.readFileSync(route, 'utf8'), original, platform);
   }
+});
+
+function sha256OfFile(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+test('install uninstalls the previous install first so routes dropped from the new plan are not orphaned', async (t) => {
+  const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
+  await installPlatforms({ homeDir, platformRoots, cwd, packageVersion: PACKAGE_VERSION, platforms: ['claude'] });
+  const realRoute = path.join(platformRoots.claude, 'review-fix-spec.md');
+  assert.equal(fs.existsSync(realRoute), true);
+
+  // Simulate a route a previous version installed but the current plan no longer emits: a real,
+  // package-owned file recorded in the manifest with a matching checksum.
+  const staleRoute = path.join(platformRoots.claude, 'review-fix-legacy.md');
+  fs.writeFileSync(staleRoute, '# legacy generated route\n');
+  const manifest = readInstallManifest('claude', { homeDir }).manifest;
+  manifest.generated.push({ path: staleRoute, kind: 'file', action: 'created', checksum: sha256OfFile(staleRoute) });
+  writeInstallManifest(manifest, { homeDir });
+
+  // Reinstall must remove the stale route (uninstall-first) and keep the real route set.
+  await installPlatforms({ homeDir, platformRoots, cwd, packageVersion: PACKAGE_VERSION, platforms: ['claude'] });
+
+  assert.equal(fs.existsSync(staleRoute), false, 'stale route removed on reinstall');
+  assert.equal(fs.existsSync(realRoute), true, 'real route reinstalled');
+  const after = readInstallManifest('claude', { homeDir }).manifest;
+  assert.equal(after.generated.some((entry) => entry.path === staleRoute), false, 'stale route dropped from new manifest');
+  assert.ok(after.generated.some((entry) => entry.path === realRoute), 'real route recorded in new manifest');
+});
+
+test('install preserves a user-modified out-of-plan route instead of deleting it on reinstall', async (t) => {
+  const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
+  await installPlatforms({ homeDir, platformRoots, cwd, packageVersion: PACKAGE_VERSION, platforms: ['claude'] });
+
+  const staleRoute = path.join(platformRoots.claude, 'review-fix-legacy.md');
+  fs.writeFileSync(staleRoute, '# legacy generated route\n');
+  const manifest = readInstallManifest('claude', { homeDir }).manifest;
+  manifest.generated.push({ path: staleRoute, kind: 'file', action: 'created', checksum: sha256OfFile(staleRoute) });
+  writeInstallManifest(manifest, { homeDir });
+  // The user edits the recorded route, so its checksum no longer matches the manifest.
+  fs.writeFileSync(staleRoute, '# user-edited legacy route\n');
+
+  await installPlatforms({ homeDir, platformRoots, cwd, packageVersion: PACKAGE_VERSION, platforms: ['claude'] });
+
+  assert.equal(fs.existsSync(staleRoute), true, 'user-modified out-of-plan route preserved');
+  assert.equal(fs.readFileSync(staleRoute, 'utf8'), '# user-edited legacy route\n', 'user edit retained');
 });
 
 test('install refuses symlink targets', async (t) => {
