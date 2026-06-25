@@ -971,6 +971,16 @@ test('install restores the previous install when reinstall fails after uninstall
   assert.equal(fs.readFileSync(descriptorPath, 'utf8'), beforeDescriptor, 'previous descriptor restored');
 });
 
+test('a successful reinstall leaves no orphaned uninstall-rollback backups', async (t) => {
+  const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
+  await installPlatforms({ homeDir, platformRoots, cwd, packageVersion: PACKAGE_VERSION, platforms: ['codex'] });
+  await installPlatforms({ homeDir, platformRoots, cwd, packageVersion: PACKAGE_VERSION, platforms: ['codex'] });
+
+  const backupsDir = path.join(homeDir, '.drfx', 'backups', 'codex');
+  const leftover = fs.existsSync(backupsDir) ? fs.readdirSync(backupsDir) : [];
+  assert.deepEqual(leftover, [], 'reinstall discards its safety backups on success');
+});
+
 test('install refuses symlink targets', async (t) => {
   const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
   const target = path.join(homeDir, 'user-command.md');
