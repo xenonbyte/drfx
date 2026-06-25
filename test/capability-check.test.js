@@ -902,6 +902,39 @@ test('install preserves a user-modified out-of-plan route instead of deleting it
   assert.equal(fs.readFileSync(staleRoute, 'utf8'), '# user-edited legacy route\n', 'user edit retained');
 });
 
+test('install preflights the new plan before uninstalling the previous install', async (t) => {
+  const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
+  await installPlatforms({ homeDir, platformRoots, cwd, packageVersion: PACKAGE_VERSION, platforms: ['codex'] });
+
+  const oldRoute = path.join(platformRoots.codexSkills, 'review-fix-spec');
+  const blockedRoute = path.join(platformRoots.codexSkills, 'review-fix-r2p');
+  assert.equal(fs.existsSync(path.join(oldRoute, 'SKILL.md')), true, 'old install should exist before reinstall');
+  assert.equal(fs.existsSync(blockedRoute), true, 'current generated route should exist before simulating an older install');
+
+  const manifest = readInstallManifest('codex', { homeDir }).manifest;
+  manifest.generated = manifest.generated.filter((entry) => entry.path !== blockedRoute);
+  writeInstallManifest(manifest, { homeDir });
+  fs.rmSync(blockedRoute, { recursive: true, force: true });
+  fs.mkdirSync(blockedRoute, { recursive: true });
+  fs.writeFileSync(path.join(blockedRoute, 'SKILL.md'), '# user-owned skill\n');
+
+  await assert.rejects(
+    () =>
+      installPlatforms({
+        homeDir,
+        platformRoots,
+        cwd,
+        packageVersion: PACKAGE_VERSION,
+        platforms: ['codex']
+      }),
+    /ownership|non-owned/i
+  );
+
+  assert.equal(fs.existsSync(path.join(oldRoute, 'SKILL.md')), true, 'old installed route must survive failed preflight');
+  assert.equal(readInstallManifest('codex', { homeDir }).missing, false, 'old manifest must survive failed preflight');
+  assert.equal(fs.readFileSync(path.join(blockedRoute, 'SKILL.md'), 'utf8'), '# user-owned skill\n');
+});
+
 test('install refuses symlink targets', async (t) => {
   const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
   const target = path.join(homeDir, 'user-command.md');
