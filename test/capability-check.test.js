@@ -38,7 +38,8 @@ const {
   installPlatforms,
   uninstallPlatforms,
   installPlatform,
-  uninstallPlatform
+  uninstallPlatform,
+  validateGeneratedPlan
 } = require('../lib/install');
 const { runCheck, formatCheckReport, sweepStaleDoctorTempDirs } = require('../lib/check');
 
@@ -1255,6 +1256,63 @@ test('generated Codex skills use manifest-owned copied shared source and fail-cl
   assert.match(skillText, /Do not silently fall back/i);
   assert.match(skillText, /`~\/\.drfx\/shared`/);
   assert.match(skillText, /this skill directory offline/i);
+});
+
+test('validateGeneratedPlan fails closed when a Codex copied-shared-source plan is incomplete', () => {
+  const intactCodexPlan = () => generatePlatformFiles('codex', { packageVersion: PACKAGE_VERSION });
+
+  // A complete copied-shared-source plan must pass.
+  assert.doesNotThrow(() => validateGeneratedPlan('codex', intactCodexPlan()));
+
+  function corruptedSpecSkill(mutate) {
+    const entries = intactCodexPlan();
+    const spec = entries.find((entry) => entry.routeName === 'review-fix-spec');
+    spec.files = mutate(spec.files.map((file) => ({ ...file })));
+    return entries;
+  }
+
+  const dropFile = (relativePath) => (files) => files.filter((file) => file.relativePath !== relativePath);
+
+  const cases = [
+    { name: 'missing SKILL.md', entries: corruptedSpecSkill(dropFile('SKILL.md')) },
+    { name: 'missing root ownership marker', entries: corruptedSpecSkill(dropFile('.drfx-owned')) },
+    {
+      name: 'missing shared ownership marker',
+      entries: corruptedSpecSkill(dropFile(path.join('shared', '.drfx-owned')))
+    },
+    {
+      name: 'no copied shared source files',
+      entries: corruptedSpecSkill((files) => files.filter((file) => !file.sourcePath))
+    }
+  ];
+
+  for (const testCase of cases) {
+    assert.throws(
+      () => validateGeneratedPlan('codex', testCase.entries),
+      (error) => error && error.code === 'ERR_CODEX_SHARED_SOURCE_PLAN',
+      `validateGeneratedPlan must fail closed for: ${testCase.name}`
+    );
+  }
+
+  // A directory plan that is not flagged as copied-shared-source must be skipped, not validated.
+  assert.doesNotThrow(() => validateGeneratedPlan('codex', [{
+    kind: 'directory',
+    routeName: 'review-fix-spec',
+    requiresOwnedSharedSource: false,
+    files: [{ relativePath: 'SKILL.md', content: '# embedded' }]
+  }]));
+
+  // A copied-shared-source flag on a non-directory plan must also fail closed.
+  assert.throws(
+    () => validateGeneratedPlan('codex', [{
+      kind: 'file',
+      routeName: 'review-fix-spec',
+      requiresOwnedSharedSource: true,
+      files: []
+    }]),
+    (error) => error && error.code === 'ERR_CODEX_SHARED_SOURCE_PLAN',
+    'validateGeneratedPlan must reject a copied-shared-source flag on a non-directory plan'
+  );
 });
 
 test('copySharedAssets copies minimal shared references into a Codex skill directory', (t) => {
