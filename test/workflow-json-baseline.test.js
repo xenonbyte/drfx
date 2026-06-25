@@ -381,6 +381,8 @@ const COMPACT_ALLOWLIST_MATRIX = [
     ...STATUS_COMPACT_FIELDS,
     ...WORKFLOW_IDENTITY_COMPACT_FIELDS,
     'verdict',
+    'reason',
+    'reviewerReportPath',
     'aggregatePath',
     'uncoveredUnitIds',
     'uncoveredBackstops'
@@ -1030,6 +1032,31 @@ test('SCOPE-IN-001 compact partitioned end-fix keeps the partitioned lifecycle m
   assert.equal(compact.reviewMode, 'partitioned');
   assert.equal(compact.fixReportPath, '/tmp/drfx/state/rounds/001-fix.md');
   assert.deepEqual(compact.fixedIssueIds, ['ISSUE-001']);
+});
+
+test('SCOPE-IN-001 compact partitioned aggregate keeps continuation routing signals', () => {
+  const compact = JSON.parse(formatWorkflowJson({
+    ok: true,
+    status: 'aggregated-review',
+    targetStateDir: '/tmp/drfx/state',
+    documentType: 'none',
+    reviewMode: 'partitioned',
+    verdict: 'stopped-with-deferrals',
+    reason: 'coverage-incomplete',
+    reviewerReportPath: '/tmp/drfx/state/reports/aggregate-review-round-001.md',
+    aggregatePath: '/tmp/drfx/state/project-review/aggregate.json',
+    uncoveredUnitIds: ['unit-002'],
+    uncoveredBackstops: ['security-redaction'],
+    coverageProof: { residualRisk: 'present' }
+  }, { mode: 'compact', subcommand: 'aggregate-review' }));
+
+  assert.equal(compact.verdict, 'stopped-with-deferrals');
+  assert.equal(compact.reason, 'coverage-incomplete');
+  assert.equal(compact.reviewerReportPath, '/tmp/drfx/state/reports/aggregate-review-round-001.md');
+  assert.equal(compact.aggregatePath, '/tmp/drfx/state/project-review/aggregate.json');
+  assert.deepEqual(compact.uncoveredUnitIds, ['unit-002']);
+  assert.deepEqual(compact.uncoveredBackstops, ['security-redaction']);
+  assert.equal(compact.coverageProof, undefined);
 });
 
 test('SCOPE-IN-004 compact partitioned context output stays within the full-output byte ratio budget', () => {
