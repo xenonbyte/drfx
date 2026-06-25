@@ -846,6 +846,20 @@ test('aggregate-review blocks when a recorded extraRead changes outside the CODE
   assert.equal(fs.existsSync(path.join(start.targetStateDir, 'project-review', 'aggregate.json')), false);
 });
 
+test('aggregate-review returns a structured blocked result when the target state manifest is unreadable', async (t) => {
+  const root = makeOverCapRepo(t);
+  const start = await startPartitioned(root);
+  fs.unlinkSync(start.manifestPath);
+
+  const result = await runWorkflowCommand('aggregate-review', [start.targetStateDir, '--json'], { cwd: root });
+
+  assert.equal(result.ok, false, JSON.stringify(result));
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockingReason, 'state-validation-failed');
+  assert.equal(result.errorCode, 'ERR_STATE_VALIDATION_FAILED');
+  assert.equal(result.verdict, undefined);
+});
+
 test('aggregate-review never claims PASS when every unit is none but backstop summaries are MISSING', async (t) => {
   const root = makeOverCapRepo(t);
   const start = await startPartitioned(root);
