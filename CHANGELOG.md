@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Renamed the seventh route `review-fix-r2q` → `review-fix-r2p`**, naming it after the r2p (requirement-to-PLAN) workflow it reviews, in line with the `review-fix-pr`/`review-fix-code` convention. BREAKING: the route name, its generated command/skill files, and the persisted `routeKind`/`targetContextKind` discriminator all change. Reinstall to pick up the new route; an in-progress `review-fix-r2q` workflow state is not migrated.
+- `drfx install` now removes the previous install first (uninstall-then-install), so routes dropped or renamed between versions are no longer left orphaned. User-modified route files are preserved via the partial-uninstall path.
+
 ## 0.8.1 - 2026-06-24
 
 Hardening fixes from code review. Broadens secret redaction to more credential keyword variants, makes install rollback and the workflow `finalize` guard fail loudly instead of silently, and drops two dead code paths.

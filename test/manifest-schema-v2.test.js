@@ -70,7 +70,7 @@ test('codex install records childFiles and treeChecksum for skill directories', 
   assert.ok(childFiles.every((name) => name.length > 0));
 });
 
-test('install owns all seven routes (document + pr + code + r2q) and removes only owned files', async (t) => {
+test('install owns all seven routes (document + pr + code + r2p) and removes only owned files', async (t) => {
   const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-seven-routes-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const homeDir = path.join(root, 'home');
@@ -87,7 +87,7 @@ test('install owns all seven routes (document + pr + code + r2q) and removes onl
 
   const allRoutes = [
     'review-fix-spec', 'review-fix-plan', 'review-fix-design',
-    'review-fix-doc', 'review-fix-pr', 'review-fix-code', 'review-fix-r2q'
+    'review-fix-doc', 'review-fix-pr', 'review-fix-code', 'review-fix-r2p'
   ];
 
   for (const platform of ['claude', 'codex', 'gemini']) {
@@ -311,19 +311,19 @@ test('schema v1 uninstall removes an unchanged codex skill directory via the rec
   assert.equal(fs.existsSync(skillDir), false);
 });
 
-// --- r2q targetContextKind schema registration ---
+// --- r2p targetContextKind schema registration ---
 
-function makeR2qManifest(overrides = {}) {
+function makeR2pManifest(overrides = {}) {
   return {
     manifestSchema: 2,
-    targetContextKind: 'r2q',
+    targetContextKind: 'r2p',
     target: 'none',
     normalizedTarget: 'none',
     documentType: 'none',
     strictness: 'normal',
     mode: 'review-and-fix',
     guardMode: 'git',
-    targetKey: 'r2q-aaaaaaaaaaaa',
+    targetKey: 'r2p-aaaaaaaaaaaa',
     ledgerPath: 'none',
     status: 'review',
     currentPhase: 'review',
@@ -357,16 +357,16 @@ function makeR2qManifest(overrides = {}) {
   };
 }
 
-test('r2q-kind manifest round-trips through format/parse/normalize', () => {
-  const text = formatManifestV2(makeR2qManifest());
-  assert.match(text, /Target context kind: r2q/);
+test('r2p-kind manifest round-trips through format/parse/normalize', () => {
+  const text = formatManifestV2(makeR2pManifest());
+  assert.match(text, /Target context kind: r2p/);
   assert.match(text, /Requirement dir: requirements\/feature-x/);
   assert.match(text, /Run md sha256: b{64}/);
   assert.match(text, /File set fingerprint: c{64}/);
   assert.match(text, /Last modified at: 2026-06-24T00:00:00.000Z/);
 
   const parsed = parseManifestV2(text);
-  assert.equal(parsed.targetContextKind, 'r2q');
+  assert.equal(parsed.targetContextKind, 'r2p');
   assert.equal(parsed.documentType, 'none');
   assert.equal(parsed.requirementDir, 'requirements/feature-x');
   assert.equal(parsed.runMdSha256, 'b'.repeat(64));
@@ -376,7 +376,7 @@ test('r2q-kind manifest round-trips through format/parse/normalize', () => {
   assert.equal(formatManifestV2(parsed), text);
 });
 
-test('r2q-kind manifest rejects absolute or escaping requirementDir values', () => {
+test('r2p-kind manifest rejects absolute or escaping requirementDir values', () => {
   for (const requirementDir of [
     '/tmp/outside/WF-unsafe',
     '../outside/WF-unsafe',
@@ -384,15 +384,15 @@ test('r2q-kind manifest rejects absolute or escaping requirementDir values', () 
     'safe/../../outside/WF-unsafe'
   ]) {
     assert.throws(
-      () => formatManifestV2(makeR2qManifest({ requirementDir })),
+      () => formatManifestV2(makeR2pManifest({ requirementDir })),
       /Requirement dir/,
       requirementDir
     );
   }
 });
 
-test('r2q-kind manifest does not emit single-file identity fields', () => {
-  const text = formatManifestV2(makeR2qManifest());
+test('r2p-kind manifest does not emit single-file identity fields', () => {
+  const text = formatManifestV2(makeR2pManifest());
   assert.doesNotMatch(text, /^Initial content sha256:/m);
   assert.doesNotMatch(text, /^Last known content sha256:/m);
   assert.doesNotMatch(text, /^Last reviewed content sha256:/m);
@@ -404,19 +404,19 @@ test('r2q-kind manifest does not emit single-file identity fields', () => {
   assert.doesNotMatch(text, /^Head:/m);
 });
 
-test('r2q-kind manifest optional roundLimit round-trips and is omitted when none', () => {
-  const withLimit = formatManifestV2(makeR2qManifest({ roundLimit: '3' }));
+test('r2p-kind manifest optional roundLimit round-trips and is omitted when none', () => {
+  const withLimit = formatManifestV2(makeR2pManifest({ roundLimit: '3' }));
   assert.match(withLimit, /Round limit: 3/);
   assert.equal(parseManifestV2(withLimit).roundLimit, '3');
 
-  const noLimit = formatManifestV2(makeR2qManifest({ roundLimit: 'none' }));
+  const noLimit = formatManifestV2(makeR2pManifest({ roundLimit: 'none' }));
   assert.doesNotMatch(noLimit, /Round limit:/);
   assert.equal(parseManifestV2(noLimit).roundLimit, 'none');
 });
 
-test('requiredManifestV2Keys returns exactly the r2q key set', () => {
-  const keys = requiredManifestV2Keys('r2q');
-  // r2q-specific fields
+test('requiredManifestV2Keys returns exactly the r2p key set', () => {
+  const keys = requiredManifestV2Keys('r2p');
+  // r2p-specific fields
   assert.ok(keys.includes('requirementDir'), 'must include requirementDir');
   assert.ok(keys.includes('runMdSha256'), 'must include runMdSha256');
   assert.ok(keys.includes('fileSetFingerprint'), 'must include fileSetFingerprint');

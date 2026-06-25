@@ -10,13 +10,13 @@ English | [简体中文](README.zh-CN.md)
 
 ## Introduction
 
-`@xenonbyte/drfx` installs seven review routes: four document routes (SPEC, PLAN, DESIGN, COMMON), two code routes (`review-fix-pr` for pull request diffs and `review-fix-code` for source scope review), and one requirement-plan route (`review-fix-r2q`). All routes can run a read-only review or a review-and-fix loop.
+`@xenonbyte/drfx` installs seven review routes: four document routes (SPEC, PLAN, DESIGN, COMMON), two code routes (`review-fix-pr` for pull request diffs and `review-fix-code` for source scope review), and one requirement-plan route (`review-fix-r2p`). All routes can run a read-only review or a review-and-fix loop.
 
 It is built for repeatable, auditable review: every fix is confined to a declared file set, guarded by git or file snapshots, and the route never claims a passing result it cannot prove.
 
 ### Features
 
-- **Seven routes** — four document routes (SPEC, PLAN, DESIGN, COMMON), two code routes (`review-fix-pr`, `review-fix-code`), and one requirement-plan route (`review-fix-r2q`).
+- **Seven routes** — four document routes (SPEC, PLAN, DESIGN, COMMON), two code routes (`review-fix-pr`, `review-fix-code`), and one requirement-plan route (`review-fix-r2p`).
 - **Two modes** — `read-only` review, or `review-and-fix` with a bounded repair loop.
 - **Guarded writes** — `guard=git` or `guard=snapshot` prove fixes stayed inside the target file set; otherwise the run blocks instead of writing.
 - **Layered rules** — built-in rubrics plus optional user-global and project-local custom rules.
@@ -95,7 +95,7 @@ review-fix-design DESIGN documents
 review-fix-doc    COMMON documents
 review-fix-pr     PR diff (base..HEAD file set)
 review-fix-code   source scope file set
-review-fix-r2q    r2p requirement-plan review
+review-fix-r2p    r2p requirement-plan review
 ```
 
 The route name selects the review target. Document routes: do not pass `type=`. Code routes (`review-fix-pr`, `review-fix-code`): do not pass `target=`, `ref=`, `strict`, `normal`, `assurance=`, or `ledger=`.
@@ -219,15 +219,15 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 - `root=<path>` sets the project root.
 - Does not accept `target=`, `ref=`, `base=`, `strict`, `normal`, `assurance=`, or `ledger=`.
 
-### review-fix-r2q
+### review-fix-r2p
 
 Syntax:
 
 ```text
-review-fix-r2q target=<requirement-dir> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
+review-fix-r2p target=<requirement-dir> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
 ```
 
-`review-fix-r2q` reviews an r2p requirement directory's `07-plan.md` with the PLAN rubric and fixes findings in place across the `03`–`07` file set: plan-local execution defects are fixed directly in `07-plan.md`, and when a finding's root cause is upstream it edits the owning upstream doc (`03`–`06`) and re-aligns the affected `07-plan.md` section. `run.md` is a read-only, fingerprinted gate — r2q never writes it and never invokes the r2p CLI.
+`review-fix-r2p` reviews an r2p requirement directory's `07-plan.md` with the PLAN rubric and fixes findings in place across the `03`–`07` file set: plan-local execution defects are fixed directly in `07-plan.md`, and when a finding's root cause is upstream it edits the owning upstream doc (`03`–`06`) and re-aligns the affected `07-plan.md` section. `run.md` is a read-only, fingerprinted gate — review-fix-r2p never writes it and never invokes the r2p CLI.
 
 - `target=<requirement-dir>` is required. The target is the requirement directory (the one that contains `run.md`, `07-plan.md`, and the upstream docs `03`–`06`). A bare path is accepted as shorthand.
 - The route gates on a generated plan (`07-plan.md` must exist and must not be under `*/.req-to-plan/archive/*`). **Accepted execution-state risk:** no `r2p-execute` marker exists in the workflow state, so archive-location is a pre-archive proxy, not proof the plan artifacts were not consumed.

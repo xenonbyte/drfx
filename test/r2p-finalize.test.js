@@ -1,7 +1,7 @@
 'use strict';
 
 // ---------------------------------------------------------------------------
-// review-fix-r2q — PERSISTENT finalize: earned PASS over the 03–07 set + the
+// review-fix-r2p — PERSISTENT finalize: earned PASS over the 03–07 set + the
 // Item-3b human-decision deferral terminal (Task 11).
 //
 // SAFETY-CRITICAL and DETERMINISTIC: no LLM / CLI semantic reviewer runs. The
@@ -15,14 +15,14 @@
 //   (a) EARNED PASS — an initial reviewer finding, accepted triage, a harness
 //       edit to the owning 03–07 files (06-spec.md + 07-plan.md), a matching fix
 //       report, DIFF-OK, a full re-review PASS, and a final-response payload →
-//       r2q reaches `pass`, with `Files changed` listing BOTH edited 03–07 files
+//       r2p reaches `pass`, with `Files changed` listing BOTH edited 03–07 files
 //       and the accepted execution-state risk note surfaced in the output.
 //   (b) DEFERRAL — a reviewer finding whose resolution needs a human product
 //       decision, triaged `deferred` (deferred_owner: user), the in-document
 //       marker surfaced via a harness edit → terminal status
 //       `stopped-with-deferrals`, NOT pass, with owner + next action recorded.
 //       There is NO `stopped-pending-human` state.
-//   (c) A Gemini (advisory) r2q run never reaches `pass`.
+//   (c) A Gemini (advisory) r2p run never reaches `pass`.
 // ---------------------------------------------------------------------------
 
 const assert = require('node:assert/strict');
@@ -52,7 +52,7 @@ const planApprovedRunMd = [
   ''
 ].join('\n');
 
-const R2Q_EDITABLE_DOCS = [
+const R2P_EDITABLE_DOCS = [
   '03-requirement-brief.md',
   '04-risk-discovery.md',
   '05-design.md',
@@ -115,17 +115,17 @@ const TRIAGE_DEFER_USER = [
   '  rationale: Needs a human product/scope decision; no in-place doc edit can resolve it.',
   '  merged_into: none',
   '  deferred_owner: user',
-  '  deferred_next_action: decide the product scope question, then re-run r2q',
+  '  deferred_next_action: decide the product scope question, then re-run r2p',
   '  non_blocking: false'
 ].join('\n');
 
 const DIFF_OK = 'DIFF-OK\nSummary: In-place 03–07 edit addresses ISSUE-001.\n';
 const REVIEW_PASS = 'PASS\nSummary: No blocking findings after the backward fix.\n';
 
-// The execution-state risk note (design Decision 1 "accepted consequence"): r2q cannot
+// The execution-state risk note (design Decision 1 "accepted consequence"): r2p cannot
 // prove the artifacts were not already consumed because r2p has no r2p-execute marker.
 const EXECUTION_STATE_RISK =
-  'Accepted execution-state risk: r2q cannot prove the requirement was not already consumed (no r2p-execute marker).';
+  'Accepted execution-state risk: r2p cannot prove the requirement was not already consumed (no r2p-execute marker).';
 
 function memberPath(root, wfDir, doc) {
   return path.relative(root, path.join(wfDir, doc)).split(path.sep).join('/');
@@ -185,7 +185,7 @@ function finalDeferred() {
     'Files changed: none',
     'Fixed issue IDs: none',
     'Verification performed: full file-set review against COMMON+PLAN',
-    'Deferrals or blockers: ISSUE-001 needs a human product decision; owner: user; next action: decide the product scope question, then re-run r2q',
+    'Deferrals or blockers: ISSUE-001 needs a human product decision; owner: user; next action: decide the product scope question, then re-run r2p',
     'Blocking reason: none',
     'Status reason: deferred-findings',
     `Residual risk: ${EXECUTION_STATE_RISK}`,
@@ -211,9 +211,9 @@ function git(cwd, args) {
 
 // A git-backed project root (default guard=git for the persistent path) containing an
 // active <root>/.req-to-plan/WF-* requirement directory with run.md + 03–07.
-function makeR2qProject(t, name = 'WF-20260624-finalize') {
-  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-final-')));
-  const homeDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-final-home-')));
+function makeR2pProject(t, name = 'WF-20260624-finalize') {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-final-')));
+  const homeDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-final-home-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
 
@@ -221,7 +221,7 @@ function makeR2qProject(t, name = 'WF-20260624-finalize') {
   const wfDir = path.join(root, '.req-to-plan', name);
   fs.mkdirSync(wfDir, { recursive: true });
   fs.writeFileSync(path.join(wfDir, 'run.md'), planApprovedRunMd);
-  for (const doc of R2Q_EDITABLE_DOCS) {
+  for (const doc of R2P_EDITABLE_DOCS) {
     fs.writeFileSync(path.join(wfDir, doc), `# ${doc}\nContent of ${doc}\n`);
   }
   git(root, ['add', '.']);
@@ -233,9 +233,9 @@ function sha256OfFile(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
-function r2qArgs(wfDir, { mode = 'review-and-fix', assurance = 'practical', runtimePlatform = 'codex' } = {}) {
+function r2pArgs(wfDir, { mode = 'review-and-fix', assurance = 'practical', runtimePlatform = 'codex' } = {}) {
   return [
-    'review-fix-r2q',
+    'review-fix-r2p',
     `target=${wfDir}`,
     mode,
     '--assurance',
@@ -256,7 +256,7 @@ async function reachAfterTriage(root, homeDir, { review, triage, args }) {
   const opts = { cwd: root, homeDir };
   const start = await runWorkflowCommand('start', args, opts);
   assert.equal(start.ok, true, JSON.stringify(start));
-  assert.equal(start.routeKind, 'r2q', 'r2q must dispatch as its own route kind');
+  assert.equal(start.routeKind, 'r2p', 'r2p must dispatch as its own route kind');
   await runWorkflowCommand('context', args, opts);
   await runWorkflowCommand('record-review', [
     ...args,
@@ -276,9 +276,9 @@ async function reachAfterTriage(root, homeDir, { review, triage, args }) {
 // (a) EARNED PASS over the multi-file 03–07 set.
 // ---------------------------------------------------------------------------
 
-test('r2q review-and-fix earns PASS over the 03–07 set with the execution-state risk surfaced', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-pass');
-  const args = r2qArgs(wfDir);
+test('r2p review-and-fix earns PASS over the 03–07 set with the execution-state risk surfaced', async (t) => {
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-pass');
+  const args = r2pArgs(wfDir);
   const { start, opts } = await reachAfterTriage(root, homeDir, {
     review: REVIEW_FAIL,
     triage: TRIAGE_ACCEPT,
@@ -367,9 +367,9 @@ test('r2q review-and-fix earns PASS over the 03–07 set with the execution-stat
   assert.equal(ledger.issues.find((issue) => issue.id === 'ISSUE-001').status, 'fixed');
 });
 
-test('r2q finalize refuses PASS when run.md drifted before full re-review context', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-drift-before-full-review');
-  const args = r2qArgs(wfDir);
+test('r2p finalize refuses PASS when run.md drifted before full re-review context', async (t) => {
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-drift-before-full-review');
+  const args = r2pArgs(wfDir);
   const { start, opts } = await reachAfterTriage(root, homeDir, {
     review: REVIEW_FAIL,
     triage: TRIAGE_ACCEPT,
@@ -447,9 +447,9 @@ test('r2q finalize refuses PASS when run.md drifted before full re-review contex
 //     There is NO stopped-pending-human state.
 // ---------------------------------------------------------------------------
 
-test('r2q human-decision finding stops-with-deferrals (owner+next action), never pass', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-defer');
-  const args = r2qArgs(wfDir);
+test('r2p human-decision finding stops-with-deferrals (owner+next action), never pass', async (t) => {
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-defer');
+  const args = r2pArgs(wfDir);
   const { start, opts, triageResult } = await reachAfterTriage(root, homeDir, {
     review: REVIEW_FAIL_HUMAN,
     triage: TRIAGE_DEFER_USER,
@@ -494,14 +494,14 @@ test('r2q human-decision finding stops-with-deferrals (owner+next action), never
 });
 
 // ---------------------------------------------------------------------------
-// (c) A Gemini (advisory) r2q run never reaches pass.
+// (c) A Gemini (advisory) r2p run never reaches pass.
 // ---------------------------------------------------------------------------
 
-test('r2q under Gemini (advisory) never reaches pass', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-gemini');
+test('r2p under Gemini (advisory) never reaches pass', async (t) => {
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-gemini');
   // Gemini is advisory-only: read-only mode + advisory assurance, the no-state path.
   const commonArgs = [
-    'review-fix-r2q',
+    'review-fix-r2p',
     `target=${wfDir}`,
     'read-only',
     '--assurance',
@@ -523,7 +523,7 @@ test('r2q under Gemini (advisory) never reaches pass', async (t) => {
 
   const context = await runWorkflowCommand('context', ['--no-state', ...commonArgs], opts);
   assert.equal(context.ok, true, JSON.stringify(context));
-  assert.equal(context.routeKind, 'r2q');
+  assert.equal(context.routeKind, 'r2p');
 
   const review = await runWorkflowCommand('record-review', [
     '--no-state',

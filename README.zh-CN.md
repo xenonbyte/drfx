@@ -10,13 +10,13 @@
 
 ## Introduction
 
-`@xenonbyte/drfx` 安装七条 review routes：四条 document routes（SPEC、PLAN、DESIGN、COMMON）、两条 code routes（`review-fix-pr` 用于 pull request diff，`review-fix-code` 用于 source scope review），以及一条 requirement-plan route（`review-fix-r2q`）。所有路由均支持 read-only review 或 review-and-fix loop。
+`@xenonbyte/drfx` 安装七条 review routes：四条 document routes（SPEC、PLAN、DESIGN、COMMON）、两条 code routes（`review-fix-pr` 用于 pull request diff，`review-fix-code` 用于 source scope review），以及一条 requirement-plan route（`review-fix-r2p`）。所有路由均支持 read-only review 或 review-and-fix loop。
 
 它面向可重复、可审计的 review：每次 fix 都被限制在一个声明过的 file set 内，由 git 或 file snapshot 守卫，且 route 绝不声明它无法证明的 PASS 结果。
 
 ### Features
 
-- **七条 routes** —— 四条 document routes（SPEC、PLAN、DESIGN、COMMON）、两条 code routes（`review-fix-pr`、`review-fix-code`），以及一条 requirement-plan route（`review-fix-r2q`）。
+- **七条 routes** —— 四条 document routes（SPEC、PLAN、DESIGN、COMMON）、两条 code routes（`review-fix-pr`、`review-fix-code`），以及一条 requirement-plan route（`review-fix-r2p`）。
 - **两种 modes** —— `read-only` review，或带有界修复循环的 `review-and-fix`。
 - **受守卫的写入** —— `guard=git` 或 `guard=snapshot` 证明 fix 始终留在 target file set 内；否则 route 阻断而不写入。
 - **分层规则** —— 内置 rubric，加上可选的 user-global 与 project-local 自定义规则。
@@ -95,7 +95,7 @@ review-fix-design DESIGN documents
 review-fix-doc    COMMON documents
 review-fix-pr     PR diff (base..HEAD file set)
 review-fix-code   source scope file set
-review-fix-r2q    r2p requirement-plan review
+review-fix-r2p    r2p requirement-plan review
 ```
 
 路由名选择 review target。Document routes：不要传 `type=`。Code routes（`review-fix-pr`、`review-fix-code`）：不要传 `target=`、`ref=`、`strict`、`normal`、`assurance=` 或 `ledger=`。
@@ -218,15 +218,15 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 - `root=<path>` 设置 project root。
 - 不接受 `target=`、`ref=`、`base=`、`strict`、`normal`、`assurance=` 或 `ledger=`。
 
-### review-fix-r2q
+### review-fix-r2p
 
 Syntax:
 
 ```text
-review-fix-r2q target=<requirement-dir> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
+review-fix-r2p target=<requirement-dir> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
 ```
 
-`review-fix-r2q` 用 PLAN rubric 审查 r2p requirement directory 中的 `07-plan.md`，并在 `03`–`07` 文件集内就地修复 findings：plan 本身的执行层缺陷直接在 `07-plan.md` 修复；当 finding 根因在上游时，编辑对应的 upstream doc（`03`–`06`）并同步对齐受影响的 `07-plan.md` 段落。`run.md` 是只读的、带指纹的 gate——r2q 从不写入 `run.md`，也从不调用 r2p CLI。
+`review-fix-r2p` 用 PLAN rubric 审查 r2p requirement directory 中的 `07-plan.md`，并在 `03`–`07` 文件集内就地修复 findings：plan 本身的执行层缺陷直接在 `07-plan.md` 修复；当 finding 根因在上游时，编辑对应的 upstream doc（`03`–`06`）并同步对齐受影响的 `07-plan.md` 段落。`run.md` 是只读的、带指纹的 gate——review-fix-r2p 从不写入 `run.md`，也从不调用 r2p CLI。
 
 - `target=<requirement-dir>` 为必填。target 是 requirement directory（包含 `run.md`、`07-plan.md` 以及 upstream docs `03`–`06` 的目录）。也接受 bare path 作为简写。
 - route 以 generated plan 作为 gate（`07-plan.md` 必须存在，且不能位于 `*/.req-to-plan/archive/*` 下）。**已接受的执行状态风险：** workflow state 中不存在 `r2p-execute` marker，因此 archive 位置是 pre-archive 代理，而非制品未被消费的证明。

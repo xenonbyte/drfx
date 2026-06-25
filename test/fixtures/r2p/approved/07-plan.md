@@ -27,7 +27,7 @@ Acceptance: (none stated in 06-spec.md).
 
 <!--
 PLANTED GAP marker: Step 4 implements a request-cap behavior — an observable
-acceptance behavior — that 06-spec.md never states as a criterion. r2q's PLAN
+acceptance behavior — that 06-spec.md never states as a criterion. r2p's PLAN
 rubric flags this; the finding-to-owner-doc map routes the root cause UPSTREAM to
 06-spec.md (acceptance criteria / observable behavior gap), so the backward fix
 edits BOTH 06-spec.md (add the criterion) AND this file (reference it from Step 4).

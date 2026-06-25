@@ -1,7 +1,7 @@
 'use strict';
 
 // ---------------------------------------------------------------------------
-// review-fix-r2q — GATE-FRESHNESS (TOCTOU) revalidation at every write/PASS checkpoint
+// review-fix-r2p — GATE-FRESHNESS (TOCTOU) revalidation at every write/PASS checkpoint
 // (Task 10).
 //
 // SAFETY-CRITICAL and DETERMINISTIC: no LLM / CLI semantic reviewer runs. The harness
@@ -10,7 +10,7 @@
 // and a later write/PASS checkpoint, then asserts the workflow stops as a guarded drift
 // blocker — never a write, never a PASS.
 //
-// r2q makes the eligibility decision (run.md unchanged AND still satisfies the gate) once at
+// r2p makes the eligibility decision (run.md unchanged AND still satisfies the gate) once at
 // resolve time, but then writes/PASSes across several later commands. Between gate and each
 // of the FOUR write/PASS checkpoints run.md can be:
 //   - MODIFIED (fingerprint drift),
@@ -67,7 +67,7 @@ const incompleteRunMd = [
   ''
 ].join('\n');
 
-const R2Q_EDITABLE_DOCS = [
+const R2P_EDITABLE_DOCS = [
   '03-requirement-brief.md',
   '04-risk-discovery.md',
   '05-design.md',
@@ -163,9 +163,9 @@ function git(cwd, args) {
   });
 }
 
-function makeR2qProject(t, name = 'WF-20260624-freshness') {
-  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-fresh-')));
-  const homeDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-fresh-home-')));
+function makeR2pProject(t, name = 'WF-20260624-freshness') {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-fresh-')));
+  const homeDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-fresh-home-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
 
@@ -173,7 +173,7 @@ function makeR2qProject(t, name = 'WF-20260624-freshness') {
   const wfDir = path.join(root, '.req-to-plan', name);
   fs.mkdirSync(wfDir, { recursive: true });
   fs.writeFileSync(path.join(wfDir, 'run.md'), planApprovedRunMd);
-  for (const doc of R2Q_EDITABLE_DOCS) {
+  for (const doc of R2P_EDITABLE_DOCS) {
     fs.writeFileSync(path.join(wfDir, doc), `# ${doc}\nContent of ${doc}\n`);
   }
   git(root, ['add', '.']);
@@ -185,9 +185,9 @@ function sha256OfFile(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
-function r2qArgs(wfDir, routeTokens = []) {
+function r2pArgs(wfDir, routeTokens = []) {
   return [
-    'review-fix-r2q',
+    'review-fix-r2p',
     `target=${wfDir}`,
     'review-and-fix',
     ...routeTokens,
@@ -203,12 +203,12 @@ function r2qArgs(wfDir, routeTokens = []) {
   ];
 }
 
-async function reachR2qFixStage(root, homeDir, wfDir, extraArgs = []) {
+async function reachR2pFixStage(root, homeDir, wfDir, extraArgs = []) {
   const opts = { cwd: root, homeDir };
-  const args = r2qArgs(wfDir, extraArgs);
+  const args = r2pArgs(wfDir, extraArgs);
   const start = await runWorkflowCommand('start', args, opts);
   assert.equal(start.ok, true, JSON.stringify(start));
-  assert.equal(start.routeKind, 'r2q', 'r2q must dispatch as its own route kind');
+  assert.equal(start.routeKind, 'r2p', 'r2p must dispatch as its own route kind');
   await runWorkflowCommand('context', args, opts);
   await runWorkflowCommand('record-review', [
     ...args,
@@ -224,7 +224,7 @@ async function reachR2qFixStage(root, homeDir, wfDir, extraArgs = []) {
   const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
   assert.equal(manifest.status, 'fix');
   assert.equal(manifest.currentPhase, 'fix');
-  assert.equal(manifest.targetContextKind, 'r2q');
+  assert.equal(manifest.targetContextKind, 'r2p');
   return { start, opts, args };
 }
 
@@ -233,8 +233,8 @@ async function reachR2qFixStage(root, homeDir, wfDir, extraArgs = []) {
 // ---------------------------------------------------------------------------
 
 test('(a) begin-fix blocks when run.md is MODIFIED between gate and begin-fix (no write)', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-mod-begin');
-  const { start, opts } = await reachR2qFixStage(root, homeDir, wfDir);
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-mod-begin');
+  const { start, opts } = await reachR2pFixStage(root, homeDir, wfDir);
 
   // MODIFY run.md after triage, before begin-fix: the protected gate fingerprint drifts.
   fs.writeFileSync(path.join(wfDir, 'run.md'), `${planApprovedRunMd}<!-- tampered gate -->\n`);
@@ -252,8 +252,8 @@ test('(a) begin-fix blocks when run.md is MODIFIED between gate and begin-fix (n
 });
 
 test('(b) begin-fix blocks when run.md becomes INCOMPLETE between gate and begin-fix (no write)', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-incomplete-begin');
-  const { start, opts } = await reachR2qFixStage(root, homeDir, wfDir);
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-incomplete-begin');
+  const { start, opts } = await reachR2pFixStage(root, homeDir, wfDir);
 
   // Mutate run.md to an incomplete/non-approved-plan state. (Distinct sha AND failing gate.)
   fs.writeFileSync(path.join(wfDir, 'run.md'), incompleteRunMd);
@@ -269,8 +269,8 @@ test('(b) begin-fix blocks when run.md becomes INCOMPLETE between gate and begin
 });
 
 test('(c) begin-fix BLOCKS when run.md is DELETED between gate and begin-fix (residual backstop)', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-del-begin');
-  const { start, opts } = await reachR2qFixStage(root, homeDir, wfDir);
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-del-begin');
+  const { start, opts } = await reachR2pFixStage(root, homeDir, wfDir);
 
   // DELETE run.md after triage, before begin-fix. The re-read must fail (unreadable) → block.
   fs.rmSync(path.join(wfDir, 'run.md'));
@@ -290,8 +290,8 @@ test('(c) begin-fix BLOCKS when run.md is DELETED between gate and begin-fix (re
 // ---------------------------------------------------------------------------
 
 test('CHECKPOINT 2: refresh-lock blocks when run.md is DELETED mid-fix (no continued write window)', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-refresh');
-  const { start, opts } = await reachR2qFixStage(root, homeDir, wfDir);
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-refresh');
+  const { start, opts } = await reachR2pFixStage(root, homeDir, wfDir);
 
   const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
     ...opts,
@@ -318,8 +318,8 @@ test('CHECKPOINT 2: refresh-lock blocks when run.md is DELETED mid-fix (no conti
 // ---------------------------------------------------------------------------
 
 test('(a) end-fix blocks when run.md is MODIFIED after begin-fix (no diff-review transition)', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-mod-end');
-  const { start, opts } = await reachR2qFixStage(root, homeDir, wfDir);
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-mod-end');
+  const { start, opts } = await reachR2pFixStage(root, homeDir, wfDir);
   const before = { 'run.md': sha256OfFile(path.join(wfDir, 'run.md')) };
 
   const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
@@ -353,8 +353,8 @@ test('(b) end-fix blocks when run.md becomes INCOMPLETE after begin-fix (snapsho
   // guard=snapshot isolates the gate revalidation from the git worktree guard: the editable
   // set delta still validates against the begin-fix baseline, but the run.md gate no longer
   // satisfies the requirement, so end-fix must block at CHECKPOINT 3.
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-incomplete-end');
-  const { start, opts } = await reachR2qFixStage(root, homeDir, wfDir, ['guard=snapshot']);
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-incomplete-end');
+  const { start, opts } = await reachR2pFixStage(root, homeDir, wfDir, ['guard=snapshot']);
   assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).guardMode, 'snapshot');
 
   const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
@@ -384,8 +384,8 @@ test('(c) end-fix BLOCKS when run.md is DELETED after begin-fix under guard=snap
   // THE residual case: a DELETE-only of run.md is NOT a monitored member, so the snapshot
   // file-set guard would not catch it. CHECKPOINT 3 re-reads run.md and BLOCKS because the
   // re-read fails (unreadable) — no diff-review transition, no PASS, no fix report persisted.
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-del-end');
-  const { start, opts } = await reachR2qFixStage(root, homeDir, wfDir, ['guard=snapshot']);
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-del-end');
+  const { start, opts } = await reachR2pFixStage(root, homeDir, wfDir, ['guard=snapshot']);
   assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).guardMode, 'snapshot');
 
   const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
@@ -422,7 +422,7 @@ test('(c) end-fix BLOCKS when run.md is DELETED after begin-fix under guard=snap
 // ---------------------------------------------------------------------------
 
 async function driveToFullReReview(root, homeDir, wfDir) {
-  const { start, opts, args } = await reachR2qFixStage(root, homeDir, wfDir);
+  const { start, opts, args } = await reachR2pFixStage(root, homeDir, wfDir);
 
   const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
     ...opts,
@@ -461,7 +461,7 @@ async function driveToFullReReview(root, homeDir, wfDir) {
 }
 
 test('CHECKPOINT 4: finalize PASS is refused when run.md is DELETED before final pass (no PASS)', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-del-final');
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-del-final');
   const { start, opts } = await driveToFullReReview(root, homeDir, wfDir);
 
   // DELETE run.md after full re-review, before finalize. The PASS must be refused.
@@ -482,7 +482,7 @@ test('CHECKPOINT 4: finalize PASS is refused when run.md is DELETED before final
 });
 
 test('CHECKPOINT 4: finalize PASS is refused when run.md is MODIFIED before final pass (no PASS)', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-mod-final');
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-mod-final');
   const { start, opts } = await driveToFullReReview(root, homeDir, wfDir);
 
   // MODIFY run.md after full re-review, before finalize. The PASS must be refused.
@@ -511,14 +511,14 @@ test('control: an unchanged, still-approved run.md is NEVER blocked by the gate 
   // fix window), and 3 (end-fix) to full-re-review, proving no checkpoint blocks a fresh
   // gate. (driveToFullReReview already asserts begin-fix.ok / end-fix.ok / the diff-review
   // and full-re-review transitions — i.e. no unexpected-worktree-change block fired.)
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-control');
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-control');
   const { start, opts } = await driveToFullReReview(root, homeDir, wfDir);
   assert.equal(parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).status, 'full-re-review');
 
   // CHECKPOINT 4 with a fresh gate: the gate revalidation passes (returns null), so finalize
-  // does NOT block with a gate-drift reason. NOTE: r2q PASS through `finalize` is gated by a
+  // does NOT block with a gate-drift reason. NOTE: r2p PASS through `finalize` is gated by a
   // SEPARATE, pre-existing limitation — liveIdentityFor/storedIdentityFor in
-  // file-set-finalize.js have no r2q branch and compare the r2q target with a CODE-shaped
+  // file-set-finalize.js have no r2p branch and compare the r2p target with a CODE-shaped
   // identity, so finalize stops on ERR_FINAL_FILE_SET_STALE_IDENTITY rather than reaching
   // PASS. That is out of scope for Task 10 (gate freshness). What this control proves is the
   // narrow Task-10 property: the gate revalidation itself never blocks a fresh run.md.

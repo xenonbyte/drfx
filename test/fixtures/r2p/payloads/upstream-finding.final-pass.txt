@@ -9,6 +9,6 @@ Verification performed: re-read 06-spec.md and 07-plan.md cross-reference for SP
 Deferrals or blockers: none
 Blocking reason: none
 Status reason: none
-Residual risk: Accepted execution-state risk: r2q cannot prove the requirement was not already consumed (no r2p-execute marker).
+Residual risk: Accepted execution-state risk: r2p cannot prove the requirement was not already consumed (no r2p-execute marker).
 Redaction statement: no sensitive values persisted
 Coordinator agreement: approved after full re-review

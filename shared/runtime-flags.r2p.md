@@ -1,6 +1,6 @@
 Use the materialized `<selectedAssurance>` to choose runtime fields, and pass the materialized `<selectedGuard>` to every no-state workflow command:
 
-- r2q exposes no user-facing advisory assurance token. Practical read-only no-state path uses `<selectedAssurance>` set to `practical` with `--runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none`.
+- r2p exposes no user-facing advisory assurance token. Practical read-only no-state path uses `<selectedAssurance>` set to `practical` with `--runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none`.
 - Strict-verified read-only is state-backed: use the Strict Verified Proof workflow start with ready probe/handoff fields. Do not use no-state commands for `strict-verified`.
 
 Practical read-only no-state path starts with:

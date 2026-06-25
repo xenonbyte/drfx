@@ -1,9 +1,9 @@
 ---
-name: review-fix-r2q
+name: review-fix-r2p
 description: Review and fix an r2p requirement plan (07-plan.md) through the shared review-fix loop workflow.
 ---
 
-# review-fix-r2q
+# review-fix-r2p
 
 Review target: an r2p requirement directory `<project>/.req-to-plan/WF-*`.
 
@@ -12,10 +12,10 @@ This entry skill reviews the requirement plan (`07-plan.md`) against its owning 
 Invocation syntax:
 
 ```text
-review-fix-r2q target=<requirement-dir> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<project-root>] [debug]
+review-fix-r2p target=<requirement-dir> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<project-root>] [debug]
 ```
 
-Full form: `review-fix-r2q target=<requirement-dir> ...`. A bare requirement directory is shorthand for `target=<requirement-dir>`. The target is the requirement directory, not a single `.md` file.
+Full form: `review-fix-r2p target=<requirement-dir> ...`. A bare requirement directory is shorthand for `target=<requirement-dir>`. The target is the requirement directory, not a single `.md` file.
 
 This route accepts only the tokens above. It does not accept `ref=`, `strict`, `normal`, `assurance=`, `ledger=`, `scope=`, or `base=`; it has a fixed PLAN rubric and no reference-document surface.
 

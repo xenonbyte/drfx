@@ -43,9 +43,9 @@ const MODULE_RULES = {
     'runFileSetRecordDiffReview',
     'runFileSetFinalize'
   ]),
-  // PLAN-TASK-010/011: r2q gate-freshness revalidation + identity helpers. Carries no
-  // task-boundary run* entrypoints (its exports are revalidateR2qGate and shaping helpers).
-  'file-set-r2q-gate.js': new Set([]),
+  // PLAN-TASK-010/011: r2p gate-freshness revalidation + identity helpers. Carries no
+  // task-boundary run* entrypoints (its exports are revalidateR2pGate and shaping helpers).
+  'file-set-r2p-gate.js': new Set([]),
   'file-set-fix.js': new Set([
     'runBeginFix',
     'runRefreshLock',

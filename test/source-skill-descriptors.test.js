@@ -7,7 +7,7 @@
 // users. They are NOT the install-time generated platform skill (that is
 // rendered fresh from templates/ into each platform root and is ~20x longer),
 // so they can silently drift from the route registry and templates — exactly
-// how review-fix-r2q's descriptor lost its bare-target shorthand line while
+// how review-fix-r2p's descriptor lost its bare-target shorthand line while
 // the parser, README, and generated codex skill all documented it.
 //
 // These invariants are deliberately minimal and zero-false-positive: they
@@ -25,7 +25,7 @@ const { listRoutes } = require('../lib/routes');
 const SKILLS_DIR = path.join(__dirname, '..', 'skills');
 
 // Routes whose parser accepts a bare path as shorthand for the primary target.
-const BARE_TARGET_KINDS = new Set(['document', 'r2q']);
+const BARE_TARGET_KINDS = new Set(['document', 'r2p']);
 // Routes that have no bare-path form (PR keys on base=, CODE on scope=).
 const NON_BARE_KINDS = new Set(['pr', 'code']);
 

@@ -16,7 +16,7 @@ This repository is a Node.js 20 CommonJS package for installing document and cod
 ## Build, Test, and Development Commands
 
 - `npm test` runs the full `node --test` suite.
-- `node --test test/<file>.test.js` runs one test file; append `--test-name-pattern="<regex>"` to run a single test by name (e.g. `node --test --test-name-pattern="r2q finalize refuses PASS" test/r2q-finalize.test.js`).
+- `node --test test/<file>.test.js` runs one test file; append `--test-name-pattern="<regex>"` to run a single test by name (e.g. `node --test --test-name-pattern="r2p finalize refuses PASS" test/r2p-finalize.test.js`).
 - `npm run syntaxcheck` parse-checks (`node --check`) every `.js` file under `bin/`, `lib/`, and `test/` without executing it.
 - `node bin/drfx.js doctor` runs local capability checks and validates advisory/pass capability reporting.
 - `assurance=strict-verified` is unreachable today: all adapters report reviewer capabilities as `unverified`, so `drfx doctor` never emits a verified proof. Use `assurance=practical` for automatic fixes; strict-verified stays wired for when an adapter supplies verified proof.
@@ -46,7 +46,7 @@ A platform spans ~16 sync sites; missing one silently breaks install, the runtim
 - **Decide capability first**: a full review-and-fix platform (parity with Codex/Claude Code) or an advisory-only platform (parity with Gemini). This gates the `lib/workflow/index.js` write-eligibility allowlists.
 - **CLI + adapter**: help text in `bin/drfx.js`; new `lib/adapters/<platform>.js`.
 - **Capability/install/manifest**: `PLATFORMS` and the default platform list in `lib/capability.js`; `PLATFORMS`, `ADAPTERS`, and `normalizePlatformRoots` in `lib/install.js`; `PLATFORMS`, `defaultPlatformRoots`, and `platformAllowlist` in `lib/manifest.js`.
-- **Routes/generator/templates**: `DEFAULT_PLATFORM_POLICY` in `lib/routes.js`; `PLATFORM_TEMPLATES`, `platformInvocationText`, and `codeRouteInvocationText` in `lib/generator.js`; a new `templates/<platform>-*.tmpl` plus the `templates/fragments/{invocation-gate,route-contract}.{document,pr,code,r2q}.<platform>.md` fragments (two fragment types × four route kinds per platform).
+- **Routes/generator/templates**: `DEFAULT_PLATFORM_POLICY` in `lib/routes.js`; `PLATFORM_TEMPLATES`, `platformInvocationText`, and `codeRouteInvocationText` in `lib/generator.js`; a new `templates/<platform>-*.tmpl` plus the `templates/fragments/{invocation-gate,route-contract}.{document,pr,code,r2p}.<platform>.md` fragments (two fragment types × four route kinds per platform).
 - **Runtime platform + state**: `RUNTIME_PLATFORMS` in `lib/workflow/index.js`, `lib/workflow-state.js`, `lib/semantic-parsers.js`, and `lib/no-state.js`. For a full platform, also add it to the three write-eligibility allowlists in `lib/workflow/index.js` (preflight, practical, strict-verified). For strict-verified support, add it to `DESCRIPTOR_PLATFORMS` and `PROOF_PATTERN` in `lib/workflow-state.js`.
 - **Exclusions**: add the platform's home/config dir (e.g. `.opencode`) to the exclusion sets in `lib/snapshot-guard.js` and `lib/target-context.js`.
 - **Tests + fixtures**: `EXTENSION_BY_PLATFORM` and the mask/extract branches in `test/helpers/route-shell-snapshot.js`; the platform loops in `test/shared-assets.test.js`, `test/cli.test.js`, and `test/capability-check.test.js`; regenerate `test/fixtures/{generated,embedded}/<platform>/*`.

@@ -17,7 +17,7 @@ test('route registry exposes seven supported routes with defaults', () => {
     'review-fix-doc',
     'review-fix-pr',
     'review-fix-code',
-    'review-fix-r2q',
+    'review-fix-r2p',
   ]);
   assert.equal(getRouteDescriptor('review-fix-pr').defaultMode, 'review-and-fix');
   assert.equal(getRouteDescriptor('review-fix-pr').defaultGuard, 'git');
@@ -32,42 +32,42 @@ test('route registry exposes correct routeKind for each route', () => {
   assert.equal(getRouteDescriptor('review-fix-code').routeKind, 'code');
 });
 
-test('all routes have defaultMode review-and-fix; defaultGuard git except r2q snapshot', () => {
+test('all routes have defaultMode review-and-fix; defaultGuard git except r2p snapshot', () => {
   for (const route of listRoutes()) {
     assert.equal(route.defaultMode, 'review-and-fix', `${route.routeName}.defaultMode`);
-    // r2q's file-set guard defaults to snapshot (run.md is a protected read-only
+    // r2p's file-set guard defaults to snapshot (run.md is a protected read-only
     // dependency); every other route defaults to git.
-    const expectedGuard = route.routeName === 'review-fix-r2q' ? 'snapshot' : 'git';
+    const expectedGuard = route.routeName === 'review-fix-r2p' ? 'snapshot' : 'git';
     assert.equal(route.defaultGuard, expectedGuard, `${route.routeName}.defaultGuard`);
   }
 });
 
-test('review-fix-r2q descriptor maps to the document PLAN stack via a file-set context', () => {
-  const r2q = getRouteDescriptor('review-fix-r2q');
-  assert.equal(r2q.routeKind, 'r2q');
-  assert.equal(r2q.documentType, 'PLAN');
-  assert.equal(r2q.rubric, 'plan');
-  assert.equal(r2q.targetContextKind, 'r2q');
-  assert.equal(r2q.defaultMode, 'review-and-fix');
-  assert.equal(r2q.defaultGuard, 'snapshot');
-  // r2q is NOT a single-file document route, so it is excluded from listDocumentRoutes().
-  assert.equal(listDocumentRoutes().some((route) => route.routeName === 'review-fix-r2q'), false);
+test('review-fix-r2p descriptor maps to the document PLAN stack via a file-set context', () => {
+  const r2p = getRouteDescriptor('review-fix-r2p');
+  assert.equal(r2p.routeKind, 'r2p');
+  assert.equal(r2p.documentType, 'PLAN');
+  assert.equal(r2p.rubric, 'plan');
+  assert.equal(r2p.targetContextKind, 'r2p');
+  assert.equal(r2p.defaultMode, 'review-and-fix');
+  assert.equal(r2p.defaultGuard, 'snapshot');
+  // r2p is NOT a single-file document route, so it is excluded from listDocumentRoutes().
+  assert.equal(listDocumentRoutes().some((route) => route.routeName === 'review-fix-r2p'), false);
 });
 
-test('review-fix-r2q merges the COMMON + PLAN document rule stack (same as review-fix-plan)', () => {
-  // r2q maps to documentType PLAN, so the merged document rule stack is identical to
+test('review-fix-r2p merges the COMMON + PLAN document rule stack (same as review-fix-plan)', () => {
+  // r2p maps to documentType PLAN, so the merged document rule stack is identical to
   // the PLAN document route: hard constraints + built-in COMMON + built-in PLAN.
-  const r2q = getRouteDescriptor('review-fix-r2q');
+  const r2p = getRouteDescriptor('review-fix-r2p');
   const plan = getRouteDescriptor('review-fix-plan');
-  assert.equal(r2q.documentType, plan.documentType);
+  assert.equal(r2p.documentType, plan.documentType);
 
   const builtIn = { COMMON: 'common-rules', PLAN: 'plan-rules' };
-  const r2qMerged = mergeRules({ documentType: r2q.documentType, builtIn });
+  const r2pMerged = mergeRules({ documentType: r2p.documentType, builtIn });
   const planMerged = mergeRules({ documentType: plan.documentType, builtIn });
 
-  assert.deepEqual(r2qMerged.sources, planMerged.sources);
-  assert.deepEqual(r2qMerged.sources, ['hard', 'built-in-common', 'built-in-PLAN']);
-  assert.equal(r2qMerged.text, planMerged.text);
+  assert.deepEqual(r2pMerged.sources, planMerged.sources);
+  assert.deepEqual(r2pMerged.sources, ['hard', 'built-in-common', 'built-in-PLAN']);
+  assert.equal(r2pMerged.text, planMerged.text);
 });
 
 // ---------------------------------------------------------------------------

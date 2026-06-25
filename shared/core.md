@@ -1,6 +1,6 @@
 # Document Review Loop Core
 
-This file is the shared workflow source for every route: the document routes `review-fix-spec`, `review-fix-plan`, `review-fix-design`, and `review-fix-doc`, the file-set routes `review-fix-pr` and `review-fix-code`, and the requirement route `review-fix-r2q`. Document entry skills fix the document type; users must not pass type. File-set routes (PR/CODE) have no fixed document type and resolve a file set rather than a single target document; the loop, guards, and terminal states below apply to that file set as the target context. The r2q route resolves an r2p requirement directory (`target=<requirement-dir>`): it reviews the `07-plan.md` anchor against the COMMON+PLAN document rules, may edit only the `03`–`07` owner docs, and treats `run.md` as a read-only/protected gate dependency; it reports any multi-file changes as a file set in the final machine payload.
+This file is the shared workflow source for every route: the document routes `review-fix-spec`, `review-fix-plan`, `review-fix-design`, and `review-fix-doc`, the file-set routes `review-fix-pr` and `review-fix-code`, and the requirement route `review-fix-r2p`. Document entry skills fix the document type; users must not pass type. File-set routes (PR/CODE) have no fixed document type and resolve a file set rather than a single target document; the loop, guards, and terminal states below apply to that file set as the target context. The r2p route resolves an r2p requirement directory (`target=<requirement-dir>`): it reviews the `07-plan.md` anchor against the COMMON+PLAN document rules, may edit only the `03`–`07` owner docs, and treats `run.md` as a read-only/protected gate dependency; it reports any multi-file changes as a file set in the final machine payload.
 
 ## Loop
 
@@ -10,7 +10,7 @@ Canonical loop:
 review -> triage -> fix -> diff review -> full re-review -> repeat until PASS or a defined terminal/pause state
 ```
 
-The initial `review` and every `full re-review` must inspect the whole target context through an isolated read-only reviewer task. The target context is the target document for document routes, or the resolved file set for PR/CODE routes; for the r2q route it is the `07-plan.md` anchor (reviewed against COMMON+PLAN). A `diff review` after fixes is mandatory, but it is only a gate before the next full target-context re-review.
+The initial `review` and every `full re-review` must inspect the whole target context through an isolated read-only reviewer task. The target context is the target document for document routes, or the resolved file set for PR/CODE routes; for the r2p route it is the `07-plan.md` anchor (reviewed against COMMON+PLAN). A `diff review` after fixes is mandatory, but it is only a gate before the next full target-context re-review.
 
 The fix loop is bounded: after a deterministic fix-attempt cap (default 5 fixes per target), or when a previously fixed high/medium finding recurs, the loop stops as `stopped-no-progress` rather than fixing indefinitely.
 
@@ -56,7 +56,7 @@ Treat those structural items as low-severity improvements unless the target docu
 
 - Coordinator: owns the loop, reads instructions and rules, dispatches reviewer work, triages findings, manages target state, applies fixes by default, performs diff review, and decides terminal status.
 - Reviewer: mandatory isolated read-only critic for every initial review and full target-context re-review. The reviewer reports `PASS` or structured `FAIL` findings and must not edit files.
-- Fixer: the coordinator by default. A fixer subagent is optional, bounded, serial, and may modify only files in the target context: the target document for document routes, the resolved file set for PR/CODE routes, or the `03`–`07` owner docs for the r2q route (`run.md` is read-only/protected), for accepted issue IDs.
+- Fixer: the coordinator by default. A fixer subagent is optional, bounded, serial, and may modify only files in the target context: the target document for document routes, the resolved file set for PR/CODE routes, or the `03`–`07` owner docs for the r2p route (`run.md` is read-only/protected), for accepted issue IDs.
 
 The coordinator is the only role allowed to mark workflow PASS.
 
@@ -139,7 +139,7 @@ Fix accepted issues directly by default. Use one serial fixer subagent only when
 
 Fixers must:
 
-- Modify only the target document for document routes, files inside the resolved file set for PR/CODE routes, or the `03`–`07` owner docs for the r2q route (`run.md` is read-only/protected).
+- Modify only the target document for document routes, files inside the resolved file set for PR/CODE routes, or the `03`–`07` owner docs for the r2p route (`run.md` is read-only/protected).
 - Treat reference documents as read-only.
 - Fix only coordinator-accepted issue IDs unless the coordinator expands scope.
 - Preserve intent, terminology, and structure where possible.
@@ -205,8 +205,8 @@ Final status: pass | read-only-clean | read-only-findings | stopped-with-deferra
 Assurance: practical | strict-verified | advisory
 Runtime platform: codex | claude-code | gemini | opencode | manual
 Mode: review-and-fix | read-only
-Target: <target path for document routes, or none for PR/CODE/r2q file-set routes>
-Files changed: <none, the exact target path for document routes, or comma-separated in-set relative paths for PR/CODE/r2q file-set routes>
+Target: <target path for document routes, or none for PR/CODE/r2p file-set routes>
+Files changed: <none, the exact target path for document routes, or comma-separated in-set relative paths for PR/CODE/r2p file-set routes>
 Fixed issue IDs: <none or comma-separated ISSUE-### values>
 Verification performed: <redacted summary>
 Deferrals or blockers: <none or redacted issue/blocker summary with owner and next action when applicable>
@@ -223,7 +223,7 @@ Default user output uses concise Route Output after workflow finalization. It mu
 
 ## Read-Only Behavior
 
-In `read-only` mode, review and triage only. Do not modify the target document, resolved file set, r2q owner docs (`03`–`07`), `run.md`, or reference documents. If blocking findings remain, stop as `read-only-findings`. Codex, Claude Code, and opencode routes may tell users to rerun the same route with `review-and-fix`; Gemini routes must tell users to apply fixes manually or rerun with a Codex/Claude Code/opencode review-and-fix route.
+In `read-only` mode, review and triage only. Do not modify the target document, resolved file set, r2p owner docs (`03`–`07`), `run.md`, or reference documents. If blocking findings remain, stop as `read-only-findings`. Codex, Claude Code, and opencode routes may tell users to rerun the same route with `review-and-fix`; Gemini routes must tell users to apply fixes manually or rerun with a Codex/Claude Code/opencode review-and-fix route.
 
 One-shot `read-only` without `ledger=`, without `resume`, and without `reset` must not create `.drfx`, `MANIFEST.md`, `ISSUES.md`, `CONTINUITY.md`, `SUMMARY.md`, or `rounds/`. Keep fingerprints in memory unless a guard failure must be reported.
 

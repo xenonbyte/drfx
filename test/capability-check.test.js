@@ -1408,7 +1408,7 @@ test('generated platform files include all Claude, Codex, and Gemini route contr
       path.join('commands', 'review-fix-doc.md'),
       path.join('commands', 'review-fix-plan.md'),
       path.join('commands', 'review-fix-pr.md'),
-      path.join('commands', 'review-fix-r2q.md'),
+      path.join('commands', 'review-fix-r2p.md'),
       path.join('commands', 'review-fix-spec.md')
     ].sort()
   );
@@ -1420,7 +1420,7 @@ test('generated platform files include all Claude, Codex, and Gemini route contr
       path.join('commands', 'review-fix-doc.toml'),
       path.join('commands', 'review-fix-plan.toml'),
       path.join('commands', 'review-fix-pr.toml'),
-      path.join('commands', 'review-fix-r2q.toml'),
+      path.join('commands', 'review-fix-r2p.toml'),
       path.join('commands', 'review-fix-spec.toml')
     ].sort()
   );
@@ -1432,7 +1432,7 @@ test('generated platform files include all Claude, Codex, and Gemini route contr
       path.join('skills', 'review-fix-doc'),
       path.join('skills', 'review-fix-plan'),
       path.join('skills', 'review-fix-pr'),
-      path.join('skills', 'review-fix-r2q'),
+      path.join('skills', 'review-fix-r2p'),
       path.join('skills', 'review-fix-spec')
     ].sort()
   );

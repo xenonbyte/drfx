@@ -59,7 +59,7 @@ function parsedFor(entrySkill, tokens) {
   return { invocation };
 }
 
-const R2Q_EDITABLE_DOCS = [
+const R2P_EDITABLE_DOCS = [
   '03-requirement-brief.md',
   '04-risk-discovery.md',
   '05-design.md',
@@ -78,16 +78,16 @@ const PLAN_APPROVED_RUN_MD = [
   ''
 ].join('\n');
 
-// Create a valid r2q requirement directory (<project>/.req-to-plan/WF-*) and
+// Create a valid r2p requirement directory (<project>/.req-to-plan/WF-*) and
 // return the project root. Metadata tests need only the shape, while preflight
 // tests exercise the full run.md + 03–07 resolver gate.
-function freshR2qProject(t) {
-  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-')));
+function freshR2pProject(t) {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const wfDir = path.join(root, '.req-to-plan', 'WF-1');
   fs.mkdirSync(wfDir, { recursive: true });
   fs.writeFileSync(path.join(wfDir, 'run.md'), PLAN_APPROVED_RUN_MD);
-  for (const doc of R2Q_EDITABLE_DOCS) {
+  for (const doc of R2P_EDITABLE_DOCS) {
     fs.writeFileSync(path.join(wfDir, doc), `# ${doc}\nContent of ${doc}\n`);
   }
   return root;
@@ -363,45 +363,45 @@ test('unavailable stdin handoff blocks a read-only PR start without crashing on 
 });
 
 // ---------------------------------------------------------------------------
-// review-fix-r2q route-kind dispatch (Task 6)
+// review-fix-r2p route-kind dispatch (Task 6)
 //
-// r2q is a FILE-SET route (isFileSetRoute true) but a DOCUMENT-rubric route. The
-// route-kind dispatch must label it `r2q` — never collapse it to `code` the way the
+// r2p is a FILE-SET route (isFileSetRoute true) but a DOCUMENT-rubric route. The
+// route-kind dispatch must label it `r2p` — never collapse it to `code` the way the
 // old binary `entrySkill === 'review-fix-pr' ? 'pr' : 'code'` fallback did — and the
 // unsupported file-set lifecycle guidance must name the generic file-set loop, not
 // PR/CODE-only wording.
 // ---------------------------------------------------------------------------
 
-test('resolveRouteTargetMetadata derives an r2q-<hash> file-set key, never collapsing r2q to code', (t) => {
-  const root = freshR2qProject(t);
-  const parsed = parsedFor('review-fix-r2q', ['target=.req-to-plan/WF-1', 'read-only']);
+test('resolveRouteTargetMetadata derives an r2p-<hash> file-set key, never collapsing r2p to code', (t) => {
+  const root = freshR2pProject(t);
+  const parsed = parsedFor('review-fix-r2p', ['target=.req-to-plan/WF-1', 'read-only']);
   assert.equal(isFileSetRoute(parsed), true);
   const metadata = resolveRouteTargetMetadata(parsed, { cwd: root });
-  assert.equal(metadata.routeKind, 'r2q');
-  assert.match(metadata.targetKey, /^r2q-[0-9a-f]{12}$/);
+  assert.equal(metadata.routeKind, 'r2p');
+  assert.match(metadata.targetKey, /^r2p-[0-9a-f]{12}$/);
   assert.equal(metadata.normalizedTarget, null);
   assert.equal(metadata.projectRoot, root);
   assert.equal(metadata.requirementDir, '.req-to-plan/WF-1');
 });
 
-test('resolveRouteTargetMetadata rejects symlinked r2q requirement directories before canonicalizing', (t) => {
-  const root = freshR2qProject(t);
+test('resolveRouteTargetMetadata rejects symlinked r2p requirement directories before canonicalizing', (t) => {
+  const root = freshR2pProject(t);
   fs.symlinkSync(
     path.join(root, '.req-to-plan', 'WF-1'),
     path.join(root, '.req-to-plan', 'WF-link')
   );
-  const parsed = parsedFor('review-fix-r2q', ['target=.req-to-plan/WF-link', 'read-only']);
+  const parsed = parsedFor('review-fix-r2p', ['target=.req-to-plan/WF-link', 'read-only']);
 
   assert.throws(
     () => resolveRouteTargetMetadata(parsed, { cwd: root }),
-    (error) => error.code === 'ERR_R2Q_TARGET_SYMLINK'
+    (error) => error.code === 'ERR_R2P_TARGET_SYMLINK'
   );
 });
 
-test('an r2q advisory review-and-fix start dispatches to unsupported with routeKind r2q (not code)', async (t) => {
-  const root = freshR2qProject(t);
+test('an r2p advisory review-and-fix start dispatches to unsupported with routeKind r2p (not code)', async (t) => {
+  const root = freshR2pProject(t);
   const result = await runWorkflowCommand('start', [
-    'review-fix-r2q',
+    'review-fix-r2p',
     'target=.req-to-plan/WF-1',
     'review-and-fix',
     '--assurance',
@@ -416,16 +416,16 @@ test('an r2q advisory review-and-fix start dispatches to unsupported with routeK
   ], { cwd: root });
   assert.equal(result.status, 'unsupported');
   // The non-PR file-set route is labeled by its descriptor kind, not collapsed to code.
-  assert.equal(result.routeKind, 'r2q');
-  assert.match(result.targetKey, /^r2q-[0-9a-f]{12}$/);
+  assert.equal(result.routeKind, 'r2p');
+  assert.match(result.targetKey, /^r2p-[0-9a-f]{12}$/);
   assert.equal(result.documentType, 'none');
   assert.equal(result.target, null);
 });
 
-test('r2q write eligibility preflight monitors project-root-relative owner doc paths', async (t) => {
-  const root = freshR2qProject(t);
+test('r2p write eligibility preflight monitors project-root-relative owner doc paths', async (t) => {
+  const root = freshR2pProject(t);
   const result = await runWorkflowCommand('preflight', [
-    'review-fix-r2q',
+    'review-fix-r2p',
     'target=.req-to-plan/WF-1',
     'review-and-fix',
     'guard=snapshot',
@@ -442,19 +442,19 @@ test('r2q write eligibility preflight monitors project-root-relative owner doc p
 
   assert.equal(result.ok, true, JSON.stringify(result));
   assert.equal(result.status, 'write-eligible');
-  assert.equal(result.routeKind, 'r2q');
+  assert.equal(result.routeKind, 'r2p');
   assert.equal(result.targetOnlyGuard.status, 'passed');
   assert.equal(result.targetOnlyGuard.guardMode, 'snapshot');
-  assert.equal(result.targetOnlyGuard.monitoredFileCount, R2Q_EDITABLE_DOCS.length);
+  assert.equal(result.targetOnlyGuard.monitoredFileCount, R2P_EDITABLE_DOCS.length);
 });
 
-test('r2q write eligibility preflight accepts cwd-relative targets from project subdirectories', async (t) => {
-  const root = freshR2qProject(t);
+test('r2p write eligibility preflight accepts cwd-relative targets from project subdirectories', async (t) => {
+  const root = freshR2pProject(t);
   const subdir = path.join(root, 'sub');
   fs.mkdirSync(subdir);
 
   const result = await runWorkflowCommand('preflight', [
-    'review-fix-r2q',
+    'review-fix-r2p',
     'target=../.req-to-plan/WF-1',
     'review-and-fix',
     'guard=snapshot',
@@ -471,19 +471,19 @@ test('r2q write eligibility preflight accepts cwd-relative targets from project 
 
   assert.equal(result.ok, true, JSON.stringify(result));
   assert.equal(result.status, 'write-eligible');
-  assert.equal(result.routeKind, 'r2q');
+  assert.equal(result.routeKind, 'r2p');
   assert.equal(result.targetOnlyGuard.status, 'passed');
   assert.equal(result.targetOnlyGuard.guardMode, 'snapshot');
-  assert.equal(result.targetOnlyGuard.monitoredFileCount, R2Q_EDITABLE_DOCS.length);
+  assert.equal(result.targetOnlyGuard.monitoredFileCount, R2P_EDITABLE_DOCS.length);
 });
 
-test('an unsupported r2q file-set lifecycle command names the generic file-set loop, not PR/CODE only', async (t) => {
-  const root = freshR2qProject(t);
-  // `finalize` is a file-set persistent command with no wired r2q lifecycle path yet
+test('an unsupported r2p file-set lifecycle command names the generic file-set loop, not PR/CODE only', async (t) => {
+  const root = freshR2pProject(t);
+  // `finalize` is a file-set persistent command with no wired r2p lifecycle path yet
   // (later tasks), so it falls to fileSetLifecycleUnsupported. The guidance must cover
-  // r2q with generic file-set wording rather than naming PR/CODE only.
+  // r2p with generic file-set wording rather than naming PR/CODE only.
   const result = await runWorkflowCommand('finalize', [
-    'review-fix-r2q',
+    'review-fix-r2p',
     'target=.req-to-plan/WF-1',
     'review-and-fix',
     '--assurance',
@@ -497,7 +497,7 @@ test('an unsupported r2q file-set lifecycle command names the generic file-set l
     '--json'
   ], { cwd: root });
   assert.equal(result.status, 'unsupported');
-  assert.equal(result.routeKind, 'r2q');
+  assert.equal(result.routeKind, 'r2p');
   assert.match(result.nextAction, /file-set persistent loop/);
   assert.doesNotMatch(result.nextAction, /PR\/CODE/);
 });

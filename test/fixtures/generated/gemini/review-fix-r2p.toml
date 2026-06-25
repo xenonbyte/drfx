@@ -1,13 +1,13 @@
-description = "Review r2p requirement plans (07-plan.md) with advisory-only read-only findings for review-fix-r2q."
+description = "Review r2p requirement plans (07-plan.md) with advisory-only read-only findings for review-fix-r2p."
 
 [metadata]
-route_name = "review-fix-r2q"
+route_name = "review-fix-r2p"
 review_target = "r2p-requirement"
 package_version = "0.0.0-snapshot"
 
 [prompt]
 text = '''
-Route name: review-fix-r2q
+Route name: review-fix-r2p
 Review target: r2p requirement directory (07-plan.md, fixes backward into 03–06)
 Package version: 0.0.0-snapshot
 
@@ -32,9 +32,9 @@ Route contract:
 - Gemini must not edit 07-plan.md, the upstream docs (03–06), run.md, or workflow state except through no-state workflow outputs.
 
 Invocation:
-review-fix-r2q target=<requirement-dir> [read-only] [guard=git|snapshot] [root=<project-root>] [debug]
+review-fix-r2p target=<requirement-dir> [read-only] [guard=git|snapshot] [root=<project-root>] [debug]
 
-Full form: review-fix-r2q target=<requirement-dir> ... . A bare requirement directory is accepted as shorthand for target=<requirement-dir>. The target names an r2p requirement directory (<project>/.req-to-plan/WF-*). There is no ref= form for this route.
+Full form: review-fix-r2p target=<requirement-dir> ... . A bare requirement directory is accepted as shorthand for target=<requirement-dir>. The target names an r2p requirement directory (<project>/.req-to-plan/WF-*). There is no ref= form for this route.
 
 This route accepts only a bare requirement directory or target=<requirement-dir>, optional read-only, optional guard=git|snapshot, optional root=<project-root>, and optional debug. It does not accept ref=, strict, normal, assurance=, ledger=, scope=, base=, review-and-fix, resume, reset, or rounds=.
 
@@ -110,7 +110,7 @@ When debug is present, generated routes may print the final-response machine blo
 
 review-and-fix is unsupported on Gemini. Before reading target/reference bodies or generating any semantic payload, return the unsupported result through no-state preflight:
 
-drfx workflow preflight --no-state review-fix-r2q target=<requirement-dir> review-and-fix guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --terminal-status unsupported --blocking-reason none --status-reason unsupported-runtime-capability --json=compact
+drfx workflow preflight --no-state review-fix-r2p target=<requirement-dir> review-and-fix guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --terminal-status unsupported --blocking-reason none --status-reason unsupported-runtime-capability --json=compact
 
 If the user requests strict verified assurance, explain that Gemini remains advisory-only and do not issue a strict verified workflow command.
 
@@ -119,15 +119,15 @@ Read-only advisory flow:
 2. On stdin handoff failure, fail closed as unsafe-handoff-file before semantic handoff. Do not use shell pipes, heredocs, herestrings, command substitution, argv, environment variables, env vars, or raw temp files for semantic payloads.
 3. Start review-backed no-state context:
 
-drfx workflow context --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json=compact
+drfx workflow context --no-state review-fix-r2p target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json=compact
 
 4. Keep reviewGuard and stateToken in coordinator memory only. Never write tokens to the filesystem and never hand-edit tokens.
 5. Build the reviewer prompt in memory from the context skeleton plus target/reference reads. Gemini produces advisory review content; it must not claim workflow PASS.
 6. Submit review, triage, and final response by repeating the same runtime fields:
 
-drfx workflow record-review --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json=compact
-drfx workflow record-triage --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json=compact
-drfx workflow finalize --no-state review-fix-r2q target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json=compact
+drfx workflow record-review --no-state review-fix-r2p target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json=compact
+drfx workflow record-triage --no-state review-fix-r2p target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json=compact
+drfx workflow finalize --no-state review-fix-r2p target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json=compact
 
 No-state final status is read-only-clean, read-only-findings, blocked, or unsupported; never pass. (Review-and-fix terminal states such as stopped-no-progress, stopped-with-deferrals, and pass are unavailable in Gemini advisory-only mode.)
 

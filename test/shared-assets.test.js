@@ -26,7 +26,7 @@ const GENERATED_SHELL_BASELINE_BYTES = Object.freeze({
     'review-fix-doc': 21759,
     'review-fix-pr': 21708,
     'review-fix-code': 29070,
-    'review-fix-r2q': 21906
+    'review-fix-r2p': 21906
   }),
   codex: Object.freeze({
     'review-fix-spec': 21858,
@@ -35,7 +35,7 @@ const GENERATED_SHELL_BASELINE_BYTES = Object.freeze({
     'review-fix-doc': 21843,
     'review-fix-pr': 21758,
     'review-fix-code': 29103,
-    'review-fix-r2q': 21903
+    'review-fix-r2p': 21903
   }),
   gemini: Object.freeze({
     'review-fix-spec': 9286,
@@ -44,7 +44,7 @@ const GENERATED_SHELL_BASELINE_BYTES = Object.freeze({
     'review-fix-doc': 9284,
     'review-fix-pr': 9805,
     'review-fix-code': 13147,
-    'review-fix-r2q': 10148
+    'review-fix-r2p': 10148
   }),
   opencode: Object.freeze({
     'review-fix-spec': 22180,
@@ -53,7 +53,7 @@ const GENERATED_SHELL_BASELINE_BYTES = Object.freeze({
     'review-fix-doc': 22163,
     'review-fix-pr': 22114,
     'review-fix-code': 29466,
-    'review-fix-r2q': 22325
+    'review-fix-r2p': 22325
   })
 });
 const CODEX_SHARED_DEDUP_EXPECTED_MEASUREMENT = Object.freeze({
@@ -118,7 +118,7 @@ const CODEX_SHARED_DEDUP_EXPECTED_MEASUREMENT = Object.freeze({
       shrinkPercent: 65.84,
       wouldGrow: false
     }),
-    'review-fix-r2q': Object.freeze({
+    'review-fix-r2p': Object.freeze({
       routeBytes: 81635,
       embeddedSharedBytes: 59505,
       copiedSharedBytes: 59207,
@@ -418,30 +418,30 @@ test('Claude and Codex file-set review-and-fix routes require full re-review aft
   }
 });
 
-test('generated r2q practical start text keeps snapshot as the materialized default guard', () => {
+test('generated r2p practical start text keeps snapshot as the materialized default guard', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
   for (const platform of ['claude', 'codex', 'opencode']) {
-    const rendered = renderPlatformRoute(platform, 'review-fix-r2q', { packageVersion: SNAPSHOT_VERSION });
+    const rendered = renderPlatformRoute(platform, 'review-fix-r2p', { packageVersion: SNAPSHOT_VERSION });
     assert.match(
       rendered,
       /persistent practical command[\s\S]*?<selectedGuard>` is explicit guard or default `snapshot`/,
-      `${platform}:review-fix-r2q practical path must preserve snapshot as the default guard`
+      `${platform}:review-fix-r2p practical path must preserve snapshot as the default guard`
     );
     assert.match(
       rendered,
       /bare requirement directory[^\n]*shorthand for `target=<requirement-dir>`/i,
-      `${platform}:review-fix-r2q must document the valid bare requirement-dir target shorthand`
+      `${platform}:review-fix-r2p must document the valid bare requirement-dir target shorthand`
     );
     assert.doesNotMatch(
       rendered,
       /no bare-path/i,
-      `${platform}:review-fix-r2q must not reject the documented bare target shorthand`
+      `${platform}:review-fix-r2p must not reject the documented bare target shorthand`
     );
   }
 });
 
-test('generated r2q route text does not expose user-facing assurance tokens', () => {
+test('generated r2p route text does not expose user-facing assurance tokens', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
   const forbiddenUserTokenGuidance = [
     /This command accepts `assurance=practical`/,
@@ -455,21 +455,21 @@ test('generated r2q route text does not expose user-facing assurance tokens', ()
   ];
 
   for (const platform of ['claude', 'codex', 'opencode']) {
-    const rendered = renderPlatformRoute(platform, 'review-fix-r2q', { packageVersion: SNAPSHOT_VERSION });
+    const rendered = renderPlatformRoute(platform, 'review-fix-r2p', { packageVersion: SNAPSHOT_VERSION });
 
     assert.match(
       rendered,
       /This route has a fixed PLAN rubric and exposes no `assurance=` token/,
-      `${platform}:review-fix-r2q must document that assurance is internal-only`
+      `${platform}:review-fix-r2p must document that assurance is internal-only`
     );
     assert.match(
       rendered,
       /--assurance practical/,
-      `${platform}:review-fix-r2q must keep internal practical assurance materialization`
+      `${platform}:review-fix-r2p must keep internal practical assurance materialization`
     );
 
     for (const pattern of forbiddenUserTokenGuidance) {
-      assert.doesNotMatch(rendered, pattern, `${platform}:review-fix-r2q must not expose ${pattern}`);
+      assert.doesNotMatch(rendered, pattern, `${platform}:review-fix-r2p must not expose ${pattern}`);
     }
   }
 });
@@ -1636,10 +1636,10 @@ test('coordinator defines a recurrence + fix-attempt-cap convergence rule', () =
 });
 
 // ---------------------------------------------------------------------------
-// generatePlatformFiles must generate all SEVEN routes (document + pr + code + r2q)
+// generatePlatformFiles must generate all SEVEN routes (document + pr + code + r2p)
 // ---------------------------------------------------------------------------
 
-test('generatePlatformFiles generates all seven routes (document + pr + code + r2q)', () => {
+test('generatePlatformFiles generates all seven routes (document + pr + code + r2p)', () => {
   const allRouteNames = listRoutes().map((r) => r.routeName);
   assert.deepEqual(allRouteNames, [
     'review-fix-spec',
@@ -1648,7 +1648,7 @@ test('generatePlatformFiles generates all seven routes (document + pr + code + r
     'review-fix-doc',
     'review-fix-pr',
     'review-fix-code',
-    'review-fix-r2q',
+    'review-fix-r2p',
   ]);
 
   for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
@@ -2041,8 +2041,8 @@ test('codex generated skills copy shared assets byte-for-byte from source', () =
 
   function expectedSharedPathsForRoute(route) {
     const paths = ['shared/core.md', 'shared/long-task.md'];
-    // r2q layers COMMON like the document routes (it embeds COMMON + PLAN).
-    if (route.routeKind === 'document' || route.routeKind === 'r2q') paths.push('shared/rubrics/common.md');
+    // r2p layers COMMON like the document routes (it embeds COMMON + PLAN).
+    if (route.routeKind === 'document' || route.routeKind === 'r2p') paths.push('shared/rubrics/common.md');
     if (route.rubric) paths.push(`shared/rubrics/${route.rubric}.md`);
     paths.push(
       'shared/prompts/reviewer.md',

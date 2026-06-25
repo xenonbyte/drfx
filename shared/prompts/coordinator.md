@@ -114,8 +114,8 @@ Triage and PASS rules:
 - Surfacing and deferring are one action, not a fix. When deferring such a finding, the coordinator (or fixer, which fixes directly by default) writes the `DECISION NEEDED: <question + options>` marker into the document — the marker is the in-document evidence of the deferral, not a resolved fix, so the finding stays `deferred` and does not count toward PASS. On the next round the reviewer sees the point is now explicitly surfaced (per the COMMON Resolution rule) and does not re-raise it as silent ambiguity, so it never trips `stopped-no-progress`. The loop continues on the other findings and ends `stopped-with-deferrals` (not PASS), the surfaced points listed.
 - Low findings block only in strict mode unless accepted non-blocking and included in the next reviewer context.
 
-r2q finding-to-owner-doc map (`review-fix-r2q` only):
-- r2q reviews `07-plan.md`; the editable set is the `03`–`07` owner docs and `run.md` is read-only/protected (never edit it).
+r2p finding-to-owner-doc map (`review-fix-r2p` only):
+- r2p reviews `07-plan.md`; the editable set is the `03`–`07` owner docs and `run.md` is read-only/protected (never edit it).
 - Map each blocking finding to the doc that owns its root cause, and fix backward there (in `review-and-fix`) or name that owner doc in the read-only report:
   - acceptance criteria / observable behavior gap -> `06-spec.md`
   - architecture, interface, or sequencing gap -> `05-design.md`

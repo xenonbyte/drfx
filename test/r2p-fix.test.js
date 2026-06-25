@@ -1,7 +1,7 @@
 'use strict';
 
 // ---------------------------------------------------------------------------
-// review-fix-r2q — PERSISTENT (stateful) in-place backward-fix lifecycle (Task 9).
+// review-fix-r2p — PERSISTENT (stateful) in-place backward-fix lifecycle (Task 9).
 //
 // SAFETY-CRITICAL. These tests are DETERMINISTIC: no LLM / CLI semantic reviewer
 // runs. The harness builds a real git-backed WF-* requirement directory
@@ -10,7 +10,7 @@
 // the real workflow status / error / no-write behavior.
 //
 // What they pin:
-//   (a) An r2q review-and-fix run edits ONLY files inside the 03–07 set (07-plan
+//   (a) An r2p review-and-fix run edits ONLY files inside the 03–07 set (07-plan
 //       plus the mapped owning upstream doc). The harness edits BOTH 07-plan.md and
 //       06-spec.md, submits a matching fix report, and the workflow ACCEPTS exactly
 //       those in-set changes (status → diff-review).
@@ -50,7 +50,7 @@ const planApprovedRunMd = [
   ''
 ].join('\n');
 
-const R2Q_EDITABLE_DOCS = [
+const R2P_EDITABLE_DOCS = [
   '03-requirement-brief.md',
   '04-risk-discovery.md',
   '05-design.md',
@@ -134,9 +134,9 @@ function git(cwd, args) {
 
 // A git-backed project root (default guard=git for the persistent path) containing an
 // active <root>/.req-to-plan/WF-* requirement directory with run.md + 03–07.
-function makeR2qProject(t, name = 'WF-20260624-fix') {
-  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-fix-')));
-  const homeDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-fix-home-')));
+function makeR2pProject(t, name = 'WF-20260624-fix') {
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-fix-')));
+  const homeDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-fix-home-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
 
@@ -144,7 +144,7 @@ function makeR2qProject(t, name = 'WF-20260624-fix') {
   const wfDir = path.join(root, '.req-to-plan', name);
   fs.mkdirSync(wfDir, { recursive: true });
   fs.writeFileSync(path.join(wfDir, 'run.md'), planApprovedRunMd);
-  for (const doc of R2Q_EDITABLE_DOCS) {
+  for (const doc of R2P_EDITABLE_DOCS) {
     fs.writeFileSync(path.join(wfDir, doc), `# ${doc}\nContent of ${doc}\n`);
   }
   git(root, ['add', '.']);
@@ -157,7 +157,7 @@ function sha256OfFile(filePath) {
 }
 
 function snapshotProtectedFiles(wfDir) {
-  const watched = ['run.md', ...R2Q_EDITABLE_DOCS];
+  const watched = ['run.md', ...R2P_EDITABLE_DOCS];
   return Object.fromEntries(watched.map((name) => [name, sha256OfFile(path.join(wfDir, name))]));
 }
 
@@ -165,9 +165,9 @@ function changedFiles(wfDir, before) {
   return Object.keys(before).filter((name) => before[name] !== sha256OfFile(path.join(wfDir, name)));
 }
 
-function r2qArgs(wfDir) {
+function r2pArgs(wfDir) {
   return [
-    'review-fix-r2q',
+    'review-fix-r2p',
     `target=${wfDir}`,
     'review-and-fix',
     '--assurance',
@@ -184,12 +184,12 @@ function r2qArgs(wfDir) {
 
 // Drive start → context → record-review(FAIL) → record-triage(ACCEPT) so the manifest
 // reaches Status: fix with ISSUE-001 accepted in the ledger.
-async function reachR2qFixStage(root, homeDir, wfDir) {
+async function reachR2pFixStage(root, homeDir, wfDir) {
   const opts = { cwd: root, homeDir };
-  const args = r2qArgs(wfDir);
+  const args = r2pArgs(wfDir);
   const start = await runWorkflowCommand('start', args, opts);
   assert.equal(start.ok, true, JSON.stringify(start));
-  assert.equal(start.routeKind, 'r2q', 'r2q must dispatch as its own route kind');
+  assert.equal(start.routeKind, 'r2p', 'r2p must dispatch as its own route kind');
   await runWorkflowCommand('context', args, opts);
   await runWorkflowCommand('record-review', [
     ...args,
@@ -205,7 +205,7 @@ async function reachR2qFixStage(root, homeDir, wfDir) {
   const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
   assert.equal(manifest.status, 'fix');
   assert.equal(manifest.currentPhase, 'fix');
-  assert.equal(manifest.targetContextKind, 'r2q');
+  assert.equal(manifest.targetContextKind, 'r2p');
   const ledger = parseLedger(fs.readFileSync(start.ledgerPath, 'utf8'));
   assert.equal(ledger.issues.find((issue) => issue.id === 'ISSUE-001').status, 'accepted');
   return { start, opts };
@@ -216,9 +216,9 @@ async function reachR2qFixStage(root, homeDir, wfDir) {
 //     the workflow accepts exactly those in-set changes.
 // ---------------------------------------------------------------------------
 
-test('r2q review-and-fix accepts an in-place backward fix to 07-plan.md + the owning upstream doc', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t);
-  const { start, opts } = await reachR2qFixStage(root, homeDir, wfDir);
+test('r2p review-and-fix accepts an in-place backward fix to 07-plan.md + the owning upstream doc', async (t) => {
+  const { root, homeDir, wfDir } = makeR2pProject(t);
+  const { start, opts } = await reachR2pFixStage(root, homeDir, wfDir);
   const before = snapshotProtectedFiles(wfDir);
 
   const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
@@ -228,11 +228,11 @@ test('r2q review-and-fix accepts an in-place backward fix to 07-plan.md + the ow
   assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
   assert.equal(beginFix.status, 'begin-fix');
   // The writable boundary is EXACTLY the five 03–07 docs — run.md is never monitored.
-  assert.equal(beginFix.monitoredFileCount, R2Q_EDITABLE_DOCS.length);
+  assert.equal(beginFix.monitoredFileCount, R2P_EDITABLE_DOCS.length);
   const guardReport = JSON.parse(
     fs.readFileSync(beginFix.fixGuardReportPath, 'utf8').match(/```json\n([\s\S]*?)\n```/)[1]
   );
-  const expectedMembers = R2Q_EDITABLE_DOCS.map((doc) => memberPath(root, wfDir, doc)).sort();
+  const expectedMembers = R2P_EDITABLE_DOCS.map((doc) => memberPath(root, wfDir, doc)).sort();
   assert.deepEqual([...guardReport.monitoredFiles].sort(), expectedMembers);
   const runMdMember = memberPath(root, wfDir, 'run.md');
   assert.ok(!guardReport.monitoredFiles.includes(runMdMember), 'run.md must never be monitored/writable');
@@ -258,7 +258,7 @@ test('r2q review-and-fix accepts an in-place backward fix to 07-plan.md + the ow
 
   const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
   assert.equal(manifest.status, 'diff-review');
-  assert.equal(manifest.targetContextKind, 'r2q');
+  assert.equal(manifest.targetContextKind, 'r2p');
 
   // Exactly the two edited docs changed; run.md is byte-identical (never written).
   assert.deepEqual([...changedFiles(wfDir, before)].sort(), ['06-spec.md', '07-plan.md']);
@@ -269,9 +269,9 @@ test('r2q review-and-fix accepts an in-place backward fix to 07-plan.md + the ow
 // (b1) An attempt to write run.md is REFUSED as out-of-set; no diff-review, no PASS.
 // ---------------------------------------------------------------------------
 
-test('r2q end-fix refuses a write to run.md as out-of-set', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-runmd');
-  const { start, opts } = await reachR2qFixStage(root, homeDir, wfDir);
+test('r2p end-fix refuses a write to run.md as out-of-set', async (t) => {
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-runmd');
+  const { start, opts } = await reachR2pFixStage(root, homeDir, wfDir);
 
   const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
     ...opts,
@@ -319,9 +319,9 @@ test('r2q end-fix refuses a write to run.md as out-of-set', async (t) => {
 // (b2) Declaring run.md (or any non-03–07 path) in the fix report is refused as out-of-set.
 // ---------------------------------------------------------------------------
 
-test('r2q end-fix refuses a fix report that declares run.md or a non-03–07 path', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-declare');
-  const { start, opts } = await reachR2qFixStage(root, homeDir, wfDir);
+test('r2p end-fix refuses a fix report that declares run.md or a non-03–07 path', async (t) => {
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-declare');
+  const { start, opts } = await reachR2pFixStage(root, homeDir, wfDir);
   const before = snapshotProtectedFiles(wfDir);
 
   const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
@@ -370,9 +370,9 @@ test('r2q end-fix refuses a fix report that declares run.md or a non-03–07 pat
 // (b3) A write to a path OUTSIDE the requirement directory (outside 03–07) is refused.
 // ---------------------------------------------------------------------------
 
-test('r2q end-fix refuses a write outside the 03–07 requirement set', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-outside');
-  const { start, opts } = await reachR2qFixStage(root, homeDir, wfDir);
+test('r2p end-fix refuses a write outside the 03–07 requirement set', async (t) => {
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-outside');
+  const { start, opts } = await reachR2pFixStage(root, homeDir, wfDir);
 
   const beginFix = await runWorkflowCommand('begin-fix', [start.targetStateDir, '--json'], {
     ...opts,
@@ -420,9 +420,9 @@ test('r2q end-fix refuses a write outside the 03–07 requirement set', async (t
 //     unreviewed in-set change after triage blocks begin-fix (no baseline, no lease).
 // ---------------------------------------------------------------------------
 
-test('r2q begin-fix requires a clean guard over the 03–07 set before the first write', async (t) => {
-  const { root, homeDir, wfDir } = makeR2qProject(t, 'WF-20260624-dirty');
-  const { start, opts } = await reachR2qFixStage(root, homeDir, wfDir);
+test('r2p begin-fix requires a clean guard over the 03–07 set before the first write', async (t) => {
+  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-dirty');
+  const { start, opts } = await reachR2pFixStage(root, homeDir, wfDir);
 
   // Dirty an in-set doc AFTER triage and BEFORE begin-fix: this is unreviewed local work,
   // so the pre-write file-set guard must block the first fix round.

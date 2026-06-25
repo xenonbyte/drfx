@@ -1,16 +1,16 @@
 'use strict';
 
 // ---------------------------------------------------------------------------
-// review-fix-r2q — END-TO-END lifecycle + gating (Task 13, Milestone 3).
+// review-fix-r2p — END-TO-END lifecycle + gating (Task 13, Milestone 3).
 //
 // SAFETY-CRITICAL and DETERMINISTIC: no LLM / CLI semantic reviewer runs. The
-// six per-task r2q test files already pin each phase in isolation (gate parser,
+// six per-task r2p test files already pin each phase in isolation (gate parser,
 // advisory path, persistent context, in-place fix, gate-freshness TOCTOU, earned
 // PASS / deferral). THIS file's value is threefold and intentionally NOT a re-test
 // of those units:
 //
 //   1. It anchors on a COMMITTED, realistic WF-* requirement fixture
-//      (test/fixtures/r2q/approved/) whose 07-plan.md carries a PLANTED PLAN-rubric
+//      (test/fixtures/r2p/approved/) whose 07-plan.md carries a PLANTED PLAN-rubric
 //      gap (step 4 caps link requests — observable acceptance behavior — that
 //      06-spec.md never states as a criterion). The committed fixture is the
 //      canonical INPUT; each test COPIES it into a t-scoped os.tmpdir() sandbox and
@@ -27,8 +27,8 @@
 //   3. It threads the cross-cutting matrix on the SAME committed fixture so the
 //      gating / drift / editable-set / default-guard / deferral properties are all
 //      proven against one realistic artifact rather than ad-hoc inline strings:
-//        - Gating: incomplete-plan run.md -> ERR_R2Q_GATE_PLAN_INCOMPLETE;
-//          archived dir -> ERR_R2Q_GATE_ARCHIVED; neither runs a review.
+//        - Gating: incomplete-plan run.md -> ERR_R2P_GATE_PLAN_INCOMPLETE;
+//          archived dir -> ERR_R2P_GATE_ARCHIVED; neither runs a review.
 //        - run.md drift mid-run -> guarded drift blocker (no write, no PASS).
 //        - Editable-set enforcement: a fix never touches run.md or anything outside
 //          03–07 (edits WITHIN 03–07, incl. 07-plan.md, ARE accepted).
@@ -36,7 +36,7 @@
 //          DEFAULT (no guard= token); a tracked-clean fixture runs with guard=git.
 //        - Earned PASS vs stopped-with-deferrals (human-decision finding).
 //
-// CRITICAL: the r2q editable set is 03–07 (ALL FIVE), INCLUDING 07-plan.md. run.md
+// CRITICAL: the r2p editable set is 03–07 (ALL FIVE), INCLUDING 07-plan.md. run.md
 // is the ONLY never-written file. The editable-set test asserts run.md / out-of-set
 // writes are refused while in-set edits (incl. 07-plan.md) are accepted.
 // ---------------------------------------------------------------------------
@@ -57,18 +57,18 @@ const { parseLedger } = require('../lib/ledger');
 // Committed fixture: the canonical INPUT for every test in this file.
 // ---------------------------------------------------------------------------
 
-const FIXTURE_ROOT = path.join(__dirname, 'fixtures', 'r2q');
+const FIXTURE_ROOT = path.join(__dirname, 'fixtures', 'r2p');
 const APPROVED_DIR = path.join(FIXTURE_ROOT, 'approved');
 const PAYLOAD_DIR = path.join(FIXTURE_ROOT, 'payloads');
 
-const R2Q_EDITABLE_DOCS = [
+const R2P_EDITABLE_DOCS = [
   '03-requirement-brief.md',
   '04-risk-discovery.md',
   '05-design.md',
   '06-spec.md',
   '07-plan.md'
 ];
-const REQUIREMENT_FILES = ['run.md', ...R2Q_EDITABLE_DOCS];
+const REQUIREMENT_FILES = ['run.md', ...R2P_EDITABLE_DOCS];
 
 function readPayload(name) {
   return fs.readFileSync(path.join(PAYLOAD_DIR, name), 'utf8');
@@ -128,8 +128,8 @@ function memberPath(root, wfDir, doc) {
 // project UNTRACKED (the default guard=snapshot fixture). `runMdOverride` swaps run.md
 // (the incomplete-plan gate case).
 function makeSandbox(t, name, { underArchive = false, git: useGit = false, runMdOverride = null } = {}) {
-  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-e2e-')));
-  const homeDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-e2e-home-')));
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-e2e-')));
+  const homeDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-e2e-home-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
 
@@ -154,9 +154,9 @@ function makeSandbox(t, name, { underArchive = false, git: useGit = false, runMd
   return { root, homeDir, wfDir };
 }
 
-function r2qArgs(wfDir, { mode = 'review-and-fix', routeTokens = [], runtimePlatform = 'codex' } = {}) {
+function r2pArgs(wfDir, { mode = 'review-and-fix', routeTokens = [], runtimePlatform = 'codex' } = {}) {
   return [
-    'review-fix-r2q',
+    'review-fix-r2p',
     `target=${wfDir}`,
     mode,
     ...routeTokens,
@@ -176,10 +176,10 @@ function r2qArgs(wfDir, { mode = 'review-and-fix', routeTokens = [], runtimePlat
 // persistent path and return the start result + shared opts.
 async function reachAfterTriage(root, homeDir, wfDir, { review, triage, routeTokens = [] }) {
   const opts = { cwd: root, homeDir };
-  const args = r2qArgs(wfDir, { routeTokens });
+  const args = r2pArgs(wfDir, { routeTokens });
   const start = await runWorkflowCommand('start', args, opts);
   assert.equal(start.ok, true, JSON.stringify(start));
-  assert.equal(start.routeKind, 'r2q', 'r2q must dispatch as its own route kind');
+  assert.equal(start.routeKind, 'r2p', 'r2p must dispatch as its own route kind');
   await runWorkflowCommand('context', args, opts);
   await runWorkflowCommand('record-review', [
     ...args,
@@ -227,7 +227,7 @@ function finalPassFor(filesChanged) {
 // with the finding mapped to its owning upstream doc and an EARNED PASS.
 // ---------------------------------------------------------------------------
 
-test('e2e: full r2q lifecycle on the committed fixture earns PASS via a finding->06-spec.md backward fix', async (t) => {
+test('e2e: full r2p lifecycle on the committed fixture earns PASS via a finding->06-spec.md backward fix', async (t) => {
   // Tracked-clean fixture (guard=git): a committed, clean worktree.
   const { root, homeDir, wfDir } = makeSandbox(t, 'WF-20260624-magic-link-pass', { git: true });
   const before = snapshotRequirementFiles(wfDir);
@@ -242,7 +242,7 @@ test('e2e: full r2q lifecycle on the committed fixture earns PASS via a finding-
   let manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
   assert.equal(manifest.guardMode, 'git', 'explicit guard=git is honored');
   assert.equal(manifest.status, 'fix');
-  assert.equal(manifest.targetContextKind, 'r2q');
+  assert.equal(manifest.targetContextKind, 'r2p');
   const accepted = parseLedger(fs.readFileSync(start.ledgerPath, 'utf8'))
     .issues.find((issue) => issue.id === 'ISSUE-001');
   assert.equal(accepted.status, 'accepted');
@@ -253,7 +253,7 @@ test('e2e: full r2q lifecycle on the committed fixture earns PASS via a finding-
     now: new Date('2026-06-24T00:00:00.000Z')
   });
   assert.equal(beginFix.ok, true, JSON.stringify(beginFix));
-  assert.equal(beginFix.monitoredFileCount, R2Q_EDITABLE_DOCS.length);
+  assert.equal(beginFix.monitoredFileCount, R2P_EDITABLE_DOCS.length);
   const guardReport = JSON.parse(
     fs.readFileSync(beginFix.fixGuardReportPath, 'utf8').match(/```json\n([\s\S]*?)\n```/)[1]
   );
@@ -346,25 +346,25 @@ const incompletePlanRunMd = [
   ''
 ].join('\n');
 
-test('e2e gating: an incomplete-plan run.md blocks with ERR_R2Q_GATE_PLAN_INCOMPLETE before any review', async (t) => {
+test('e2e gating: an incomplete-plan run.md blocks with ERR_R2P_GATE_PLAN_INCOMPLETE before any review', async (t) => {
   const { root, homeDir, wfDir } = makeSandbox(t, 'WF-20260624-incomplete', {
     git: true,
     runMdOverride: incompletePlanRunMd
   });
   const opts = { cwd: root, homeDir };
-  const args = r2qArgs(wfDir, { routeTokens: ['guard=git'] });
+  const args = r2pArgs(wfDir, { routeTokens: ['guard=git'] });
 
   // The persistent start refuses and writes no state.
   const start = await runWorkflowCommand('start', args, opts);
   assert.equal(start.ok, false, JSON.stringify(start));
   assert.equal(start.status, 'blocked');
-  assert.equal(start.errorCode, 'ERR_R2Q_GATE_PLAN_INCOMPLETE');
+  assert.equal(start.errorCode, 'ERR_R2P_GATE_PLAN_INCOMPLETE');
   assert.equal(start.manifestPath, null);
   assert.equal(fs.existsSync(path.join(root, '.drfx')), false);
 
   // The advisory no-state path ALSO refuses at context, before any reviewer recording.
   const advisoryArgs = [
-    'review-fix-r2q',
+    'review-fix-r2p',
     `target=${wfDir}`,
     'read-only',
     '--assurance',
@@ -384,7 +384,7 @@ test('e2e gating: an incomplete-plan run.md blocks with ERR_R2Q_GATE_PLAN_INCOMP
   const context = await runWorkflowCommand('context', ['--no-state', ...advisoryArgs], opts);
   assert.equal(context.ok, false, JSON.stringify(context));
   assert.equal(context.status, 'blocked');
-  assert.equal(context.errorCode, 'ERR_R2Q_GATE_PLAN_INCOMPLETE');
+  assert.equal(context.errorCode, 'ERR_R2P_GATE_PLAN_INCOMPLETE');
   const review = await runWorkflowCommand('record-review', [
     '--no-state',
     ...advisoryArgs,
@@ -393,11 +393,11 @@ test('e2e gating: an incomplete-plan run.md blocks with ERR_R2Q_GATE_PLAN_INCOMP
     '--result-stdin'
   ], { ...opts, stdin: REVIEW_FAIL });
   assert.equal(review.ok, false, JSON.stringify(review));
-  assert.equal(review.errorCode, 'ERR_R2Q_GATE_PLAN_INCOMPLETE');
+  assert.equal(review.errorCode, 'ERR_R2P_GATE_PLAN_INCOMPLETE');
   assert.notEqual(review.status, 'recorded-review');
 });
 
-test('e2e gating: an archived requirement dir blocks with ERR_R2Q_GATE_ARCHIVED before any review', async (t) => {
+test('e2e gating: an archived requirement dir blocks with ERR_R2P_GATE_ARCHIVED before any review', async (t) => {
   // The committed fixture, copied UNDER .req-to-plan/archive/, must be refused as archived.
   const { root, homeDir, wfDir } = makeSandbox(t, 'WF-20260624-archived', {
     git: true,
@@ -406,10 +406,10 @@ test('e2e gating: an archived requirement dir blocks with ERR_R2Q_GATE_ARCHIVED 
   assert.match(wfDir, /\.req-to-plan\/archive\//, 'fixture lives under the archive dir');
   const opts = { cwd: root, homeDir };
 
-  const start = await runWorkflowCommand('start', r2qArgs(wfDir, { routeTokens: ['guard=git'] }), opts);
+  const start = await runWorkflowCommand('start', r2pArgs(wfDir, { routeTokens: ['guard=git'] }), opts);
   assert.equal(start.ok, false, JSON.stringify(start));
   assert.equal(start.status, 'blocked');
-  assert.equal(start.errorCode, 'ERR_R2Q_GATE_ARCHIVED');
+  assert.equal(start.errorCode, 'ERR_R2P_GATE_ARCHIVED');
   assert.equal(fs.existsSync(path.join(root, '.drfx')), false);
 });
 
@@ -531,19 +531,19 @@ test('e2e editable-set: a fix report declaring an OUT-OF-SET path is refused', a
 // ---------------------------------------------------------------------------
 
 test('e2e default guard: an untracked .req-to-plan/WF-* runs with guard=snapshot by default (no guard= token)', async (t) => {
-  // NO git init — an untracked project. NO guard= token — r2q defaults to snapshot.
+  // NO git init — an untracked project. NO guard= token — r2p defaults to snapshot.
   const { root, homeDir, wfDir } = makeSandbox(t, 'WF-20260624-untracked', { git: false });
   assert.equal(fs.existsSync(path.join(root, '.git')), false, 'project is untracked');
   const before = snapshotRequirementFiles(wfDir);
 
   const opts = { cwd: root, homeDir };
-  const args = r2qArgs(wfDir); // no guard= token
+  const args = r2pArgs(wfDir); // no guard= token
   const start = await runWorkflowCommand('start', args, opts);
   assert.equal(start.ok, true, JSON.stringify(start));
-  assert.equal(start.routeKind, 'r2q');
-  // The default guard for r2q is snapshot — which is why an untracked tree is not rejected.
+  assert.equal(start.routeKind, 'r2p');
+  // The default guard for r2p is snapshot — which is why an untracked tree is not rejected.
   const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
-  assert.equal(manifest.guardMode, 'snapshot', 'r2q defaults to guard=snapshot');
+  assert.equal(manifest.guardMode, 'snapshot', 'r2p defaults to guard=snapshot');
 
   await runWorkflowCommand('context', args, opts);
   await runWorkflowCommand('record-review', [

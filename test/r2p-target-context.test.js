@@ -11,11 +11,11 @@ const {
   activeArtifactsSection,
   isArchivedRequirementDir,
   isRequirementDirShape,
-  resolveR2qTarget,
-  buildR2qIdentity,
-  formatR2qIdentityFields,
-  parseR2qIdentityFields,
-  compareR2qIdentity,
+  resolveR2pTarget,
+  buildR2pIdentity,
+  formatR2pIdentityFields,
+  parseR2pIdentityFields,
+  compareR2pIdentity,
   computeFileSetFingerprint
 } = require('../lib/target-context');
 
@@ -71,12 +71,12 @@ const garbageRunMd = 'garbage with no Status section';
 // ---------------------------------------------------------------------------
 
 function makeSandbox(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-test-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-test-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return root;
 }
 
-const R2Q_EDITABLE_DOCS = [
+const R2P_EDITABLE_DOCS = [
   '03-requirement-brief.md',
   '04-risk-discovery.md',
   '05-design.md',
@@ -90,7 +90,7 @@ function makeWfDir(root, name, opts = {}) {
     skipRunMd = false,
     runMdIsDirectory = false,
     runMdIsSymlink = false,
-    docs = R2Q_EDITABLE_DOCS,
+    docs = R2P_EDITABLE_DOCS,
     skipDoc = null,
     renameDoc = null, // { from, to }
     underArchive = false
@@ -144,10 +144,10 @@ test('parseRunMdGate: plan active in Active Artifacts => planApproved=true', () 
   assert.equal(result.status, 'active_at_design_stage');
 });
 
-test('parseRunMdGate: garbage input throws ERR_R2Q_RUNMD_UNRECOGNIZED', () => {
+test('parseRunMdGate: garbage input throws ERR_R2P_RUNMD_UNRECOGNIZED', () => {
   assert.throws(
     () => parseRunMdGate(garbageRunMd),
-    (error) => error.code === 'ERR_R2Q_RUNMD_UNRECOGNIZED'
+    (error) => error.code === 'ERR_R2P_RUNMD_UNRECOGNIZED'
   );
 });
 
@@ -160,7 +160,7 @@ test('parseRunMdGate: plan not generated returns planApproved=false', () => {
 // token `closed_at_plan_checkpoint` plus a markdown-table "## Active Artifacts"
 // — not just drfx's own simplified bullet fixtures.
 const realR2pRunMd = fs.readFileSync(
-  path.join(__dirname, 'fixtures', 'r2q', 'real-r2p-run.md'),
+  path.join(__dirname, 'fixtures', 'r2p', 'real-r2p-run.md'),
   'utf8'
 );
 
@@ -264,33 +264,33 @@ test('isRequirementDirShape: no .req-to-plan returns false', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tests: resolveR2qTarget — happy path
+// Tests: resolveR2pTarget — happy path
 // ---------------------------------------------------------------------------
 
-test('resolveR2qTarget: happy path returns correct shape', (t) => {
+test('resolveR2pTarget: happy path returns correct shape', (t) => {
   const root = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260101-aaa-demo');
 
-  const ctx = resolveR2qTarget({ cwd: root, target: wfDir });
+  const ctx = resolveR2pTarget({ cwd: root, target: wfDir });
 
-  assert.equal(ctx.routeKind, 'r2q');
-  assert.equal(ctx.targetContextKind, 'r2q');
+  assert.equal(ctx.routeKind, 'r2p');
+  assert.equal(ctx.targetContextKind, 'r2p');
   assert.equal(typeof ctx.requirementDir, 'string');
   assert.equal(typeof ctx.projectRoot, 'string');
   assert.deepEqual(
     ctx.editableFiles.map((f) => f.relativePath),
-    R2Q_EDITABLE_DOCS
+    R2P_EDITABLE_DOCS
   );
   assert.match(ctx.fileSetFingerprint, /^[a-f0-9]{64}$/);
   assert.match(ctx.runMdSha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(ctx.gate, { planApproved: true, status: 'closed_at_plan_checkpoint' });
 });
 
-test('resolveR2qTarget: editable file entries have required fields', (t) => {
+test('resolveR2pTarget: editable file entries have required fields', (t) => {
   const root = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260101-bbb-demo');
 
-  const ctx = resolveR2qTarget({ cwd: root, target: wfDir });
+  const ctx = resolveR2pTarget({ cwd: root, target: wfDir });
 
   for (const f of ctx.editableFiles) {
     assert.equal(typeof f.relativePath, 'string');
@@ -301,33 +301,33 @@ test('resolveR2qTarget: editable file entries have required fields', (t) => {
 });
 
 // ---------------------------------------------------------------------------
-// Tests: resolveR2qTarget — shape/containment errors
+// Tests: resolveR2pTarget — shape/containment errors
 // ---------------------------------------------------------------------------
 
-test('resolveR2qTarget: outside .req-to-plan throws ERR_R2Q_TARGET_SHAPE', (t) => {
+test('resolveR2pTarget: outside .req-to-plan throws ERR_R2P_TARGET_SHAPE', (t) => {
   const root = makeSandbox(t);
   // A WF-* dir but NOT under .req-to-plan
   const outsideReqToPlanDir = path.join(root, 'WF-20260101-outside');
   fs.mkdirSync(outsideReqToPlanDir);
 
   assert.throws(
-    () => resolveR2qTarget({ cwd: root, target: outsideReqToPlanDir }),
-    (error) => error.code === 'ERR_R2Q_TARGET_SHAPE'
+    () => resolveR2pTarget({ cwd: root, target: outsideReqToPlanDir }),
+    (error) => error.code === 'ERR_R2P_TARGET_SHAPE'
   );
 });
 
-test('resolveR2qTarget: non-WF-* name throws ERR_R2Q_TARGET_SHAPE', (t) => {
+test('resolveR2pTarget: non-WF-* name throws ERR_R2P_TARGET_SHAPE', (t) => {
   const root = makeSandbox(t);
   const reqDir = path.join(root, '.req-to-plan', 'run-1');
   fs.mkdirSync(reqDir, { recursive: true });
 
   assert.throws(
-    () => resolveR2qTarget({ cwd: root, target: reqDir }),
-    (error) => error.code === 'ERR_R2Q_TARGET_SHAPE'
+    () => resolveR2pTarget({ cwd: root, target: reqDir }),
+    (error) => error.code === 'ERR_R2P_TARGET_SHAPE'
   );
 });
 
-test('resolveR2qTarget: symlinked WF dir throws ERR_R2Q_TARGET_SYMLINK', (t) => {
+test('resolveR2pTarget: symlinked WF dir throws ERR_R2P_TARGET_SYMLINK', (t) => {
   const root = makeSandbox(t);
   // Create a real WF dir somewhere else
   const realWfDir = makeWfDir(root, 'WF-20260101-real');
@@ -338,16 +338,16 @@ test('resolveR2qTarget: symlinked WF dir throws ERR_R2Q_TARGET_SYMLINK', (t) => 
   fs.symlinkSync(realWfDir, symlinkedWfDir);
 
   assert.throws(
-    () => resolveR2qTarget({ cwd: root, target: symlinkedWfDir }),
-    (error) => error.code === 'ERR_R2Q_TARGET_SYMLINK'
+    () => resolveR2pTarget({ cwd: root, target: symlinkedWfDir }),
+    (error) => error.code === 'ERR_R2P_TARGET_SYMLINK'
   );
 });
 
-// Darwin /var -> /private/var alias: resolveR2qTarget must not reject a valid
+// Darwin /var -> /private/var alias: resolveR2pTarget must not reject a valid
 // path that contains a well-known OS-level path alias (non-symlink segment rename).
 // os.tmpdir() on macOS returns /var/folders/... which is aliased to /private/var/...,
 // so any temp dir created there exercises the alias path.
-test('resolveR2qTarget: darwin /var alias does not cause false rejection', (t) => {
+test('resolveR2pTarget: darwin /var alias does not cause false rejection', (t) => {
   if (process.platform !== 'darwin') {
     t.skip('darwin-only alias test');
     return;
@@ -364,93 +364,93 @@ test('resolveR2qTarget: darwin /var alias does not cause false rejection', (t) =
     return;
   }
   // os.tmpdir() on macOS is /var/folders/.../<user>/T which exercises the alias
-  const varBase = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-alias-'));
+  const varBase = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-alias-'));
   t.after(() => fs.rmSync(varBase, { recursive: true, force: true }));
 
   const privateVarAliasWfDir = makeWfDir(varBase, 'WF-20260101-alias');
 
   assert.doesNotThrow(() =>
-    resolveR2qTarget({ cwd: varBase, target: privateVarAliasWfDir })
+    resolveR2pTarget({ cwd: varBase, target: privateVarAliasWfDir })
   );
 });
 
 // ---------------------------------------------------------------------------
-// Tests: resolveR2qTarget — run.md errors
+// Tests: resolveR2pTarget — run.md errors
 // ---------------------------------------------------------------------------
 
-test('resolveR2qTarget: missing run.md throws ERR_R2Q_RUNMD_MISSING', (t) => {
+test('resolveR2pTarget: missing run.md throws ERR_R2P_RUNMD_MISSING', (t) => {
   const root = makeSandbox(t);
   const missingRunMdWfDir = makeWfDir(root, 'WF-20260101-no-runmd', {
     skipRunMd: true
   });
 
   assert.throws(
-    () => resolveR2qTarget({ cwd: root, target: missingRunMdWfDir }),
-    (error) => error.code === 'ERR_R2Q_RUNMD_MISSING'
+    () => resolveR2pTarget({ cwd: root, target: missingRunMdWfDir }),
+    (error) => error.code === 'ERR_R2P_RUNMD_MISSING'
   );
 });
 
-test('resolveR2qTarget: run.md is a directory throws ERR_R2Q_RUNMD_MISSING', (t) => {
+test('resolveR2pTarget: run.md is a directory throws ERR_R2P_RUNMD_MISSING', (t) => {
   const root = makeSandbox(t);
   const directoryRunMdWfDir = makeWfDir(root, 'WF-20260101-dir-runmd', {
     runMdIsDirectory: true
   });
 
   assert.throws(
-    () => resolveR2qTarget({ cwd: root, target: directoryRunMdWfDir }),
-    (error) => error.code === 'ERR_R2Q_RUNMD_MISSING'
+    () => resolveR2pTarget({ cwd: root, target: directoryRunMdWfDir }),
+    (error) => error.code === 'ERR_R2P_RUNMD_MISSING'
   );
 });
 
-test('resolveR2qTarget: run.md is a symlink throws ERR_R2Q_RUNMD_SYMLINK', (t) => {
+test('resolveR2pTarget: run.md is a symlink throws ERR_R2P_RUNMD_SYMLINK', (t) => {
   const root = makeSandbox(t);
   const symlinkRunMdWfDir = makeWfDir(root, 'WF-20260101-sym-runmd', {
     runMdIsSymlink: true
   });
 
   assert.throws(
-    () => resolveR2qTarget({ cwd: root, target: symlinkRunMdWfDir }),
-    (error) => error.code === 'ERR_R2Q_RUNMD_SYMLINK'
+    () => resolveR2pTarget({ cwd: root, target: symlinkRunMdWfDir }),
+    (error) => error.code === 'ERR_R2P_RUNMD_SYMLINK'
   );
 });
 
 // ---------------------------------------------------------------------------
-// Tests: resolveR2qTarget — owner doc chain errors
+// Tests: resolveR2pTarget — owner doc chain errors
 // ---------------------------------------------------------------------------
 
-test('resolveR2qTarget: missing owner doc throws ERR_R2Q_DOC_CHAIN_INCOMPLETE', (t) => {
+test('resolveR2pTarget: missing owner doc throws ERR_R2P_DOC_CHAIN_INCOMPLETE', (t) => {
   const root = makeSandbox(t);
   const missingSpecWfDir = makeWfDir(root, 'WF-20260101-no-spec', {
     skipDoc: '06-spec.md'
   });
 
   assert.throws(
-    () => resolveR2qTarget({ cwd: root, target: missingSpecWfDir }),
-    (error) => error.code === 'ERR_R2Q_DOC_CHAIN_INCOMPLETE'
+    () => resolveR2pTarget({ cwd: root, target: missingSpecWfDir }),
+    (error) => error.code === 'ERR_R2P_DOC_CHAIN_INCOMPLETE'
   );
 });
 
-test('resolveR2qTarget: renamed owner doc throws ERR_R2Q_DOC_CHAIN_INCOMPLETE', (t) => {
+test('resolveR2pTarget: renamed owner doc throws ERR_R2P_DOC_CHAIN_INCOMPLETE', (t) => {
   const root = makeSandbox(t);
   const renamedPlanWfDir = makeWfDir(root, 'WF-20260101-renamed-plan', {
     renameDoc: { from: '07-plan.md', to: '07-plan-draft.md' }
   });
 
   assert.throws(
-    () => resolveR2qTarget({ cwd: root, target: renamedPlanWfDir }),
-    (error) => error.code === 'ERR_R2Q_DOC_CHAIN_INCOMPLETE'
+    () => resolveR2pTarget({ cwd: root, target: renamedPlanWfDir }),
+    (error) => error.code === 'ERR_R2P_DOC_CHAIN_INCOMPLETE'
   );
 });
 
 // ---------------------------------------------------------------------------
-// Tests: resolveR2qTarget — fingerprint stability and content-sensitivity
+// Tests: resolveR2pTarget — fingerprint stability and content-sensitivity
 // ---------------------------------------------------------------------------
 
-test('resolveR2qTarget: fingerprint is order-stable (reverse matches forward)', (t) => {
+test('resolveR2pTarget: fingerprint is order-stable (reverse matches forward)', (t) => {
   const root = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260101-fp-stable');
 
-  const ctx = resolveR2qTarget({ cwd: root, target: wfDir });
+  const ctx = resolveR2pTarget({ cwd: root, target: wfDir });
   const before = ctx.fileSetFingerprint;
 
   // Recompute manually with reversed order — must still match (computeFileSetFingerprint sorts)
@@ -462,60 +462,60 @@ test('resolveR2qTarget: fingerprint is order-stable (reverse matches forward)', 
   assert.equal(reversed, before);
 });
 
-test('resolveR2qTarget: fingerprint changes when a file content changes', (t) => {
+test('resolveR2pTarget: fingerprint changes when a file content changes', (t) => {
   const root = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260101-fp-change');
 
-  const ctx = resolveR2qTarget({ cwd: root, target: wfDir });
+  const ctx = resolveR2pTarget({ cwd: root, target: wfDir });
   const before = ctx.fileSetFingerprint;
 
   // Mutate spec
   fs.writeFileSync(path.join(wfDir, '06-spec.md'), 'changed\n');
-  const after = resolveR2qTarget({ cwd: root, target: wfDir }).fileSetFingerprint;
+  const after = resolveR2pTarget({ cwd: root, target: wfDir }).fileSetFingerprint;
 
   assert.notEqual(after, before);
 });
 
 // ---------------------------------------------------------------------------
-// Tests: resolveR2qTarget — gate errors
+// Tests: resolveR2pTarget — gate errors
 // ---------------------------------------------------------------------------
 
-test('resolveR2qTarget: plan not generated throws ERR_R2Q_GATE_PLAN_INCOMPLETE', (t) => {
+test('resolveR2pTarget: plan not generated throws ERR_R2P_GATE_PLAN_INCOMPLETE', (t) => {
   const root = makeSandbox(t);
   const incompletePlanWfDir = makeWfDir(root, 'WF-20260101-incomplete-plan', {
     runMdContent: planIncompleteRunMd
   });
 
   assert.throws(
-    () => resolveR2qTarget({ cwd: root, target: incompletePlanWfDir }),
-    (error) => error.code === 'ERR_R2Q_GATE_PLAN_INCOMPLETE'
+    () => resolveR2pTarget({ cwd: root, target: incompletePlanWfDir }),
+    (error) => error.code === 'ERR_R2P_GATE_PLAN_INCOMPLETE'
   );
 });
 
-test('resolveR2qTarget: archived dir throws ERR_R2Q_GATE_ARCHIVED', (t) => {
+test('resolveR2pTarget: archived dir throws ERR_R2P_GATE_ARCHIVED', (t) => {
   const root = makeSandbox(t);
   const archivedWfDir = makeWfDir(root, 'WF-20260101-archived', {
     underArchive: true
   });
 
   assert.throws(
-    () => resolveR2qTarget({ cwd: root, target: archivedWfDir }),
-    (error) => error.code === 'ERR_R2Q_GATE_ARCHIVED'
+    () => resolveR2pTarget({ cwd: root, target: archivedWfDir }),
+    (error) => error.code === 'ERR_R2P_GATE_ARCHIVED'
   );
 });
 
 // ---------------------------------------------------------------------------
-// Tests: r2q identity family
+// Tests: r2p identity family
 // ---------------------------------------------------------------------------
 
-test('buildR2qIdentity: builds identity with correct scalar fields', (t) => {
+test('buildR2pIdentity: builds identity with correct scalar fields', (t) => {
   const root = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260101-identity');
 
-  const ctx = resolveR2qTarget({ cwd: root, target: wfDir });
-  const identity = buildR2qIdentity({ context: ctx, guardMode: 'git', roundLimit: 3 });
+  const ctx = resolveR2pTarget({ cwd: root, target: wfDir });
+  const identity = buildR2pIdentity({ context: ctx, guardMode: 'git', roundLimit: 3 });
 
-  assert.equal(identity.targetContextKind, 'r2q');
+  assert.equal(identity.targetContextKind, 'r2p');
   assert.equal(identity.guardMode, 'git');
   assert.equal(identity.roundLimit, '3');
   assert.equal(typeof identity.requirementDir, 'string');
@@ -523,96 +523,96 @@ test('buildR2qIdentity: builds identity with correct scalar fields', (t) => {
   assert.match(identity.fileSetFingerprint, /^[a-f0-9]{64}$/);
 });
 
-test('buildR2qIdentity: roundLimit null serializes as "none"', (t) => {
+test('buildR2pIdentity: roundLimit null serializes as "none"', (t) => {
   const root = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260101-identity-no-limit');
 
-  const ctx = resolveR2qTarget({ cwd: root, target: wfDir });
-  const identity = buildR2qIdentity({ context: ctx, guardMode: 'snapshot', roundLimit: null });
+  const ctx = resolveR2pTarget({ cwd: root, target: wfDir });
+  const identity = buildR2pIdentity({ context: ctx, guardMode: 'snapshot', roundLimit: null });
 
   assert.equal(identity.roundLimit, 'none');
 });
 
-test('buildR2qIdentity: throws on wrong routeKind', () => {
+test('buildR2pIdentity: throws on wrong routeKind', () => {
   assert.throws(
-    () => buildR2qIdentity({ context: { routeKind: 'code' }, guardMode: 'git' }),
-    (error) => error.code === 'ERR_R2Q_IDENTITY'
+    () => buildR2pIdentity({ context: { routeKind: 'code' }, guardMode: 'git' }),
+    (error) => error.code === 'ERR_R2P_IDENTITY'
   );
 });
 
-test('formatR2qIdentityFields / parseR2qIdentityFields: round-trips all scalar fields', (t) => {
+test('formatR2pIdentityFields / parseR2pIdentityFields: round-trips all scalar fields', (t) => {
   const root = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260101-identity-roundtrip');
 
-  const ctx = resolveR2qTarget({ cwd: root, target: wfDir });
-  const identity = buildR2qIdentity({ context: ctx, guardMode: 'git', roundLimit: 2 });
+  const ctx = resolveR2pTarget({ cwd: root, target: wfDir });
+  const identity = buildR2pIdentity({ context: ctx, guardMode: 'git', roundLimit: 2 });
 
-  const fields = formatR2qIdentityFields(identity);
-  const parsed = parseR2qIdentityFields(fields);
+  const fields = formatR2pIdentityFields(identity);
+  const parsed = parseR2pIdentityFields(fields);
 
   assert.deepEqual(parsed, identity);
 });
 
-test('compareR2qIdentity: identical identities match', (t) => {
+test('compareR2pIdentity: identical identities match', (t) => {
   const root = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260101-cmp-match');
 
-  const ctx = resolveR2qTarget({ cwd: root, target: wfDir });
-  const identity = buildR2qIdentity({ context: ctx, guardMode: 'git', roundLimit: 1 });
+  const ctx = resolveR2pTarget({ cwd: root, target: wfDir });
+  const identity = buildR2pIdentity({ context: ctx, guardMode: 'git', roundLimit: 1 });
 
-  const result = compareR2qIdentity({ stored: identity, requested: identity });
+  const result = compareR2pIdentity({ stored: identity, requested: identity });
   assert.equal(result.match, true);
   assert.deepEqual(result.mismatches, []);
 });
 
-test('compareR2qIdentity: runMdSha256 drift causes mismatch', (t) => {
+test('compareR2pIdentity: runMdSha256 drift causes mismatch', (t) => {
   const root = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260101-cmp-runmd-drift');
 
-  const ctx = resolveR2qTarget({ cwd: root, target: wfDir });
-  const identity = buildR2qIdentity({ context: ctx, guardMode: 'git', roundLimit: 1 });
+  const ctx = resolveR2pTarget({ cwd: root, target: wfDir });
+  const identity = buildR2pIdentity({ context: ctx, guardMode: 'git', roundLimit: 1 });
   const stale = { ...identity, runMdSha256: 'a'.repeat(64) };
 
-  const result = compareR2qIdentity({ stored: stale, requested: identity });
+  const result = compareR2pIdentity({ stored: stale, requested: identity });
   assert.equal(result.match, false);
   assert.ok(result.mismatches.includes('runMdSha256'));
 });
 
-test('compareR2qIdentity: fileSetFingerprint drift causes mismatch', (t) => {
+test('compareR2pIdentity: fileSetFingerprint drift causes mismatch', (t) => {
   const root = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260101-cmp-fp-drift');
 
-  const ctx = resolveR2qTarget({ cwd: root, target: wfDir });
-  const identity = buildR2qIdentity({ context: ctx, guardMode: 'git', roundLimit: 1 });
+  const ctx = resolveR2pTarget({ cwd: root, target: wfDir });
+  const identity = buildR2pIdentity({ context: ctx, guardMode: 'git', roundLimit: 1 });
   const stale = { ...identity, fileSetFingerprint: 'b'.repeat(64) };
 
-  const result = compareR2qIdentity({ stored: stale, requested: identity });
+  const result = compareR2pIdentity({ stored: stale, requested: identity });
   assert.equal(result.match, false);
   assert.ok(result.mismatches.includes('fileSetFingerprint'));
 });
 
-test('compareR2qIdentity: guardMode drift causes mismatch', (t) => {
+test('compareR2pIdentity: guardMode drift causes mismatch', (t) => {
   const root = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260101-cmp-guard-drift');
 
-  const ctx = resolveR2qTarget({ cwd: root, target: wfDir });
-  const stored = buildR2qIdentity({ context: ctx, guardMode: 'git', roundLimit: 1 });
-  const requested = buildR2qIdentity({ context: ctx, guardMode: 'snapshot', roundLimit: 1 });
+  const ctx = resolveR2pTarget({ cwd: root, target: wfDir });
+  const stored = buildR2pIdentity({ context: ctx, guardMode: 'git', roundLimit: 1 });
+  const requested = buildR2pIdentity({ context: ctx, guardMode: 'snapshot', roundLimit: 1 });
 
-  const result = compareR2qIdentity({ stored, requested });
+  const result = compareR2pIdentity({ stored, requested });
   assert.equal(result.match, false);
   assert.ok(result.mismatches.includes('guardMode'));
 });
 
-test('compareR2qIdentity: requirementDir drift causes mismatch', (t) => {
+test('compareR2pIdentity: requirementDir drift causes mismatch', (t) => {
   const root = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260101-cmp-dir-drift');
 
-  const ctx = resolveR2qTarget({ cwd: root, target: wfDir });
-  const identity = buildR2qIdentity({ context: ctx, guardMode: 'git', roundLimit: 1 });
+  const ctx = resolveR2pTarget({ cwd: root, target: wfDir });
+  const identity = buildR2pIdentity({ context: ctx, guardMode: 'git', roundLimit: 1 });
   const stale = { ...identity, requirementDir: 'some/other/path' };
 
-  const result = compareR2qIdentity({ stored: stale, requested: identity });
+  const result = compareR2pIdentity({ stored: stale, requested: identity });
   assert.equal(result.match, false);
   assert.ok(result.mismatches.includes('requirementDir'));
 });

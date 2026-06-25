@@ -1,15 +1,15 @@
 'use strict';
 
 // ---------------------------------------------------------------------------
-// review-fix-r2q — advisory / read-only review lifecycle (no-state path).
+// review-fix-r2p — advisory / read-only review lifecycle (no-state path).
 //
 // These tests are DETERMINISTIC: no LLM / CLI semantic reviewer runs. The test
 // harness supplies the explicit reviewer FAIL payload, the triage payload, and
 // the final-response payload, and drives the SAME no-state workflow commands the
-// generated r2q route uses (context -> record-review -> record-triage -> finalize).
+// generated r2p route uses (context -> record-review -> record-triage -> finalize).
 //
 // What they pin:
-//   - r2q resolves via resolveR2qTarget (run.md gate + 03–07 chain), NOT the
+//   - r2p resolves via resolveR2pTarget (run.md gate + 03–07 chain), NOT the
 //     CODE/PR file-set resolvers.
 //   - The advisory path returns ONLY read-only statuses (read-only-findings here),
 //     never `pass`, and writes NOTHING (no 03–07 / run.md mutation, no .drfx state).
@@ -56,7 +56,7 @@ const planIncompleteRunMd = [
   ''
 ].join('\n');
 
-const R2Q_EDITABLE_DOCS = [
+const R2P_EDITABLE_DOCS = [
   '03-requirement-brief.md',
   '04-risk-discovery.md',
   '05-design.md',
@@ -112,8 +112,8 @@ const FINAL_FINDINGS = [
 ].join('\n');
 
 function makeSandbox(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-advisory-'));
-  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2q-advisory-home-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-advisory-'));
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-advisory-home-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
   return { root, homeDir };
@@ -126,7 +126,7 @@ function makeWfDir(root, name, { runMd = planApprovedRunMd, underArchive = false
   const wfDir = path.join(parent, name);
   fs.mkdirSync(wfDir, { recursive: true });
   fs.writeFileSync(path.join(wfDir, 'run.md'), runMd);
-  for (const doc of R2Q_EDITABLE_DOCS) {
+  for (const doc of R2P_EDITABLE_DOCS) {
     fs.writeFileSync(path.join(wfDir, doc), `# ${doc}\nContent of ${doc}\n`);
   }
   return wfDir;
@@ -137,7 +137,7 @@ function sha256OfFile(filePath) {
 }
 
 function snapshotProtectedFiles(wfDir) {
-  const watched = ['run.md', ...R2Q_EDITABLE_DOCS];
+  const watched = ['run.md', ...R2P_EDITABLE_DOCS];
   return Object.fromEntries(watched.map((name) => [name, sha256OfFile(path.join(wfDir, name))]));
 }
 
@@ -149,9 +149,9 @@ function projectRelative(root, wfDir, name) {
   return path.relative(root, path.join(wfDir, name)).split(path.sep).join('/');
 }
 
-function r2qArgs(wfDir) {
+function r2pArgs(wfDir) {
   return [
-    'review-fix-r2q',
+    'review-fix-r2p',
     `target=${wfDir}`,
     'read-only',
     '--assurance',
@@ -174,22 +174,22 @@ function r2qArgs(wfDir) {
 // Advisory e2e: FAIL finding -> read-only-findings, nothing written, owner doc named.
 // ---------------------------------------------------------------------------
 
-test('r2q advisory review finalizes read-only-findings without editing any 03–07 file or run.md', async (t) => {
+test('r2p advisory review finalizes read-only-findings without editing any 03–07 file or run.md', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260624-advisory');
   const before = snapshotProtectedFiles(wfDir);
-  const commonArgs = r2qArgs(wfDir);
+  const commonArgs = r2pArgs(wfDir);
   const opts = { cwd: root, homeDir };
 
   const context = await runWorkflowCommand('context', ['--no-state', ...commonArgs], opts);
   assert.equal(context.ok, true, JSON.stringify(context));
   assert.equal(context.status, 'context');
-  assert.equal(context.routeKind, 'r2q');
+  assert.equal(context.routeKind, 'r2p');
   assert.equal(context.targetStateDir, null);
   assert.equal(typeof context.reviewGuard, 'string');
   assert.deepEqual(
     context.contextPackSkeleton.fileSet.files.map((file) => file.path).sort(),
-    R2Q_EDITABLE_DOCS.map((doc) => projectRelative(root, wfDir, doc)).sort()
+    R2P_EDITABLE_DOCS.map((doc) => projectRelative(root, wfDir, doc)).sort()
   );
   assert.deepEqual(
     context.contextPackSkeleton.protectedDependencies.map((dep) => dep.path),
@@ -238,10 +238,10 @@ test('r2q advisory review finalizes read-only-findings without editing any 03–
   assert.equal(fs.existsSync(path.join(root, '.drfx')), false);
 });
 
-test('r2q advisory record-review blocks when protected run.md drifts after context', async (t) => {
+test('r2p advisory record-review blocks when protected run.md drifts after context', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260624-advisory-drift');
-  const commonArgs = r2qArgs(wfDir);
+  const commonArgs = r2pArgs(wfDir);
   const opts = { cwd: root, homeDir };
 
   const context = await runWorkflowCommand('context', ['--no-state', ...commonArgs], opts);
@@ -267,21 +267,21 @@ test('r2q advisory record-review blocks when protected run.md drifts after conte
 // Generated route prompt/package carries the finding->owner-doc map.
 // ---------------------------------------------------------------------------
 
-function renderedR2qRoutePackage(platform) {
+function renderedR2pRoutePackage(platform) {
   if (platform !== 'codex') {
-    return renderPlatformRoute(platform, 'review-fix-r2q', { packageVersion: '0.0.0-snapshot' });
+    return renderPlatformRoute(platform, 'review-fix-r2p', { packageVersion: '0.0.0-snapshot' });
   }
 
   const packageFiles = generatePlatformFiles('codex', { packageVersion: '0.0.0-snapshot' });
-  const r2qSkill = packageFiles.find((entry) => entry.routeName === 'review-fix-r2q');
-  assert.ok(r2qSkill, 'codex r2q skill package exists');
-  return r2qSkill.files.map((file) => file.content).join('\n');
+  const r2pSkill = packageFiles.find((entry) => entry.routeName === 'review-fix-r2p');
+  assert.ok(r2pSkill, 'codex r2p skill package exists');
+  return r2pSkill.files.map((file) => file.content).join('\n');
 }
 
-test('generated r2q route prompt/package carries the finding-to-owner-doc map', () => {
+test('generated r2p route prompt/package carries the finding-to-owner-doc map', () => {
   for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
-    const rendered = renderedR2qRoutePackage(platform);
-    assert.match(rendered, /finding-to-owner-doc map/i, `${platform} r2q prompt must carry the map heading`);
+    const rendered = renderedR2pRoutePackage(platform);
+    assert.match(rendered, /finding-to-owner-doc map/i, `${platform} r2p prompt must carry the map heading`);
     assert.match(rendered, /acceptance criteria \/ observable behavior gap -> `06-spec\.md`/, `${platform}: 06-spec mapping`);
     assert.match(rendered, /architecture, interface, or sequencing gap -> `05-design\.md`/, `${platform}: 05-design mapping`);
     assert.match(rendered, /unmitigated risk or missing rollback -> `04-risk-discovery\.md`/, `${platform}: 04-risk mapping`);
@@ -295,16 +295,16 @@ test('generated r2q route prompt/package carries the finding-to-owner-doc map', 
 // reach reviewer-recording.
 // ---------------------------------------------------------------------------
 
-test('r2q advisory blocks on an incomplete-plan run.md before reviewer-recording', async (t) => {
+test('r2p advisory blocks on an incomplete-plan run.md before reviewer-recording', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260624-incomplete', { runMd: planIncompleteRunMd });
-  const commonArgs = r2qArgs(wfDir);
+  const commonArgs = r2pArgs(wfDir);
   const opts = { cwd: root, homeDir };
 
   const context = await runWorkflowCommand('context', ['--no-state', ...commonArgs], opts);
   assert.equal(context.ok, false, JSON.stringify(context));
   assert.equal(context.status, 'blocked');
-  assert.equal(context.errorCode, 'ERR_R2Q_GATE_PLAN_INCOMPLETE');
+  assert.equal(context.errorCode, 'ERR_R2P_GATE_PLAN_INCOMPLETE');
   assert.equal(context.blockingReason, 'state-validation-failed');
 
   // record-review must ALSO refuse: the gate error never reaches reviewer-recording.
@@ -317,20 +317,20 @@ test('r2q advisory blocks on an incomplete-plan run.md before reviewer-recording
   ], { ...opts, stdin: REVIEW_FAIL });
   assert.equal(review.ok, false, JSON.stringify(review));
   assert.equal(review.status, 'blocked');
-  assert.equal(review.errorCode, 'ERR_R2Q_GATE_PLAN_INCOMPLETE');
+  assert.equal(review.errorCode, 'ERR_R2P_GATE_PLAN_INCOMPLETE');
   assert.notEqual(review.status, 'recorded-review');
 });
 
-test('r2q advisory blocks on an archived requirement directory before reviewer-recording', async (t) => {
+test('r2p advisory blocks on an archived requirement directory before reviewer-recording', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const wfDir = makeWfDir(root, 'WF-20260624-archived', { underArchive: true });
-  const commonArgs = r2qArgs(wfDir);
+  const commonArgs = r2pArgs(wfDir);
   const opts = { cwd: root, homeDir };
 
   const context = await runWorkflowCommand('context', ['--no-state', ...commonArgs], opts);
   assert.equal(context.ok, false, JSON.stringify(context));
   assert.equal(context.status, 'blocked');
-  assert.equal(context.errorCode, 'ERR_R2Q_GATE_ARCHIVED');
+  assert.equal(context.errorCode, 'ERR_R2P_GATE_ARCHIVED');
   assert.equal(context.blockingReason, 'state-validation-failed');
 
   const review = await runWorkflowCommand('record-review', [
@@ -342,6 +342,6 @@ test('r2q advisory blocks on an archived requirement directory before reviewer-r
   ], { ...opts, stdin: REVIEW_FAIL });
   assert.equal(review.ok, false, JSON.stringify(review));
   assert.equal(review.status, 'blocked');
-  assert.equal(review.errorCode, 'ERR_R2Q_GATE_ARCHIVED');
+  assert.equal(review.errorCode, 'ERR_R2P_GATE_ARCHIVED');
   assert.notEqual(review.status, 'recorded-review');
 });
