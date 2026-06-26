@@ -248,17 +248,23 @@ round). Validation rules:
 
 Multiple findings in one round: r2p allows only one repair action per run (gap-open refuses when any
 route is already open; reopen forks per call), and both reopen and gap-open stale every stage from the
-owner down to `current_stage`. So when accepted findings map to several owner stages, the repair plan
-aggregates them into a single command at the **earliest** owner stage in `STAGE_ORDER`; the single
-`reason` / `required_action` summarizes them, and the receipt's `issue_ids[]` lists every aggregated
-issue. Block as `r2p-repair-plan-ambiguous` only when aggregation is impossible (for gap-open, when the
-earliest owner stage is not strictly upstream of `current_stage`, which is the R4 current-stage case).
+owner down to `current_stage`. Apply the R4 status mapping first. For a closed or executing run,
+aggregate accepted findings into one `r2p-reopen` at the **earliest** owner stage in `STAGE_ORDER`. For
+an open run whose earliest accepted owner stage is strictly upstream of `current_stage`, aggregate them
+into one `r2p-gap-open` at that stage; the single `reason` / `required_action` summarizes them, and the
+receipt's `issue_ids[]` lists every aggregated issue. For an open run with no accepted finding owned by
+a stage strictly upstream of `current_stage`, do not create a repair plan; use the R4 checkpoint
+`r2p-current-stage-repair-required`. Block as `r2p-repair-plan-ambiguous` only when accepted findings
+still cannot be mapped to valid owner stages or one allowed command after the R4 status mapping.
 
 ### R7. r2p command execution
 
-- Allowlist: `r2p-reopen`, `r2p-gap-open` only.
-- Forbidden (drfx must never invoke): `r2p-continue`, `r2p-execute`, `r2p-archive`, `r2p-start`,
-  `r2p-gap-resolve`, `r2p-switch`, `r2p-tier-lock`, and any other r2p verb.
+- Repair (mutating) allowlist: `r2p-reopen`, `r2p-gap-open` only.
+- Read-only allowlist: `r2p-status` (invoked with `R2P_JSON=1` to resolve `repairMode` in R4, to run
+  the R2.1 contract probe, and to re-read live status before execution; use `--all` then filter by
+  `work_id`, never `r2p-switch`).
+- Forbidden (drfx must never invoke): every other r2p verb, including `r2p-continue`, `r2p-execute`,
+  `r2p-archive`, `r2p-start`, `r2p-gap-resolve`, `r2p-switch`, `r2p-tier-lock`.
 - Execute with an argv array and `shell: false`; never build a shell command string.
 - Invoke with `R2P_JSON=1` so the command returns the documented JSON payload (reopen: `new_work_id`;
   gap-open: `route_id` / `staled_stages`). For `r2p-gap-open`, also pass `--confirm`: it is inert in
@@ -419,9 +425,11 @@ acceptance criteria and test plan, with the scope decision applied.
    deterministically. An r2p without the contract blocks with `r2p-json-contract-unavailable`.
 9. **Current-stage gate:** an open run with an owner==`current_stage` finding calls neither gap-open
    nor reopen; it checkpoints with `r2p-current-stage-repair-required`.
-10. **Aggregation gate:** accepted findings spanning multiple owner stages produce one command at the
-    earliest `STAGE_ORDER` stage with all `issue_ids` in the receipt; an impossible aggregation blocks
-    with `r2p-repair-plan-ambiguous`.
+10. **Aggregation gate:** after the R4 status mapping, accepted findings spanning multiple owner
+    stages produce one command at the earliest repairable `STAGE_ORDER` stage with all `issue_ids` in
+    the receipt. An open-run current-stage-only repair checkpoints with
+    `r2p-current-stage-repair-required`; only post-R4 aggregation failures block with
+    `r2p-repair-plan-ambiguous`.
 11. **Documentation gate:** SKILL.md, route-contract fragments, coordinator.md, and fixer.md describe
     only the new model and contain no legacy or migration language.
 
