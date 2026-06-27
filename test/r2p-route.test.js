@@ -573,13 +573,13 @@ test('gate6 repair exec argv shell:false; capture new_work_id/route_id; checkpoi
     '#!/bin/sh',
     'set -eu',
     `printf "%s\\n" "$0|$*|R2P_JSON=\${R2P_JSON:-}" >> "${path.join(fake.logDir, 'r2p-status.log')}"`,
-    `printf "%s\\n" '${JSON.stringify([{
-      work_id: gapWorkId,
-      status: 'open',
-      current_stage: 'plan',
-      open_routes_detail: [
-        { route_id: 'ROUTE-001', owner_stage: 'design', required_action: 'clarify design constraints' }
-      ]
+      `printf "%s\\n" '${JSON.stringify([{
+        work_id: gapWorkId,
+        status: 'active_stage_draft',
+        current_stage: 'plan',
+        open_routes_detail: [
+          { route_id: 'ROUTE-001', owner_stage: 'design', required_action: 'clarify design constraints' }
+        ]
     }])}'`
   ].join('\n'));
   const gapStatus = await readRunStatus(paths, gapWorkId, { cwd: root, env, homeDir });
@@ -681,7 +681,7 @@ test('gate8 status-contract parses multiple owner stages; missing contract block
       'set -eu',
       `printf "%s\\n" '${JSON.stringify([{
         work_id: workId,
-        status: 'open',
+        status: 'checkpoint_review',
         current_stage: 'plan',
         open_routes_detail: [
           { route_id: 'ROUTE-001', owner_stage: 'design', required_action: 'clarify design' },
@@ -694,8 +694,44 @@ test('gate8 status-contract parses multiple owner stages; missing contract block
   const paths = resolveR2pCommands({ env, homeDir });
   const status = await readRunStatus(paths, workId, { cwd: root, env, homeDir });
   assert.deepEqual(status.openRouteOwnerStages, ['design', 'spec']);
+  const mode = mapRepairMode(status, status.currentStage, [
+    { issue_id: 'ISSUE-001', owner_stage: 'design', required_action: 'Clarify design.' }
+  ]);
+  assert.equal(mode.command_kind, 'r2p-gap-open');
 
   writeExecutable(path.join(fake.binDir, 'r2p-status'), '#!/bin/sh\nset -eu\nprintf "oops\\n"\n');
+  await assert.rejects(
+    () => readRunStatus(paths, workId, { cwd: root, env, homeDir }),
+    (error) => error && error.blockingReason === 'r2p-json-contract-unavailable'
+  );
+
+  writeExecutable(path.join(fake.binDir, 'r2p-status'), [
+    '#!/bin/sh',
+    'set -eu',
+    `printf "%s\\n" '${JSON.stringify([{
+      work_id: workId,
+      status: 'checkpoint_review',
+      current_stage: 'bogus',
+      open_routes_detail: []
+    }])}'`
+  ].join('\n'));
+  await assert.rejects(
+    () => readRunStatus(paths, workId, { cwd: root, env, homeDir }),
+    (error) => error && error.blockingReason === 'r2p-json-contract-unavailable'
+  );
+
+  writeExecutable(path.join(fake.binDir, 'r2p-status'), [
+    '#!/bin/sh',
+    'set -eu',
+    `printf "%s\\n" '${JSON.stringify([{
+      work_id: workId,
+      status: 'checkpoint_review',
+      current_stage: 'plan',
+      open_routes_detail: [
+        { route_id: 'ROUTE-003', owner_stage: 'bogus', required_action: 'bad owner stage' }
+      ]
+    }])}'`
+  ].join('\n'));
   await assert.rejects(
     () => readRunStatus(paths, workId, { cwd: root, env, homeDir }),
     (error) => error && error.blockingReason === 'r2p-json-contract-unavailable'
