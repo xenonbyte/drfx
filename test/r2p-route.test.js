@@ -11,6 +11,7 @@
 //    suite green incrementally.
 
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -18,6 +19,16 @@ const test = require('node:test');
 
 const { getRouteDescriptor } = require('../lib/routes');
 const { runWorkflowCommand, parseWorkflowArgs } = require('../lib/workflow');
+const {
+  resolveR2pCommands,
+  probeJsonContract,
+  readRunStatus,
+  mapRepairMode,
+  buildRepairPlan,
+  driftGuard,
+  runRepairCommand,
+  writeReceipt
+} = require('../lib/workflow/r2p-repair');
 const { resolveRouteTargetMetadata } = require('../lib/workflow/target-resolution');
 
 const REVIEW_FAIL = [
@@ -187,6 +198,23 @@ function statusScript(payload, options = {}) {
   }
   lines.push(`printf "%s\\n" '${JSON.stringify(payload)}'`);
   return lines.join('\n');
+}
+
+function captureRunFingerprints(runDir) {
+  const runMdSha256 = crypto.createHash('sha256')
+    .update(fs.readFileSync(path.join(runDir, 'run.md'), 'utf8'))
+    .digest('hex');
+  const fileSetHash = crypto.createHash('sha256');
+  for (const artifact of R2P_ARTIFACTS) {
+    fileSetHash.update(artifact);
+    fileSetHash.update('\0');
+    fileSetHash.update(fs.readFileSync(path.join(runDir, artifact), 'utf8'));
+    fileSetHash.update('\0');
+  }
+  return {
+    runMdSha256,
+    fileSetFingerprint: fileSetHash.digest('hex')
+  };
 }
 
 function runtimeArgs(routeTokens, overrides = {}) {
@@ -508,38 +536,27 @@ test('gate6 repair exec argv shell:false; capture new_work_id/route_id; checkpoi
       '#!/bin/sh',
       'set -eu',
       `printf "%s\\n" "$0|$*|R2P_JSON=\${R2P_JSON:-}" >> "${path.join(root, 'fake-r2p-logs', 'r2p-status.log')}"`,
-      `printf "%s\\n" '${JSON.stringify({
+      `printf "%s\\n" '${JSON.stringify([{
         work_id: workId,
         status: 'closed_at_plan_checkpoint',
         current_stage: 'plan',
         open_routes_detail: []
-      })}'`
+      }])}'`
     ].join('\n')
   });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
   makeRun(root, workId);
+  const paths = resolveR2pCommands({ env, homeDir });
+  await probeJsonContract(paths, { cwd: root, env, homeDir });
+  const reopenStatus = await readRunStatus(paths, workId, { cwd: root, env, homeDir });
+  const reopenFindings = [
+    { issue_id: 'ISSUE-001', owner_stage: 'design', reason: 'Need upstream design repair.' }
+  ];
+  const reopenMode = mapRepairMode(reopenStatus, reopenStatus.currentStage, reopenFindings);
+  const reopenPlan = buildRepairPlan(reopenFindings, reopenMode, reopenStatus.currentStage, { workId });
+  assert.equal(reopenPlan.command_kind, 'r2p-reopen');
 
-  const start = await startFor(root, homeDir, workId, [], { env });
-  assert.equal(start.ok, true);
-  const review = await recordReviewFor(root, homeDir, workId, [], { env });
-  assert.equal(review.ok, true);
-  const triage = await recordTriageFor(root, homeDir, workId, [], { env });
-  assert.equal(triage.ok, true);
-
-  const repairPlan = await runWorkflowCommand('record-r2p-repair-plan', [start.targetStateDir, '--json'], {
-    cwd: root,
-    homeDir,
-    env
-  });
-  assert.equal(repairPlan.ok, true);
-  assert.equal(repairPlan.commandKind, 'r2p-reopen');
-
-  const apply = await runWorkflowCommand('apply-r2p-repair', [start.targetStateDir, '--json'], {
-    cwd: root,
-    homeDir,
-    env
-  });
-  assert.equal(apply.ok, true);
+  const apply = await runRepairCommand(paths, reopenPlan, { cwd: root, env, homeDir });
   assert.equal(apply.status, 'checkpoint');
   assert.equal(apply.statusReason, 'r2p-repair-applied');
   assert.equal(apply.newWorkId, 'WF-20260627-demo-r1');
@@ -556,37 +573,24 @@ test('gate6 repair exec argv shell:false; capture new_work_id/route_id; checkpoi
     '#!/bin/sh',
     'set -eu',
     `printf "%s\\n" "$0|$*|R2P_JSON=\${R2P_JSON:-}" >> "${path.join(fake.logDir, 'r2p-status.log')}"`,
-    `printf "%s\\n" '${JSON.stringify({
+    `printf "%s\\n" '${JSON.stringify([{
       work_id: gapWorkId,
       status: 'open',
       current_stage: 'plan',
       open_routes_detail: [
         { route_id: 'ROUTE-001', owner_stage: 'design', required_action: 'clarify design constraints' }
       ]
-    })}'`
+    }])}'`
   ].join('\n'));
+  const gapStatus = await readRunStatus(paths, gapWorkId, { cwd: root, env, homeDir });
+  const gapFindings = [
+    { issue_id: 'ISSUE-001', owner_stage: 'design', required_action: 'Clarify design constraints.' }
+  ];
+  const gapMode = mapRepairMode(gapStatus, gapStatus.currentStage, gapFindings);
+  const gapPlan = buildRepairPlan(gapFindings, gapMode, gapStatus.currentStage, { workId: gapWorkId });
+  assert.equal(gapPlan.command_kind, 'r2p-gap-open');
 
-  const gapStart = await startFor(root, homeDir, gapWorkId, [], { env });
-  assert.equal(gapStart.ok, true, JSON.stringify(gapStart));
-  const gapReview = await recordReviewFor(root, homeDir, gapWorkId, [], { env });
-  assert.equal(gapReview.ok, true, JSON.stringify(gapReview));
-  const gapTriage = await recordTriageFor(root, homeDir, gapWorkId, [], { env });
-  assert.equal(gapTriage.ok, true, JSON.stringify(gapTriage));
-
-  const gapRepairPlan = await runWorkflowCommand('record-r2p-repair-plan', [gapStart.targetStateDir, '--json'], {
-    cwd: root,
-    homeDir,
-    env
-  });
-  assert.equal(gapRepairPlan.ok, true, JSON.stringify(gapRepairPlan));
-  assert.equal(gapRepairPlan.commandKind, 'r2p-gap-open');
-
-  const gapApply = await runWorkflowCommand('apply-r2p-repair', [gapStart.targetStateDir, '--json'], {
-    cwd: root,
-    homeDir,
-    env
-  });
-  assert.equal(gapApply.ok, true, JSON.stringify(gapApply));
+  const gapApply = await runRepairCommand(paths, gapPlan, { cwd: root, env, homeDir });
   assert.equal(gapApply.status, 'checkpoint');
   assert.equal(gapApply.statusReason, 'r2p-repair-applied');
   assert.equal(gapApply.routeId, 'ROUTE-001');
@@ -675,7 +679,7 @@ test('gate8 status-contract parses multiple owner stages; missing contract block
     'r2p-status': [
       '#!/bin/sh',
       'set -eu',
-      `printf "%s\\n" '${JSON.stringify({
+      `printf "%s\\n" '${JSON.stringify([{
         work_id: workId,
         status: 'open',
         current_stage: 'plan',
@@ -683,19 +687,19 @@ test('gate8 status-contract parses multiple owner stages; missing contract block
           { route_id: 'ROUTE-001', owner_stage: 'design', required_action: 'clarify design' },
           { route_id: 'ROUTE-002', owner_stage: 'spec', required_action: 'tighten spec' }
         ]
-      })}'`
+      }])}'`
     ].join('\n')
   });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
-
-  const context = await contextFor(root, homeDir, workId, [], { env });
-  assert.equal(context.ok, true);
-  assert.deepEqual(context.contextPackSkeleton.openRouteOwnerStages, ['design', 'spec']);
+  const paths = resolveR2pCommands({ env, homeDir });
+  const status = await readRunStatus(paths, workId, { cwd: root, env, homeDir });
+  assert.deepEqual(status.openRouteOwnerStages, ['design', 'spec']);
 
   writeExecutable(path.join(fake.binDir, 'r2p-status'), '#!/bin/sh\nset -eu\nprintf "oops\\n"\n');
-  const blocked = await contextFor(root, homeDir, workId, [], { env });
-  assert.equal(blocked.ok, false);
-  assert.equal(blocked.blockingReason, 'r2p-json-contract-unavailable');
+  await assert.rejects(
+    () => readRunStatus(paths, workId, { cwd: root, env, homeDir }),
+    (error) => error && error.blockingReason === 'r2p-json-contract-unavailable'
+  );
 });
 
 test('gate9 current-stage checkpoint', async (t) => {
@@ -735,7 +739,7 @@ test('gate9 current-stage checkpoint', async (t) => {
   assert.equal(repairPlan.statusReason, 'r2p-current-stage-repair-required');
 });
 
-test('gate-10 earliest-stage aggregation + r2p-repair-plan-ambiguous', async (t) => {
+test('gate10 earliest-stage aggregation + r2p-repair-plan-ambiguous', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const workId = 'WF-20260627-gate10';
   makeRun(root, workId);
@@ -743,7 +747,7 @@ test('gate-10 earliest-stage aggregation + r2p-repair-plan-ambiguous', async (t)
     'r2p-status': [
       '#!/bin/sh',
       'set -eu',
-      `printf "%s\\n" '${JSON.stringify({
+      `printf "%s\\n" '${JSON.stringify([{
         work_id: workId,
         status: 'open',
         current_stage: 'plan',
@@ -751,46 +755,30 @@ test('gate-10 earliest-stage aggregation + r2p-repair-plan-ambiguous', async (t)
           { route_id: 'ROUTE-001', owner_stage: 'requirement_brief', required_action: 'clarify scope' },
           { route_id: 'ROUTE-002', owner_stage: 'design', required_action: 'tighten architecture' }
         ]
-      })}'`
+      }])}'`
     ].join('\n')
   });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+  const paths = resolveR2pCommands({ env, homeDir });
+  const status = await readRunStatus(paths, workId, { cwd: root, env, homeDir });
+  const findings = [
+    { issue_id: 'ISSUE-001', owner_stage: 'requirement_brief', required_action: 'Clarify scope.' },
+    { issue_id: 'ISSUE-002', owner_stage: 'design', required_action: 'Tighten architecture.' }
+  ];
+  const mode = mapRepairMode(status, status.currentStage, findings);
+  const aggregated = buildRepairPlan(findings, mode, status.currentStage, { workId });
+  assert.equal(aggregated.owner_stage, 'requirement_brief');
+  assert.deepEqual(aggregated.issue_ids, ['ISSUE-001', 'ISSUE-002']);
 
-  const start = await startFor(root, homeDir, workId, [], { env });
-  assert.equal(start.ok, true);
-  const review = await recordReviewFor(root, homeDir, workId, [], { env });
-  assert.equal(review.ok, true);
-  const triage = await recordTriageFor(root, homeDir, workId, [], {
-    env,
-    stdin: TRIAGE_ACCEPT_MULTI
-  });
-  assert.equal(triage.ok, true);
-
-  const aggregated = await runWorkflowCommand('record-r2p-repair-plan', [start.targetStateDir, '--json'], {
-    cwd: root,
-    homeDir,
-    env
-  });
-  assert.equal(aggregated.ok, true);
-  assert.equal(aggregated.ownerStage, 'requirement_brief');
-  assert.deepEqual(aggregated.issueIds, ['ISSUE-001', 'ISSUE-002']);
-
-  const ambiguous = await runWorkflowCommand('record-r2p-repair-plan', [
-    start.targetStateDir,
-    '--payload-stdin',
-    '--json'
-  ], {
-    cwd: root,
-    homeDir,
-    env,
-    stdin: JSON.stringify({
-      accepted_findings: [
-        { issue_id: 'ISSUE-001', owner_stage: 'unknown-stage' }
-      ]
-    })
-  });
-  assert.equal(ambiguous.ok, false);
-  assert.equal(ambiguous.blockingReason, 'r2p-repair-plan-ambiguous');
+  assert.throws(
+    () => buildRepairPlan(
+      [{ issue_id: 'ISSUE-001', owner_stage: 'unknown-stage', required_action: 'broken' }],
+      mode,
+      status.currentStage,
+      { workId }
+    ),
+    (error) => error && error.blockingReason === 'r2p-repair-plan-ambiguous'
+  );
 });
 
 test('redaction receipt omits raw reason/secrets', async (t) => {
@@ -812,25 +800,19 @@ test('redaction receipt omits raw reason/secrets', async (t) => {
     ].join('\n')
   });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
-
-  const { start } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
-
-  const repairPlan = await runWorkflowCommand('record-r2p-repair-plan', [start.targetStateDir, '--json'], {
-    cwd: root,
-    homeDir,
-    env
-  });
-  assert.equal(repairPlan.ok, true, JSON.stringify(repairPlan));
-
-  const apply = await runWorkflowCommand('apply-r2p-repair', [start.targetStateDir, '--json'], {
-    cwd: root,
-    homeDir,
-    env
-  });
-  assert.equal(apply.ok, true);
-  const receipt = fs.readFileSync(apply.receiptPath, 'utf8');
+  const paths = resolveR2pCommands({ env, homeDir });
+  const status = await readRunStatus(paths, workId, { cwd: root, env, homeDir });
+  const findings = [
+    { issue_id: 'ISSUE-001', owner_stage: 'design', reason: 'reason=super-secret-password' }
+  ];
+  const mode = mapRepairMode(status, status.currentStage, findings);
+  const plan = buildRepairPlan(findings, mode, status.currentStage, { workId });
+  const apply = await runRepairCommand(paths, plan, { cwd: root, env, homeDir });
+  const receiptPath = path.join(root, 'r2p-repair-receipt.md');
+  const receipt = writeReceipt({ ...apply, receiptPath }).receiptText;
   assert.doesNotMatch(receipt, /SECRET_TOKEN|sk-live|password/i);
   assert.doesNotMatch(receipt, /raw required_action/i);
+  assert.equal(fs.existsSync(receiptPath), true);
 });
 
 test('drift guard blocks instead of executing', async (t) => {
@@ -846,22 +828,26 @@ test('drift guard blocks instead of executing', async (t) => {
     })
   });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
-
-  const { start } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
-
-  const repairPlan = await runWorkflowCommand('record-r2p-repair-plan', [start.targetStateDir, '--json'], {
-    cwd: root,
-    homeDir,
-    env
-  });
-  assert.equal(repairPlan.ok, true, JSON.stringify(repairPlan));
+  const paths = resolveR2pCommands({ env, homeDir });
+  const status = await readRunStatus(paths, workId, { cwd: root, env, homeDir });
+  const findings = [
+    { issue_id: 'ISSUE-001', owner_stage: 'design', reason: 'Need upstream design repair.' }
+  ];
+  const mode = mapRepairMode(status, status.currentStage, findings);
+  const repairPlan = buildRepairPlan(findings, mode, status.currentStage, { workId });
+  const fingerprint = captureRunFingerprints(runDir);
 
   fs.appendFileSync(path.join(runDir, '07-plan.md'), '\ndrifted after review\n');
-
-  const apply = await runWorkflowCommand('apply-r2p-repair', [start.targetStateDir, '--json'], {
+  const apply = await driftGuard({
     cwd: root,
+    env,
     homeDir,
-    env
+    workId,
+    runDir,
+    archiveRunDir: path.join(root, '.req-to-plan', 'archive', workId),
+    command_kind: repairPlan.command_kind,
+    runMdSha256: fingerprint.runMdSha256,
+    fileSetFingerprint: fingerprint.fileSetFingerprint
   });
   assert.equal(apply.ok, false);
   assert.equal(apply.blockingReason, 'r2p-drift-detected');
