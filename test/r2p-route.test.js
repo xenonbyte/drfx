@@ -391,6 +391,15 @@ test('gate3 workspace preflight', async (t) => {
   assert.equal(archiveOnly.ok, false);
   assert.equal(archiveOnly.blockingReason, 'r2p-run-archived');
 
+  fs.rmSync(path.join(root, '.req-to-plan'), { recursive: true, force: true });
+  fs.mkdirSync(path.join(root, 'real-workspace'), { recursive: true });
+  fs.symlinkSync(path.join(root, 'real-workspace'), path.join(root, '.req-to-plan'));
+  const symlinkWorkspace = await startFor(root, homeDir, workId, [], { env });
+  assert.equal(symlinkWorkspace.ok, false);
+  assert.equal(symlinkWorkspace.blockingReason, 'unsafe-r2p-workspace');
+
+  fs.rmSync(path.join(root, '.req-to-plan'), { recursive: true, force: true });
+  makeRun(root, workId, { underArchive: true });
   makeRun(root, workId);
   const conflict = await startFor(root, homeDir, workId, [], { env });
   assert.equal(conflict.ok, false);

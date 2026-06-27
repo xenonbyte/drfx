@@ -318,6 +318,30 @@ test('read-only PR start falls through to workflowBase with a resolved file-set 
   assert.equal(result.documentType, 'none');
 });
 
+test('PR start root-resolution failures preserve the PR route kind', async (t) => {
+  const root = freshRepo(t);
+  const missingRoot = path.join(root, 'missing-root');
+  const result = await runWorkflowCommand('start', [
+    'review-fix-pr',
+    `root=${missingRoot}`,
+    'base=main',
+    'review-and-fix',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'ready',
+    '--runtime-stdin-handoff',
+    'ready',
+    '--json'
+  ], { cwd: root });
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.routeKind, 'pr');
+  assert.equal(result.errorCode, 'ERR_FILE_SET_ROOT_MISSING');
+});
+
 test('read-only CODE start falls through to workflowBase with a resolved file-set key', async (t) => {
   const root = freshRepo(t);
   const result = await runWorkflowCommand('start', [

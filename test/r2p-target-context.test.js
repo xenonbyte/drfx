@@ -12,6 +12,7 @@ const {
   isArchivedRequirementDir,
   isRequirementDirShape,
   resolveR2pTarget,
+  resolveR2pWorkIdTarget,
   buildR2pIdentity,
   formatR2pIdentityFields,
   parseR2pIdentityFields,
@@ -340,6 +341,16 @@ test('resolveR2pTarget: symlinked WF dir throws ERR_R2P_TARGET_SYMLINK', (t) => 
   assert.throws(
     () => resolveR2pTarget({ cwd: root, target: symlinkedWfDir }),
     (error) => error.code === 'ERR_R2P_TARGET_SYMLINK'
+  );
+});
+
+test('resolveR2pWorkIdTarget rejects archive-prefixed workId outside the active direct-child slot', (t) => {
+  const root = makeSandbox(t);
+  makeWfDir(root, 'WF-20260101-archived', { underArchive: true });
+
+  assert.throws(
+    () => resolveR2pWorkIdTarget({ projectRoot: root, workId: 'archive/WF-20260101-archived' }),
+    (error) => error.code === 'ERR_R2P_WORK_ID_SHAPE'
   );
 });
 
