@@ -18,6 +18,7 @@ const test = require('node:test');
 
 const { getRouteDescriptor } = require('../lib/routes');
 const { runWorkflowCommand, parseWorkflowArgs } = require('../lib/workflow');
+const { resolveRouteTargetMetadata } = require('../lib/workflow/target-resolution');
 
 const REVIEW_FAIL = [
   'FAIL',
@@ -414,6 +415,25 @@ test('gate4 artifact preflight', async (t) => {
   const symlinkArtifact = await startFor(root, homeDir, workId, [], { env });
   assert.equal(symlinkArtifact.ok, false);
   assert.equal(symlinkArtifact.blockingReason, 'r2p-artifact-missing-or-unsafe');
+});
+
+test('gate4 stable target key stays content-independent for the same workId', async (t) => {
+  const { root } = makeSandbox(t);
+  const workId = 'WF-20260627-stable-key';
+  const otherWorkId = 'WF-20260627-stable-key-r1';
+  const runDir = makeRun(root, workId);
+  makeRun(root, otherWorkId);
+
+  const parsed = parseWorkflowArgs('start', workflowInvocation(workId));
+  const first = resolveRouteTargetMetadata(parsed, { cwd: root, rootCwd: root });
+  fs.appendFileSync(path.join(runDir, '07-plan.md'), '\nregenerated content\n');
+  const second = resolveRouteTargetMetadata(parsed, { cwd: root, rootCwd: root });
+
+  assert.equal(first.targetKey, second.targetKey);
+
+  const otherParsed = parseWorkflowArgs('start', workflowInvocation(otherWorkId));
+  const other = resolveRouteTargetMetadata(otherParsed, { cwd: root, rootCwd: root });
+  assert.notEqual(first.targetKey, other.targetKey);
 });
 
 test('gate5 no-direct-write both directions (drfx fails; r2p-authored change allowed)', async (t) => {
