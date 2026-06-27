@@ -736,6 +736,23 @@ test('gate8 status-contract parses multiple owner stages; missing contract block
     () => readRunStatus(paths, workId, { cwd: root, env, homeDir }),
     (error) => error && error.blockingReason === 'r2p-json-contract-unavailable'
   );
+
+  writeExecutable(path.join(fake.binDir, 'r2p-status'), [
+    '#!/bin/sh',
+    'set -eu',
+    `printf "%s\\n" '${JSON.stringify([{
+      work_id: workId,
+      status: 'checkpoint_review',
+      current_stage: 'plan',
+      open_routes_detail: [
+        { route_id: 'ROUTE-004', required_action: 'missing owner stage' }
+      ]
+    }])}'`
+  ].join('\n'));
+  await assert.rejects(
+    () => readRunStatus(paths, workId, { cwd: root, env, homeDir }),
+    (error) => error && error.blockingReason === 'r2p-json-contract-unavailable'
+  );
 });
 
 test('gate9 current-stage checkpoint', async (t) => {
