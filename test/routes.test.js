@@ -35,21 +35,33 @@ test('route registry exposes correct routeKind for each route', () => {
 test('all routes have defaultMode review-and-fix; defaultGuard git except r2p snapshot', () => {
   for (const route of listRoutes()) {
     assert.equal(route.defaultMode, 'review-and-fix', `${route.routeName}.defaultMode`);
-    // r2p's file-set guard defaults to snapshot (run.md is a protected read-only
-    // dependency); every other route defaults to git.
-    const expectedGuard = route.routeName === 'review-fix-r2p' ? 'snapshot' : 'git';
-    assert.equal(route.defaultGuard, expectedGuard, `${route.routeName}.defaultGuard`);
+    if (route.routeName === 'review-fix-r2p') {
+      assert.equal(route.artifactWritePolicy, 'forbidden', `${route.routeName}.artifactWritePolicy`);
+      assert.equal(route.repairPolicy, 'r2p-lifecycle', `${route.routeName}.repairPolicy`);
+      assert.deepEqual(
+        route.repairCommands,
+        ['r2p-reopen', 'r2p-gap-open'],
+        `${route.routeName}.repairCommands`
+      );
+      assert.equal('defaultGuard' in route, false, `${route.routeName}.defaultGuard`);
+      continue;
+    }
+
+    assert.equal(route.defaultGuard, 'git', `${route.routeName}.defaultGuard`);
   }
 });
 
-test('review-fix-r2p descriptor maps to the document PLAN stack via a file-set context', () => {
+test('review-fix-r2p descriptor maps to the document PLAN stack with r2p lifecycle repair', () => {
   const r2p = getRouteDescriptor('review-fix-r2p');
   assert.equal(r2p.routeKind, 'r2p');
   assert.equal(r2p.documentType, 'PLAN');
   assert.equal(r2p.rubric, 'plan');
   assert.equal(r2p.targetContextKind, 'r2p');
   assert.equal(r2p.defaultMode, 'review-and-fix');
-  assert.equal(r2p.defaultGuard, 'snapshot');
+  assert.equal(r2p.artifactWritePolicy, 'forbidden');
+  assert.equal(r2p.repairPolicy, 'r2p-lifecycle');
+  assert.deepEqual(r2p.repairCommands, ['r2p-reopen', 'r2p-gap-open']);
+  assert.equal('defaultGuard' in r2p, false);
   // r2p is NOT a single-file document route, so it is excluded from listDocumentRoutes().
   assert.equal(listDocumentRoutes().some((route) => route.routeName === 'review-fix-r2p'), false);
 });

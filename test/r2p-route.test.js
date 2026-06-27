@@ -16,6 +16,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
+const { getRouteDescriptor } = require('../lib/routes');
 const { runWorkflowCommand, parseWorkflowArgs } = require('../lib/workflow');
 
 const REVIEW_FAIL = [
@@ -305,6 +306,15 @@ async function reachAcceptedRepairState(root, homeDir, workId, extraTokens = [],
 
   return { start, review, triage };
 }
+
+test('descriptor fields expose r2p repair policy and no defaultGuard', () => {
+  const descriptor = getRouteDescriptor('review-fix-r2p');
+  assert.equal(descriptor.routeName, 'review-fix-r2p');
+  assert.equal(descriptor.artifactWritePolicy, 'forbidden');
+  assert.equal(descriptor.repairPolicy, 'r2p-lifecycle');
+  assert.deepEqual(descriptor.repairCommands, ['r2p-reopen', 'r2p-gap-open']);
+  assert.equal('defaultGuard' in descriptor, false);
+});
 
 test('gate1 invocation accept/reject incl. archive-bypass and flag-injection', async (t) => {
   const { root, homeDir } = makeSandbox(t);
