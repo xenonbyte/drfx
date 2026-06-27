@@ -45,6 +45,30 @@ const TRIAGE_ACCEPT = [
   '  non_blocking: false'
 ].join('\n');
 
+const TRIAGE_ACCEPT_MULTI = [
+  'Triage:',
+  '- reviewer_id: R001',
+  '  issue_id: ISSUE-001',
+  '  decision: accepted',
+  '  severity: high',
+  '  original_severity: high',
+  '  rationale: The requirement brief gap is real and should route upstream.',
+  '  merged_into: none',
+  '  deferred_owner: none',
+  '  deferred_next_action: none',
+  '  non_blocking: false',
+  '- reviewer_id: R002',
+  '  issue_id: ISSUE-002',
+  '  decision: accepted',
+  '  severity: medium',
+  '  original_severity: medium',
+  '  rationale: The design-stage gap is also real and should aggregate into the same repair plan.',
+  '  merged_into: none',
+  '  deferred_owner: none',
+  '  deferred_next_action: none',
+  '  non_blocking: false'
+].join('\n');
+
 const REVIEW_PASS = 'PASS\nSummary: No blocking findings after r2p regeneration.\n';
 
 const FINAL_PASS = [
@@ -263,7 +287,7 @@ async function recordTriageFor(root, homeDir, workId, extraTokens = [], override
     {
       cwd: root,
       homeDir,
-      stdin: TRIAGE_ACCEPT,
+      stdin: overrides.stdin || TRIAGE_ACCEPT,
       env: overrides.env
     }
   );
@@ -311,7 +335,10 @@ test('gate1 invocation accept/reject incl. archive-bypass and flag-injection', a
     ['review-fix-r2p', `workId=${workId}`, 'resume', 'reset'],
     ['review-fix-r2p', `workId=${workId}`, 'rounds=2']
   ]) {
-    await assert.rejects(async () => runWorkflowCommand('start', runtimeArgs(tokens), { cwd: root, homeDir }));
+    const blocked = await runWorkflowCommand('start', runtimeArgs(tokens), { cwd: root, homeDir });
+    assert.equal(blocked.status, 'blocked');
+    assert.equal(blocked.blockingReason, 'invalid-r2p-invocation');
+    assert.equal(blocked.nextAction, 'rerun as review-fix-r2p workId=<WF-...>');
   }
 });
 
@@ -436,7 +463,7 @@ test('gate5 no-direct-write both directions (drfx fails; r2p-authored change all
 
 test('gate6 repair exec argv shell:false; capture new_work_id/route_id; checkpoint, no PASS', async (t) => {
   const { root, homeDir } = makeSandbox(t);
-  const workId = 'WF-20260627-gate6';
+  const workId = 'WF-20260627-gate6-reopen';
   const fake = installFakeR2pCli(root, {
     'r2p-status': [
       '#!/bin/sh',
@@ -477,6 +504,61 @@ test('gate6 repair exec argv shell:false; capture new_work_id/route_id; checkpoi
   assert.equal(apply.status, 'checkpoint');
   assert.equal(apply.statusReason, 'r2p-repair-applied');
   assert.equal(apply.newWorkId, 'WF-20260627-demo-r1');
+  assert.match(apply.nextAction, /r2p-continue/);
+
+  const reopenLog = fs.readFileSync(path.join(fake.logDir, 'r2p-reopen.log'), 'utf8');
+  assert.match(reopenLog, /r2p-reopen/);
+  assert.match(reopenLog, /R2P_JSON=1/);
+  assert.match(reopenLog, new RegExp(`--from ${workId}`));
+
+  const gapWorkId = 'WF-20260627-gate6-gap-open';
+  makeRun(root, gapWorkId);
+  writeExecutable(path.join(fake.binDir, 'r2p-status'), [
+    '#!/bin/sh',
+    'set -eu',
+    `printf "%s\\n" "$0|$*|R2P_JSON=\${R2P_JSON:-}" >> "${path.join(fake.logDir, 'r2p-status.log')}"`,
+    `printf "%s\\n" '${JSON.stringify({
+      work_id: gapWorkId,
+      status: 'open',
+      current_stage: 'plan',
+      open_routes_detail: [
+        { route_id: 'ROUTE-001', owner_stage: 'design', required_action: 'clarify design constraints' }
+      ]
+    })}'`
+  ].join('\n'));
+
+  const gapStart = await startFor(root, homeDir, gapWorkId, [], { env });
+  assert.equal(gapStart.ok, true, JSON.stringify(gapStart));
+  const gapReview = await recordReviewFor(root, homeDir, gapWorkId, [], { env });
+  assert.equal(gapReview.ok, true, JSON.stringify(gapReview));
+  const gapTriage = await recordTriageFor(root, homeDir, gapWorkId, [], { env });
+  assert.equal(gapTriage.ok, true, JSON.stringify(gapTriage));
+
+  const gapRepairPlan = await runWorkflowCommand('record-r2p-repair-plan', [gapStart.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(gapRepairPlan.ok, true, JSON.stringify(gapRepairPlan));
+  assert.equal(gapRepairPlan.commandKind, 'r2p-gap-open');
+
+  const gapApply = await runWorkflowCommand('apply-r2p-repair', [gapStart.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(gapApply.ok, true, JSON.stringify(gapApply));
+  assert.equal(gapApply.status, 'checkpoint');
+  assert.equal(gapApply.statusReason, 'r2p-repair-applied');
+  assert.equal(gapApply.routeId, 'ROUTE-001');
+  assert.match(gapApply.nextAction, new RegExp(`review-fix-r2p workId=${gapWorkId}`));
+  assert.match(gapApply.nextAction, /r2p-continue/);
+
+  const gapOpenLog = fs.readFileSync(path.join(fake.logDir, 'r2p-gap-open.log'), 'utf8');
+  assert.match(gapOpenLog, /r2p-gap-open/);
+  assert.match(gapOpenLog, /R2P_JSON=1/);
+  assert.match(gapOpenLog, new RegExp(`--work-id ${gapWorkId}`));
+  assert.match(gapOpenLog, /--confirm/);
 });
 
 test('gate7 rerun-PASS only after clean re-review', async (t) => {
@@ -639,7 +721,10 @@ test('gate10 earliest-stage aggregation + r2p-repair-plan-ambiguous', async (t) 
   assert.equal(start.ok, true);
   const review = await recordReviewFor(root, homeDir, workId, [], { env });
   assert.equal(review.ok, true);
-  const triage = await recordTriageFor(root, homeDir, workId, [], { env });
+  const triage = await recordTriageFor(root, homeDir, workId, [], {
+    env,
+    stdin: TRIAGE_ACCEPT_MULTI
+  });
   assert.equal(triage.ok, true);
 
   const aggregated = await runWorkflowCommand('record-r2p-repair-plan', [start.targetStateDir, '--json'], {
@@ -649,7 +734,7 @@ test('gate10 earliest-stage aggregation + r2p-repair-plan-ambiguous', async (t) 
   });
   assert.equal(aggregated.ok, true);
   assert.equal(aggregated.ownerStage, 'requirement_brief');
-  assert.deepEqual(aggregated.issueIds, ['ISSUE-001']);
+  assert.deepEqual(aggregated.issueIds, ['ISSUE-001', 'ISSUE-002']);
 
   const ambiguous = await runWorkflowCommand('record-r2p-repair-plan', [
     start.targetStateDir,
