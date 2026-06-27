@@ -45,6 +45,8 @@ const TRIAGE_ACCEPT = [
   '  non_blocking: false'
 ].join('\n');
 
+const REVIEW_PASS = 'PASS\nSummary: No blocking findings after r2p regeneration.\n';
+
 const FINAL_PASS = [
   'Final status: pass',
   'Assurance: practical',
@@ -152,6 +154,15 @@ function installFakeR2pCli(root, scripts = {}) {
   return { binDir, logDir };
 }
 
+function statusScript(payload, options = {}) {
+  const lines = ['#!/bin/sh', 'set -eu'];
+  if (options.stderr) {
+    lines.push(`printf "%s\\n" '${options.stderr}' 1>&2`);
+  }
+  lines.push(`printf "%s\\n" '${JSON.stringify(payload)}'`);
+  return lines.join('\n');
+}
+
 function runtimeArgs(routeTokens, overrides = {}) {
   const {
     assurance = 'practical',
@@ -224,6 +235,24 @@ async function recordReviewFor(root, homeDir, workId, extraTokens = [], override
   );
 }
 
+async function recordReviewPassFor(root, homeDir, workId, extraTokens = [], overrides = {}) {
+  return runWorkflowCommand(
+    'record-review',
+    [
+      ...workflowInvocation(workId, extraTokens),
+      '--phase',
+      'initial-review',
+      '--result-stdin'
+    ],
+    {
+      cwd: root,
+      homeDir,
+      stdin: REVIEW_PASS,
+      env: overrides.env
+    }
+  );
+}
+
 async function recordTriageFor(root, homeDir, workId, extraTokens = [], overrides = {}) {
   return runWorkflowCommand(
     'record-triage',
@@ -238,6 +267,19 @@ async function recordTriageFor(root, homeDir, workId, extraTokens = [], override
       env: overrides.env
     }
   );
+}
+
+async function reachAcceptedRepairState(root, homeDir, workId, extraTokens = [], overrides = {}) {
+  const start = await startFor(root, homeDir, workId, extraTokens, overrides);
+  assert.equal(start.ok, true, JSON.stringify(start));
+
+  const review = await recordReviewFor(root, homeDir, workId, extraTokens, overrides);
+  assert.equal(review.ok, true, JSON.stringify(review));
+
+  const triage = await recordTriageFor(root, homeDir, workId, extraTokens, overrides);
+  assert.equal(triage.ok, true, JSON.stringify(triage));
+
+  return { start, review, triage };
 }
 
 test('gate1 invocation accept/reject incl. archive-bypass and flag-injection', async (t) => {
@@ -340,9 +382,23 @@ test('gate4 artifact preflight', async (t) => {
 test('gate5 no-direct-write both directions (drfx fails; r2p-authored change allowed)', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const workId = 'WF-20260627-gate5';
-  const fake = installFakeR2pCli(root);
+  const runDir = makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'closed_at_plan_checkpoint',
+      current_stage: 'plan',
+      open_routes_detail: []
+    }),
+    'r2p-reopen': [
+      '#!/bin/sh',
+      'set -eu',
+      `printf "%s\\n" "$0|$*|R2P_JSON=\${R2P_JSON:-}" >> "${path.join(root, 'fake-r2p-logs', 'r2p-reopen.log')}"`,
+      `printf "%s\\n" "r2p-side-effect" >> "${path.join(runDir, '07-plan.md')}"`,
+      `printf "%s\\n" '${JSON.stringify({ new_work_id: 'WF-20260627-gate5-r1' })}'`
+    ].join('\n')
+  });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
-  makeRun(root, workId);
 
   const context = await contextFor(root, homeDir, workId, [], { env });
   assert.equal(context.ok, true);
@@ -361,6 +417,21 @@ test('gate5 no-direct-write both directions (drfx fails; r2p-authored change all
   });
   assert.equal(beginFix.ok, false);
   assert.equal(beginFix.blockingReason, 'r2p-direct-artifact-write-forbidden');
+
+  const repairPlan = await runWorkflowCommand('record-r2p-repair-plan', [triage.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(repairPlan.ok, true, JSON.stringify(repairPlan));
+
+  const apply = await runWorkflowCommand('apply-r2p-repair', [triage.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(apply.ok, true, JSON.stringify(apply));
+  assert.match(fs.readFileSync(path.join(runDir, '07-plan.md'), 'utf8'), /r2p-side-effect/);
 });
 
 test('gate6 repair exec argv shell:false; capture new_work_id/route_id; checkpoint, no PASS', async (t) => {
@@ -411,12 +482,32 @@ test('gate6 repair exec argv shell:false; capture new_work_id/route_id; checkpoi
 test('gate7 rerun-PASS only after clean re-review', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const workId = 'WF-20260627-gate7';
-  const fake = installFakeR2pCli(root);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'closed_at_plan_checkpoint',
+      current_stage: 'plan',
+      open_routes_detail: []
+    })
+  });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
   makeRun(root, workId);
 
-  const start = await startFor(root, homeDir, workId, [], { env });
-  assert.equal(start.ok, true);
+  const { start } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
+
+  const repairPlan = await runWorkflowCommand('record-r2p-repair-plan', [start.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(repairPlan.ok, true, JSON.stringify(repairPlan));
+
+  const apply = await runWorkflowCommand('apply-r2p-repair', [start.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(apply.ok, true, JSON.stringify(apply));
 
   const sameRoundFinal = await runWorkflowCommand('finalize', [start.targetStateDir, '--final-response-stdin', '--json'], {
     cwd: root,
@@ -424,9 +515,35 @@ test('gate7 rerun-PASS only after clean re-review', async (t) => {
     stdin: FINAL_PASS,
     env
   });
-  assert.equal(sameRoundFinal.ok, false);
   assert.notEqual(sameRoundFinal.status, 'pass');
   assert.equal(sameRoundFinal.statusReason, 'r2p-repair-applied');
+
+  const rerunWorkId = apply.newWorkId || workId;
+  makeRun(root, rerunWorkId);
+  writeExecutable(path.join(fake.binDir, 'r2p-status'), statusScript({
+    work_id: rerunWorkId,
+    status: 'closed_at_plan_checkpoint',
+    current_stage: 'plan',
+    open_routes_detail: []
+  }));
+
+  const rerunStart = await startFor(root, homeDir, rerunWorkId, [], { env });
+  assert.equal(rerunStart.ok, true, JSON.stringify(rerunStart));
+
+  const rerunContext = await contextFor(root, homeDir, rerunWorkId, [], { env });
+  assert.equal(rerunContext.ok, true, JSON.stringify(rerunContext));
+
+  const rerunReview = await recordReviewPassFor(root, homeDir, rerunWorkId, [], { env });
+  assert.equal(rerunReview.ok, true, JSON.stringify(rerunReview));
+
+  const rerunFinal = await runWorkflowCommand('finalize', [rerunStart.targetStateDir, '--final-response-stdin', '--json'], {
+    cwd: root,
+    homeDir,
+    stdin: FINAL_PASS,
+    env
+  });
+  assert.equal(rerunFinal.ok, true, JSON.stringify(rerunFinal));
+  assert.equal(rerunFinal.status, 'pass');
 });
 
 test('gate8 status-contract parses multiple owner stages; missing contract blocks', async (t) => {
@@ -556,11 +673,30 @@ test('redaction receipt omits raw reason/secrets', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const workId = 'WF-20260627-redaction';
   makeRun(root, workId);
-  const fake = installFakeR2pCli(root);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'closed_at_plan_checkpoint',
+      current_stage: 'plan',
+      open_routes_detail: []
+    }),
+    'r2p-reopen': [
+      '#!/bin/sh',
+      'set -eu',
+      'printf "%s\\n" "SECRET_TOKEN=sk-live-redaction raw required_action=password" 1>&2',
+      `printf "%s\\n" '${JSON.stringify({ new_work_id: 'WF-20260627-redaction-r1' })}'`
+    ].join('\n')
+  });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
 
-  const start = await startFor(root, homeDir, workId, [], { env });
-  assert.equal(start.ok, true);
+  const { start } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
+
+  const repairPlan = await runWorkflowCommand('record-r2p-repair-plan', [start.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(repairPlan.ok, true, JSON.stringify(repairPlan));
 
   const apply = await runWorkflowCommand('apply-r2p-repair', [start.targetStateDir, '--json'], {
     cwd: root,
@@ -577,15 +713,24 @@ test('drift guard blocks instead of executing', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const workId = 'WF-20260627-drift';
   const runDir = makeRun(root, workId);
-  const fake = installFakeR2pCli(root);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'closed_at_plan_checkpoint',
+      current_stage: 'plan',
+      open_routes_detail: []
+    })
+  });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
 
-  const start = await startFor(root, homeDir, workId, [], { env });
-  assert.equal(start.ok, true);
-  const review = await recordReviewFor(root, homeDir, workId, [], { env });
-  assert.equal(review.ok, true);
-  const triage = await recordTriageFor(root, homeDir, workId, [], { env });
-  assert.equal(triage.ok, true);
+  const { start } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
+
+  const repairPlan = await runWorkflowCommand('record-r2p-repair-plan', [start.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(repairPlan.ok, true, JSON.stringify(repairPlan));
 
   fs.appendFileSync(path.join(runDir, '07-plan.md'), '\ndrifted after review\n');
 
