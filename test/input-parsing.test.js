@@ -381,50 +381,62 @@ test('review-fix-code with includeMetadata exposes routeKind and requestedMode',
 // review-fix-r2p parser tests
 // ---------------------------------------------------------------------------
 
-test('review-fix-r2p parses a bare requirement-directory target with document PLAN type and snapshot default guard', () => {
-  const result = parseInvocation('review-fix-r2p', ['.req-to-plan/WF-7']);
+test('review-fix-r2p parses a bare workId shorthand with document PLAN type', () => {
+  const result = parseInvocation('review-fix-r2p', ['WF-7']);
   assert.equal(result.entrySkill, 'review-fix-r2p');
   assert.equal(result.routeKind, 'r2p');
   assert.equal(result.documentType, 'PLAN');
-  assert.equal(result.target, '.req-to-plan/WF-7');
-  // r2p overrides the shared git default: its file-set guard defaults to snapshot.
-  assert.equal(result.guardMode, 'snapshot');
+  assert.equal(result.workId, 'WF-7');
   assert.equal(result.mode, 'review-and-fix');
   assert.equal(result.resume, false);
   assert.equal(result.reset, false);
   assert.equal(result.root, null);
   assert.equal(result.roundLimit, null);
+  assert.equal(result.debug, false);
 });
 
-test('review-fix-r2p accepts target= form and explicit shared flags', () => {
+test('review-fix-r2p accepts workId= form and explicit shared flags', () => {
   const result = parseInvocation('review-fix-r2p', [
-    'target=.req-to-plan/WF-7',
+    'workId=WF-7',
     'review-and-fix',
-    'guard=git',
     'resume',
     'root=/project',
-    'rounds=4'
+    'rounds=4',
+    'debug'
   ]);
-  assert.equal(result.target, '.req-to-plan/WF-7');
+  assert.equal(result.workId, 'WF-7');
   assert.equal(result.mode, 'review-and-fix');
-  assert.equal(result.guardMode, 'git');
   assert.equal(result.resume, true);
   assert.equal(result.root, '/project');
   assert.equal(result.roundLimit, 4);
+  assert.equal(result.debug, true);
 });
 
-test('review-fix-r2p requires a target requirement directory', () => {
+test('review-fix-r2p requires a workId', () => {
   assert.throws(
     () => parseInvocation('review-fix-r2p', ['review-and-fix']),
-    (error) => error.code === 'ERR_MISSING_TARGET'
+    (error) => error.code === 'ERR_INVALID_R2P_INVOCATION'
   );
 });
 
 test('review-fix-r2p rejects the document-route and file-set-route token surface', () => {
-  for (const token of ['ref=foo.md', 'strict', 'normal', 'assurance=practical', 'ledger=ISSUES.md', 'scope=src', 'base=main', 'type=PLAN']) {
+  for (const token of [
+    'target=.req-to-plan/WF-7',
+    '.req-to-plan/WF-7',
+    '07-plan.md',
+    'ref=foo.md',
+    'strict',
+    'normal',
+    'assurance=practical',
+    'ledger=ISSUES.md',
+    'scope=src',
+    'base=main',
+    'guard=git',
+    'type=PLAN'
+  ]) {
     assert.throws(
-      () => parseInvocation('review-fix-r2p', ['target=.req-to-plan/WF-7', token]),
-      /unknown token/i,
+      () => parseInvocation('review-fix-r2p', ['workId=WF-7', token]),
+      (error) => error.code === 'ERR_INVALID_R2P_INVOCATION',
       `r2p must reject ${token}`
     );
   }
@@ -432,13 +444,13 @@ test('review-fix-r2p rejects the document-route and file-set-route token surface
 
 test('review-fix-r2p rejects read-only rounds=<n> (unsupported loop semantics)', () => {
   assert.throws(
-    () => parseInvocation('review-fix-r2p', ['target=.req-to-plan/WF-7', 'read-only', 'rounds=2']),
-    (error) => typeof error.code === 'string' && /rounds/i.test(error.message)
+    () => parseInvocation('review-fix-r2p', ['workId=WF-7', 'read-only', 'rounds=2']),
+    (error) => error.code === 'ERR_INVALID_R2P_INVOCATION' && /rounds/i.test(error.message)
   );
 });
 
 test('review-fix-r2p with includeMetadata exposes routeKind and requestedMode', () => {
-  const result = parseInvocation('review-fix-r2p', ['target=.req-to-plan/WF-7'], {
+  const result = parseInvocation('review-fix-r2p', ['workId=WF-7'], {
     defaultMode: 'read-only',
     includeMetadata: true
   });

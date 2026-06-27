@@ -696,7 +696,7 @@ test('gate9 current-stage checkpoint', async (t) => {
   assert.equal(repairPlan.statusReason, 'r2p-current-stage-repair-required');
 });
 
-test('gate10 earliest-stage aggregation + r2p-repair-plan-ambiguous', async (t) => {
+test('gate-10 earliest-stage aggregation + r2p-repair-plan-ambiguous', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const workId = 'WF-20260627-gate10';
   makeRun(root, workId);
