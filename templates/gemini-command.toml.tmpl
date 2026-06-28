@@ -72,7 +72,9 @@ Next: <one concrete action>
 State: <target-state-dir when persistent state exists>
 ```
 
-Blocked wording must distinguish normalized blocker codes. For `rollback-unavailable`, say the target lacks a clean rollback anchor. For `target-only-guard-unavailable`, say the target-only guard is unavailable or unparseable. For `unexpected-worktree-change`, say non-target worktree changes make automatic fixing unsafe.
+Blocked wording must distinguish normalized blocker codes.
+
+{{PREFLIGHT_BLOCKED_OUTPUT}}
 
 When workflow finalization returns archiveWarning, default output must include an archive warning line and a concrete next action to clear the leftover state directory (delete or reset) so the next run can start fresh. Example:
 

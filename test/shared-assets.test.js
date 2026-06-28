@@ -38,13 +38,13 @@ const GENERATED_SHELL_BASELINE_BYTES = Object.freeze({
     'review-fix-r2p': 21903
   }),
   gemini: Object.freeze({
-    'review-fix-spec': 9286,
-    'review-fix-plan': 9286,
-    'review-fix-design': 9314,
-    'review-fix-doc': 9284,
-    'review-fix-pr': 9805,
-    'review-fix-code': 13147,
-    'review-fix-r2p': 10148
+    'review-fix-spec': 9280,
+    'review-fix-plan': 9280,
+    'review-fix-design': 9308,
+    'review-fix-doc': 9278,
+    'review-fix-pr': 9799,
+    'review-fix-code': 13141,
+    'review-fix-r2p': 10051
   }),
   opencode: Object.freeze({
     'review-fix-spec': 22180,
@@ -385,7 +385,7 @@ test('Codex copied shared source de-dup measurement crosses the guarded implemen
 test('Claude and Codex generated starts preserve materialized rounds and state-control tokens', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
-  for (const platform of ['claude', 'codex', 'opencode']) {
+  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     for (const route of listRoutes()) {
       const rendered = renderPlatformRoute(platform, route.routeName, { packageVersion: SNAPSHOT_VERSION });
       const startLines = rendered.split('\n').filter((line) => line.startsWith('drfx workflow start '));
