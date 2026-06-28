@@ -30,6 +30,7 @@ const {
   writeReceipt
 } = require('../lib/workflow/r2p-repair');
 const { resolveRouteTargetMetadata } = require('../lib/workflow/target-resolution');
+const { computeFileSetFingerprint } = require('../lib/target-context');
 
 const REVIEW_FAIL = [
   'FAIL',
@@ -204,16 +205,15 @@ function captureRunFingerprints(runDir) {
   const runMdSha256 = crypto.createHash('sha256')
     .update(fs.readFileSync(path.join(runDir, 'run.md'), 'utf8'))
     .digest('hex');
-  const fileSetHash = crypto.createHash('sha256');
-  for (const artifact of R2P_ARTIFACTS) {
-    fileSetHash.update(artifact);
-    fileSetHash.update('\0');
-    fileSetHash.update(fs.readFileSync(path.join(runDir, artifact), 'utf8'));
-    fileSetHash.update('\0');
-  }
   return {
     runMdSha256,
-    fileSetFingerprint: fileSetHash.digest('hex')
+    fileSetFingerprint: computeFileSetFingerprint(R2P_ARTIFACTS.map((artifact) => ({
+      path: artifact,
+      status: 'modified',
+      contentId: crypto.createHash('sha256')
+        .update(fs.readFileSync(path.join(runDir, artifact), 'utf8'))
+        .digest('hex')
+    })))
   };
 }
 
@@ -499,8 +499,17 @@ test('gate5 no-direct-write both directions (drfx fails; r2p-authored change all
 
   const context = await contextFor(root, homeDir, workId, [], { env });
   assert.equal(context.ok, true);
+  assert.equal(context.contextPackSkeleton.runLocation, `.req-to-plan/${workId}`);
+  assert.deepEqual(context.contextPackSkeleton.reviewFiles, [
+    '03-requirement-brief.md',
+    '04-risk-discovery.md',
+    '05-design.md',
+    '06-spec.md',
+    '07-plan.md'
+  ]);
   assert.equal(context.contextPackSkeleton.editableFiles.length, 0);
   assert.equal(context.contextPackSkeleton.directArtifactWrites, 'forbidden');
+  assert.equal(context.contextPackSkeleton.repairMode.command_kind, 'r2p-reopen');
 
   const review = await recordReviewFor(root, homeDir, workId, [], { env });
   assert.equal(review.ok, true);
@@ -522,6 +531,40 @@ test('gate5 no-direct-write both directions (drfx fails; r2p-authored change all
   });
   assert.equal(repairPlan.ok, true, JSON.stringify(repairPlan));
 
+  const originalPlan = fs.readFileSync(path.join(runDir, '07-plan.md'), 'utf8');
+  fs.appendFileSync(path.join(runDir, '07-plan.md'), '\ndrifted after triage\n');
+  const driftedApply = await runWorkflowCommand('apply-r2p-repair', [triage.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(driftedApply.ok, false, JSON.stringify(driftedApply));
+  assert.equal(driftedApply.blockingReason, 'r2p-drift-detected');
+  fs.writeFileSync(path.join(runDir, '07-plan.md'), originalPlan);
+});
+
+test('gate5 r2p-authored change after apply-r2p-repair is allowed', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-gate5-apply';
+  const runDir = makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'closed_at_plan_checkpoint',
+      current_stage: 'plan',
+      open_routes_detail: []
+    }),
+    'r2p-reopen': [
+      '#!/bin/sh',
+      'set -eu',
+      `printf "%s\\n" "$0|$*|R2P_JSON=\${R2P_JSON:-}" >> "${path.join(root, 'fake-r2p-logs', 'r2p-reopen.log')}"`,
+      `printf "%s\\n" "r2p-side-effect" >> "${path.join(runDir, '07-plan.md')}"`,
+      `printf "%s\\n" '${JSON.stringify({ new_work_id: 'WF-20260627-gate5-apply-r1' })}'`
+    ].join('\n')
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+
+  const { triage } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
   const apply = await runWorkflowCommand('apply-r2p-repair', [triage.targetStateDir, '--json'], {
     cwd: root,
     homeDir,
