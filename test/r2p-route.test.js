@@ -494,6 +494,9 @@ test('gate5 no-direct-write both directions (drfx fails; r2p-authored change all
   });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
 
+  const start = await startFor(root, homeDir, workId, [], { env });
+  assert.equal(start.ok, true, JSON.stringify(start));
+
   const context = await contextFor(root, homeDir, workId, [], { env });
   assert.equal(context.ok, true);
   assert.equal(context.contextPackSkeleton.editableFiles.length, 0);
