@@ -9,15 +9,15 @@
 // generated r2p route uses (context -> record-review -> record-triage -> finalize).
 //
 // What they pin:
-//   - r2p resolves via resolveR2pTarget (run.md gate + 03–07 chain), NOT the
+//   - r2p resolves via active workId + fake req-to-plan CLI status, NOT the
 //     CODE/PR file-set resolvers.
 //   - The advisory path returns ONLY read-only statuses (read-only-findings here),
 //     never `pass`, and writes NOTHING (no 03–07 / run.md mutation, no .drfx state).
-//   - The validated final output references the owning upstream doc for a finding
-//     whose root cause is upstream (acceptance/behavior -> 06-spec.md).
-//   - The generated route prompt/package carries the finding->owner-doc map.
-//   - run.md gate failures (incomplete plan / archived dir) surface as blockers and
-//     never reach reviewer-recording.
+//   - The validated final output references the owning upstream stage for a finding
+//     whose root cause is upstream (acceptance/behavior -> spec).
+//   - The generated route prompt/package carries the finding->ownerStage map.
+//   - The route follows the req-to-plan status contract, not run.md prose, and
+//     archive-only workIds block before reviewer-recording.
 // ---------------------------------------------------------------------------
 
 const assert = require('node:assert/strict');
@@ -65,7 +65,7 @@ const R2P_EDITABLE_DOCS = [
 ];
 
 // Explicit reviewer FAIL payload: a PLAN-rubric finding whose ROOT CAUSE is an
-// acceptance/behavior gap. Per the finding->owner-doc map that owner is 06-spec.md.
+// acceptance/behavior gap. Per the finding->ownerStage map that owner is spec.
 const REVIEW_FAIL = [
   'FAIL',
   'Findings:',
@@ -86,14 +86,14 @@ const TRIAGE_ACCEPT = [
   '  decision: accepted',
   '  severity: high',
   '  original_severity: high',
-  '  rationale: Acceptance/behavior gap whose owner doc is 06-spec.md.',
+  '  rationale: Acceptance/behavior gap whose owner stage is spec.',
   '  merged_into: none',
   '  deferred_owner: none',
   '  deferred_next_action: none',
   '  non_blocking: false'
 ].join('\n');
 
-// Final response references the owning upstream doc (06-spec.md) for the finding.
+// Final response references the owning upstream stage (spec) for the finding.
 const FINAL_FINDINGS = [
   'Final status: read-only-findings',
   'Assurance: advisory',
@@ -103,7 +103,7 @@ const FINAL_FINDINGS = [
   'Files changed: none',
   'Fixed issue IDs: none',
   'Verification performed: read-only review of 07-plan.md against COMMON+PLAN',
-  'Deferrals or blockers: ISSUE-001 acceptance/behavior gap owned by 06-spec.md; next action fix backward in 06-spec.md',
+  'Deferrals or blockers: ISSUE-001 acceptance/behavior gap owned by spec; next action repair the spec stage and regenerate the plan artifacts',
   'Blocking reason: none',
   'Status reason: none',
   'Residual risk: 07-plan.md step 3 lacks spec backing in 06-spec.md',
@@ -117,6 +117,44 @@ function makeSandbox(t) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
   return { root, homeDir };
+}
+
+function writeExecutable(filePath, body) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, body, { mode: 0o755 });
+}
+
+function installFakeR2pCli(root, workId, status = 'closed_at_plan_checkpoint') {
+  const binDir = path.join(root, 'fake-r2p-bin');
+  const scripts = {
+    'r2p-status': [
+      '#!/bin/sh',
+      'set -eu',
+      `printf "%s\\n" '[{"work_id":"${workId}","status":"${status}","current_stage":"plan","open_routes_detail":[]}]'`
+    ].join('\n'),
+    'r2p-reopen': [
+      '#!/bin/sh',
+      'set -eu',
+      'printf "%s\\n" \'{"new_work_id":"WF-fake-reopen"}\''
+    ].join('\n'),
+    'r2p-gap-open': [
+      '#!/bin/sh',
+      'set -eu',
+      'printf "%s\\n" \'{"route_id":"route-fake","staled_stages":["plan"]}\''
+    ].join('\n'),
+    'r2p-continue': [
+      '#!/bin/sh',
+      'set -eu',
+      'printf "%s\\n" \'{"ok":true}\''
+    ].join('\n')
+  };
+  for (const [name, body] of Object.entries(scripts)) {
+    writeExecutable(path.join(binDir, name), body);
+  }
+  return {
+    ...process.env,
+    PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`
+  };
 }
 
 function makeWfDir(root, name, { runMd = planApprovedRunMd, underArchive = false } = {}) {
@@ -149,10 +187,10 @@ function projectRelative(root, wfDir, name) {
   return path.relative(root, path.join(wfDir, name)).split(path.sep).join('/');
 }
 
-function r2pArgs(wfDir) {
+function r2pArgs(workId) {
   return [
     'review-fix-r2p',
-    `target=${wfDir}`,
+    `workId=${workId}`,
     'read-only',
     '--assurance',
     'advisory',
@@ -171,15 +209,16 @@ function r2pArgs(wfDir) {
 }
 
 // ---------------------------------------------------------------------------
-// Advisory e2e: FAIL finding -> read-only-findings, nothing written, owner doc named.
+// Advisory e2e: FAIL finding -> read-only-findings, nothing written, owner stage named.
 // ---------------------------------------------------------------------------
 
 test('r2p advisory review finalizes read-only-findings without editing any 03–07 file or run.md', async (t) => {
   const { root, homeDir } = makeSandbox(t);
-  const wfDir = makeWfDir(root, 'WF-20260624-advisory');
+  const workId = 'WF-20260624-advisory';
+  const wfDir = makeWfDir(root, workId);
   const before = snapshotProtectedFiles(wfDir);
-  const commonArgs = r2pArgs(wfDir);
-  const opts = { cwd: root, homeDir };
+  const commonArgs = r2pArgs(workId);
+  const opts = { cwd: root, homeDir, env: installFakeR2pCli(root, workId) };
 
   const context = await runWorkflowCommand('context', ['--no-state', ...commonArgs], opts);
   assert.equal(context.ok, true, JSON.stringify(context));
@@ -230,8 +269,8 @@ test('r2p advisory review finalizes read-only-findings without editing any 03–
   assert.equal(finalized.status, 'read-only-findings');
   assert.notEqual(finalized.status, 'pass');
 
-  // The validated final output references the owning upstream doc for the finding.
-  assert.match(finalized.finalResponse.deferralsOrBlockers, /06-spec\.md/);
+  // The validated final output references the owning upstream stage for the finding.
+  assert.match(finalized.finalResponse.deferralsOrBlockers, /\bspec\b/);
 
   // NOTHING was modified: no 03–07 file, no run.md, no .drfx state.
   assert.deepEqual(changedFiles(wfDir, before), []);
@@ -240,9 +279,10 @@ test('r2p advisory review finalizes read-only-findings without editing any 03–
 
 test('r2p advisory record-review blocks when protected run.md drifts after context', async (t) => {
   const { root, homeDir } = makeSandbox(t);
-  const wfDir = makeWfDir(root, 'WF-20260624-advisory-drift');
-  const commonArgs = r2pArgs(wfDir);
-  const opts = { cwd: root, homeDir };
+  const workId = 'WF-20260624-advisory-drift';
+  const wfDir = makeWfDir(root, workId);
+  const commonArgs = r2pArgs(workId);
+  const opts = { cwd: root, homeDir, env: installFakeR2pCli(root, workId) };
 
   const context = await runWorkflowCommand('context', ['--no-state', ...commonArgs], opts);
   assert.equal(context.ok, true, JSON.stringify(context));
@@ -264,7 +304,7 @@ test('r2p advisory record-review blocks when protected run.md drifts after conte
 });
 
 // ---------------------------------------------------------------------------
-// Generated route prompt/package carries the finding->owner-doc map.
+// Generated route prompt/package carries the finding->ownerStage map.
 // ---------------------------------------------------------------------------
 
 function renderedR2pRoutePackage(platform) {
@@ -278,59 +318,56 @@ function renderedR2pRoutePackage(platform) {
   return r2pSkill.files.map((file) => file.content).join('\n');
 }
 
-test('generated r2p route prompt/package carries the finding-to-owner-doc map', () => {
+test('generated r2p route prompt/package carries the finding-to-ownerStage map', () => {
   for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     const rendered = renderedR2pRoutePackage(platform);
-    assert.match(rendered, /finding-to-owner-doc map/i, `${platform} r2p prompt must carry the map heading`);
-    assert.match(rendered, /acceptance criteria \/ observable behavior gap -> `06-spec\.md`/, `${platform}: 06-spec mapping`);
-    assert.match(rendered, /architecture, interface, or sequencing gap -> `05-design\.md`/, `${platform}: 05-design mapping`);
-    assert.match(rendered, /unmitigated risk or missing rollback -> `04-risk-discovery\.md`/, `${platform}: 04-risk mapping`);
-    assert.match(rendered, /scope or requirement ambiguity -> `03-requirement-brief\.md`/, `${platform}: 03-requirement mapping`);
-    assert.match(rendered, /local to the plan -> `07-plan\.md` only/, `${platform}: 07-plan-only mapping`);
+    assert.match(rendered, /finding-to-ownerStage map/i, `${platform} r2p prompt must carry the map heading`);
+    assert.match(rendered, /raw requirement conflict[\s\S]*?-> `raw_requirement`/, `${platform}: raw_requirement mapping`);
+    assert.match(rendered, /unclear scope, goal, non-goal, or acceptance direction[\s\S]*?-> `requirement_brief`/, `${platform}: requirement_brief mapping`);
+    assert.match(rendered, /risk, rollback, change-management, security, or dependency gap[\s\S]*?-> `risk_discovery`/, `${platform}: risk_discovery mapping`);
+    assert.match(rendered, /architecture, interface, module-boundary, or implementation-strategy issue[\s\S]*?-> `design`/, `${platform}: design mapping`);
+    assert.match(rendered, /insufficient observable behavior, acceptance, or verification criteria[\s\S]*?-> `spec`/, `${platform}: spec mapping`);
+    assert.match(rendered, /pure task decomposition, ordering, command, or plan-local issue[\s\S]*?-> `plan`/, `${platform}: plan mapping`);
   }
 });
 
 // ---------------------------------------------------------------------------
-// run.md gating: incomplete plan and archived dir surface as blockers and never
-// reach reviewer-recording.
+// Status-contract / workspace gating.
 // ---------------------------------------------------------------------------
 
-test('r2p advisory blocks on an incomplete-plan run.md before reviewer-recording', async (t) => {
+test('r2p advisory follows the status command and does not gate on run.md prose alone', async (t) => {
   const { root, homeDir } = makeSandbox(t);
-  const wfDir = makeWfDir(root, 'WF-20260624-incomplete', { runMd: planIncompleteRunMd });
-  const commonArgs = r2pArgs(wfDir);
-  const opts = { cwd: root, homeDir };
+  const workId = 'WF-20260624-incomplete';
+  makeWfDir(root, workId, { runMd: planIncompleteRunMd });
+  const commonArgs = r2pArgs(workId);
+  const opts = { cwd: root, homeDir, env: installFakeR2pCli(root, workId) };
 
   const context = await runWorkflowCommand('context', ['--no-state', ...commonArgs], opts);
-  assert.equal(context.ok, false, JSON.stringify(context));
-  assert.equal(context.status, 'blocked');
-  assert.equal(context.errorCode, 'ERR_R2P_GATE_PLAN_INCOMPLETE');
-  assert.equal(context.blockingReason, 'state-validation-failed');
+  assert.equal(context.ok, true, JSON.stringify(context));
+  assert.equal(context.status, 'context');
 
-  // record-review must ALSO refuse: the gate error never reaches reviewer-recording.
   const review = await runWorkflowCommand('record-review', [
     '--no-state',
     ...commonArgs,
     '--review-guard',
-    'placeholder-guard',
+    context.reviewGuard,
     '--result-stdin'
   ], { ...opts, stdin: REVIEW_FAIL });
-  assert.equal(review.ok, false, JSON.stringify(review));
-  assert.equal(review.status, 'blocked');
-  assert.equal(review.errorCode, 'ERR_R2P_GATE_PLAN_INCOMPLETE');
-  assert.notEqual(review.status, 'recorded-review');
+  assert.equal(review.ok, true, JSON.stringify(review));
+  assert.equal(review.status, 'recorded-review');
 });
 
-test('r2p advisory blocks on an archived requirement directory before reviewer-recording', async (t) => {
+test('r2p advisory blocks on an archive-only workId before reviewer-recording', async (t) => {
   const { root, homeDir } = makeSandbox(t);
-  const wfDir = makeWfDir(root, 'WF-20260624-archived', { underArchive: true });
-  const commonArgs = r2pArgs(wfDir);
-  const opts = { cwd: root, homeDir };
+  const workId = 'WF-20260624-archived';
+  makeWfDir(root, workId, { underArchive: true });
+  const commonArgs = r2pArgs(workId);
+  const opts = { cwd: root, homeDir, env: installFakeR2pCli(root, workId) };
 
   const context = await runWorkflowCommand('context', ['--no-state', ...commonArgs], opts);
   assert.equal(context.ok, false, JSON.stringify(context));
   assert.equal(context.status, 'blocked');
-  assert.equal(context.errorCode, 'ERR_R2P_GATE_ARCHIVED');
+  assert.equal(context.errorCode, 'ERR_R2P_WORK_ID_ARCHIVED');
   assert.equal(context.blockingReason, 'state-validation-failed');
 
   const review = await runWorkflowCommand('record-review', [
@@ -342,6 +379,6 @@ test('r2p advisory blocks on an archived requirement directory before reviewer-r
   ], { ...opts, stdin: REVIEW_FAIL });
   assert.equal(review.ok, false, JSON.stringify(review));
   assert.equal(review.status, 'blocked');
-  assert.equal(review.errorCode, 'ERR_R2P_GATE_ARCHIVED');
+  assert.equal(review.errorCode, 'ERR_R2P_WORK_ID_ARCHIVED');
   assert.notEqual(review.status, 'recorded-review');
 });

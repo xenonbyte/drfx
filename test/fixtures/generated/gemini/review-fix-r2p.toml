@@ -8,43 +8,43 @@ package_version = "0.0.0-snapshot"
 [prompt]
 text = '''
 Route name: review-fix-r2p
-Review target: r2p requirement directory (07-plan.md, fixes backward into 03–06)
+Review target: active r2p workId run (07-plan.md vs 03-06, no direct artifact writes)
 Package version: 0.0.0-snapshot
 
-Use this Gemini command with `target=<requirement-dir>` naming an r2p requirement directory (`<project>/.req-to-plan/WF-*`), optional `read-only`, optional `guard=git|snapshot`, optional `root=<project-root>`, and optional `debug`.
-This route reviews the requirement plan (`07-plan.md`) and is advisory-only on Gemini: `review-and-fix` is unsupported, workflow PASS is unavailable, Gemini must not edit files, and it must not claim workflow PASS.
-It does not accept `ref=`, `strict`, `normal`, `assurance=`, `ledger=`, `scope=`, `base=`, or `rounds=`. `run.md` is a read-only gate that is never written.
+Use this Gemini command with `workId=<WF-...>` naming an active r2p run (`<project>/.req-to-plan/WF-*`), optional `read-only`, optional `root=<project-root>`, and optional `debug`.
+A bare `WF-...` token is valid shorthand. Gemini is advisory-only: `review-and-fix` is unsupported, workflow PASS is unavailable, Gemini must not edit files, and it must not claim workflow PASS.
+This route reviews the `07-plan.md` anchor against `03-06`; `03-07` and `run.md` are read-only evidence. It does not accept `target=`, `ref=`, `strict`, `normal`, `assurance=`, `ledger=`, `scope=`, `base=`, `guard=`, `resume`, `reset`, or `rounds=`.
 Help-style or invalid invocations explain usage without reading files, running probes, creating state, or declaring review results.
 
 Route contract:
-- This route reviews an r2p requirement directory: <project>/.req-to-plan/WF-*. The review anchor is the requirement plan (07-plan.md).
+- This route reviews an active r2p run named by workId=<WF-...> under <project>/.req-to-plan/WF-*. The review anchor is the requirement plan (07-plan.md).
 - This route has a fixed document type: PLAN. Users must not pass type, and must not infer type from filename or path.
-- Users must not pass ref=, assurance=, strict, normal, ledger=, scope=, or base=; this route has a fixed PLAN rubric and no reference-document surface.
-- The review judges the requirement plan (07-plan.md) against its owning upstream docs (03–06) inside the same requirement directory.
-- run.md is a protected read-only gate: it is read to confirm the plan stage is generated/approved, never written.
+- Users must not pass target=, ref=, assurance=, strict, normal, ledger=, scope=, base=, or guard=; this route has a fixed PLAN rubric and no reference-document surface.
+- The review judges the requirement plan (07-plan.md) against its owning upstream docs (03-06) inside the same active run. 03-07 and run.md are read-only evidence.
+- Direct artifact writes are forbidden. Gemini must not edit run.md or any 03-07 artifact, and it must not execute r2p repair commands.
 - Public CLI commands are drfx doctor, drfx install, and drfx uninstall; drfx workflow is the internal deterministic interface used by this generated route.
-- The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, diff judgment, and final coordinator agreement are LLM work.
+- The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, owner-stage mapping, and final coordinator agreement are LLM work.
 - Gemini routes are no-state advisory routes; do not read or reuse .drfx/targets/<target-key>/ for resume/reset.
 - Gemini is advisory-only.
 - Gemini v1 is advisory-only and produces read-only findings.
 - automatic fixing is unavailable in Gemini v1.
 - workflow PASS is unavailable in Gemini v1.
-- Gemini must not edit 07-plan.md, the upstream docs (03–06), run.md, or workflow state except through no-state workflow outputs.
+- Gemini must not edit 07-plan.md, the upstream docs (03-06), run.md, or workflow state except through no-state workflow outputs.
 
 Invocation:
-review-fix-r2p target=<requirement-dir> [read-only] [guard=git|snapshot] [root=<project-root>] [debug]
+review-fix-r2p workId=<WF-...> [read-only] [root=<project-root>] [debug]
 
-Full form: review-fix-r2p target=<requirement-dir> ... . A bare requirement directory is accepted as shorthand for target=<requirement-dir>. The target names an r2p requirement directory (<project>/.req-to-plan/WF-*). There is no ref= form for this route.
+Full form: review-fix-r2p workId=<WF-...> ... . A bare WF-... token is accepted as shorthand for workId=<WF-...>. The target names an active r2p run under <project>/.req-to-plan/WF-*. There is no ref= or path form for this route.
 
-This route accepts only a bare requirement directory or target=<requirement-dir>, optional read-only, optional guard=git|snapshot, optional root=<project-root>, and optional debug. It does not accept ref=, strict, normal, assurance=, ledger=, scope=, base=, review-and-fix, resume, reset, or rounds=.
+This route accepts only a bare WF-... token or workId=<WF-...>, optional read-only, optional root=<project-root>, and optional debug. It does not accept target=, ref=, strict, normal, assurance=, ledger=, scope=, base=, guard=, review-and-fix, resume, reset, or rounds=.
 
-If a valid target=<requirement-dir> invocation omits mode, missing mode selects read-only. Gemini is advisory-only: review-and-fix is unsupported, workflow PASS is unavailable, and Gemini must not edit 07-plan.md, the upstream docs (03–06), or run.md.
+If a valid workId=<WF-...> invocation omits mode, missing mode selects read-only. Gemini is advisory-only: review-and-fix is unsupported, workflow PASS is unavailable, and Gemini must not edit 07-plan.md, the upstream docs (03-06), or run.md.
 
-run.md is a read-only gate that is never written. This route reviews the requirement plan (07-plan.md) only.
+run.md is a read-only gate that is never written. This route reviews 07-plan.md against 03-06, but 03-07 and run.md remain read-only evidence.
 
-Help-style or invalid invocations explain usage only. Do not read the requirement-directory bodies, do not run workflow commands, do not run probes, do not create state, and do not declare a review result.
+Help-style or invalid invocations explain usage only. Do not read run artifacts, do not run workflow commands, do not run probes, do not create state, and do not declare a review result.
 
-Before any drfx workflow command, materialize <selectedGuard> from explicit guard or default snapshot, and pass guard=<selectedGuard> to the workflow command.
+Before any drfx workflow command, materialize read-only mode. This route exposes no guard= token; drift detection is internal and always on.
 
 Route output:
 
@@ -110,7 +110,7 @@ When debug is present, generated routes may print the final-response machine blo
 
 review-and-fix is unsupported on Gemini. Before reading target/reference bodies or generating any semantic payload, return the unsupported result through no-state preflight:
 
-drfx workflow preflight --no-state review-fix-r2p target=<requirement-dir> review-and-fix guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --terminal-status unsupported --blocking-reason none --status-reason unsupported-runtime-capability --json=compact
+drfx workflow preflight --no-state review-fix-r2p workId=<WF-...> review-and-fix --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --terminal-status unsupported --blocking-reason none --status-reason unsupported-runtime-capability --json=compact
 
 If the user requests strict verified assurance, explain that Gemini remains advisory-only and do not issue a strict verified workflow command.
 
@@ -119,15 +119,15 @@ Read-only advisory flow:
 2. On stdin handoff failure, fail closed as unsafe-handoff-file before semantic handoff. Do not use shell pipes, heredocs, herestrings, command substitution, argv, environment variables, env vars, or raw temp files for semantic payloads.
 3. Start review-backed no-state context:
 
-drfx workflow context --no-state review-fix-r2p target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json=compact
+drfx workflow context --no-state review-fix-r2p workId=<WF-...> read-only --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json=compact
 
 4. Keep reviewGuard and stateToken in coordinator memory only. Never write tokens to the filesystem and never hand-edit tokens.
 5. Build the reviewer prompt in memory from the context skeleton plus target/reference reads. Gemini produces advisory review content; it must not claim workflow PASS.
 6. Submit review, triage, and final response by repeating the same runtime fields:
 
-drfx workflow record-review --no-state review-fix-r2p target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json=compact
-drfx workflow record-triage --no-state review-fix-r2p target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json=compact
-drfx workflow finalize --no-state review-fix-r2p target=<requirement-dir> read-only guard=<selectedGuard> --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json=compact
+drfx workflow record-review --no-state review-fix-r2p workId=<WF-...> read-only --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json=compact
+drfx workflow record-triage --no-state review-fix-r2p workId=<WF-...> read-only --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json=compact
+drfx workflow finalize --no-state review-fix-r2p workId=<WF-...> read-only --assurance advisory --runtime-platform gemini --runtime-subagent-probe not-required --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json=compact
 
 No-state final status is read-only-clean, read-only-findings, blocked, or unsupported; never pass. (Review-and-fix terminal states such as stopped-no-progress, stopped-with-deferrals, and pass are unavailable in Gemini advisory-only mode.)
 

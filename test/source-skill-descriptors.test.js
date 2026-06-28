@@ -11,9 +11,10 @@
 // the parser, README, and generated codex skill all documented it.
 //
 // These invariants are deliberately minimal and zero-false-positive: they
-// assert only the facts that actually drifted (route name + the bare-target
-// affordance representation). Token-level accept/reject correctness is owned by
-// the parser's own tests (test/input-parsing.test.js), not by descriptor prose.
+// assert only the facts that actually drifted (route name + the bare-target or
+// bare-workId affordance representation). Token-level accept/reject correctness
+// is owned by the parser's own tests (test/input-parsing.test.js), not by
+// descriptor prose.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -25,7 +26,7 @@ const { listRoutes } = require('../lib/routes');
 const SKILLS_DIR = path.join(__dirname, '..', 'skills');
 
 // Routes whose parser accepts a bare path as shorthand for the primary target.
-const BARE_TARGET_KINDS = new Set(['document', 'r2p']);
+const BARE_TARGET_KINDS = new Set(['document']);
 // Routes that have no bare-path form (PR keys on base=, CODE on scope=).
 const NON_BARE_KINDS = new Set(['pr', 'code']);
 
@@ -59,6 +60,12 @@ for (const route of listRoutes()) {
         text,
         /bare[\s\S]*?shorthand/i,
         `${route.routeKind} route accepts a bare target — its descriptor must document the shorthand (${file})`
+      );
+    } else if (route.routeKind === 'r2p') {
+      assert.match(
+        text,
+        /bare[\s\S]*?WF-[\s\S]*?shorthand/i,
+        `r2p accepts a bare workId shorthand — its descriptor must document that affordance (${file})`
       );
     } else if (NON_BARE_KINDS.has(route.routeKind)) {
       assert.match(

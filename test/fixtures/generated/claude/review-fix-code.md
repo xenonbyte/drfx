@@ -230,7 +230,6 @@ Then coordinate this loop:
 12. After `DIFF-OK`, run full re-review using `drfx workflow context review-fix-code <scopeTokens> review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --json=compact`, then record the full re-review with `--phase full-re-review --result-stdin`.
 13. Repeat triage, fix, diff review, and full re-review until terminal status (`pass`, `stopped-with-deferrals`, `stopped-no-progress`, `read-only-findings`, `blocked`, `unsupported`, `externally-changed`, `possible-target-replacement`, user stop, or `checkpoint`).
 14. Finalize only through `drfx workflow finalize <targetStateDir> --final-response-stdin --json=compact`.
-
 Automatic file-set writes require `review-and-fix` and a selected guard mode: use `guard=git` with a clean worktree before the first fix and route-owned changes that stay inside the resolved file set afterward, or `guard=snapshot` with a valid snapshot rollback anchor. The file-set guard must remain available and parseable before and after writes.
 
 ## No-State Read-Only Flow

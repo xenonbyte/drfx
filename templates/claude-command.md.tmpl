@@ -105,7 +105,7 @@ Generated routes must not pin concrete model names. Runtime readiness probes may
 When effective mode is `review-and-fix`, run write eligibility preflight before runtime readiness probe, semantic reviewer dispatch, {{REVIEW_SEMANTIC_NOUN}}, and target-local workflow state creation:
 
 ```text
-drfx workflow preflight {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix guard=<selectedGuard> --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --json=compact
+drfx workflow preflight {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix{{WORKFLOW_GUARD_TOKEN}} --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --json=compact
 ```
 
 For Codex, use `--runtime-platform codex`.
@@ -155,7 +155,7 @@ drfx doctor --platform claude --json
 {{STRICT_VERIFIED_SELECTED_MODE_TEXT}}
 
 ```text
-drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} <selectedMode>{{STATE_CONTROL_TOKEN}}{{ROUNDS_TOKEN}} guard=<selectedGuard> --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json=compact
+drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} <selectedMode>{{STATE_CONTROL_TOKEN}}{{ROUNDS_TOKEN}}{{WORKFLOW_GUARD_TOKEN}} --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json=compact
 ```
 
 {{STRICT_VERIFIED_REVIEW_AND_FIX_TEXT}}
@@ -167,28 +167,11 @@ Do not scrape human-readable `drfx doctor` output. Do not reuse a cached descrip
 {{PERSISTENT_PRACTICAL_INTRO_TEXT}}
 
 ```text
-drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix{{STATE_CONTROL_TOKEN}}{{ROUNDS_TOKEN}} guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json=compact
+drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix{{STATE_CONTROL_TOKEN}}{{ROUNDS_TOKEN}}{{WORKFLOW_GUARD_TOKEN}} --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json=compact
 ```
 
 {{PERSISTENT_PRACTICAL_SUMMARY_TEXT}}
-{{PARTITIONED_REVIEW_FLOW}}
-Then coordinate this loop:
-
-1. Run persistent context with `drfx workflow context {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json=compact`.
-2. Build the reviewer prompt in memory from the context manifest plus target/reference reads. Do not write prompt text or {{REVIEW_BODY_NOUN}} to disk.
-3. Spawn a read-only reviewer subagent and submit its exact output with `drfx workflow record-review {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --result-stdin --json=compact`.
-4. Triage every finding semantically and submit the triage with `drfx workflow record-triage {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --triage-stdin --json=compact`.
-5. For accepted or reopened blocking issues, run `drfx workflow begin-fix <targetStateDir> --json=compact`.
-6. {{FIX_WRITE_BOUNDARY}} Use a bounded serial fixer only when lock refresh rules can be satisfied and the issue list is scoped.
-7. Run `drfx workflow refresh-lock <targetStateDir> --json=compact` before writes after 60 seconds, before a delegated fixer writes, and before ending a long fix.
-8. Submit a valid fix report with `drfx workflow end-fix <targetStateDir> --fix-report-stdin --json=compact`.
-9. If interruption, blocker, checkpoint, context pressure, or user stop happens before a valid fix report, run `drfx workflow abort-fix <targetStateDir> --status checkpoint --reason checkpoint-requested --next-action <redacted next action> --json=compact` or use `--status blocked` with an allowed blocking reason.
-10. Review the diff and submit with `drfx workflow record-diff-review <targetStateDir> --result-stdin --json=compact`.
-11. If initial `record-review` returns `PASS`, the workflow is not terminal yet: run full re-review using `drfx workflow context {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --json=compact`, then record the full re-review with `--phase full-re-review --result-stdin` before finalization.
-12. After `DIFF-OK`, run full re-review using `drfx workflow context {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix guard=<selectedGuard> --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --json=compact`, then record the full re-review with `--phase full-re-review --result-stdin`.
-13. Repeat triage, fix, diff review, and full re-review until terminal status (`pass`, `stopped-with-deferrals`, `stopped-no-progress`, `read-only-findings`, `blocked`, `unsupported`, `externally-changed`, `possible-target-replacement`, user stop, or `checkpoint`).
-14. Finalize only through `drfx workflow finalize <targetStateDir> --final-response-stdin --json=compact`.
-
+{{REVIEW_AND_FIX_FLOW}}
 {{GUARD_WRITE_REQUIREMENT}}
 
 ## No-State Read-Only Flow

@@ -1,13 +1,13 @@
-- This route reviews an r2p requirement directory: <project>/.req-to-plan/WF-*. The review anchor is the requirement plan (07-plan.md).
+- This route reviews an active r2p run named by workId=<WF-...> under <project>/.req-to-plan/WF-*. The review anchor is the requirement plan (07-plan.md).
 - This route has a fixed document type: {{DOCUMENT_TYPE}}. Users must not pass type, and must not infer type from filename or path.
-- Users must not pass ref=, assurance=, strict, normal, ledger=, scope=, or base=; this route has a fixed PLAN rubric and no reference-document surface.
-- The review judges the requirement plan (07-plan.md) against its owning upstream docs (03–06) inside the same requirement directory.
-- run.md is a protected read-only gate: it is read to confirm the plan stage is generated/approved, never written.
+- Users must not pass target=, ref=, assurance=, strict, normal, ledger=, scope=, base=, or guard=; this route has a fixed PLAN rubric and no reference-document surface.
+- The review judges the requirement plan (07-plan.md) against its owning upstream docs (03-06) inside the same active run. 03-07 and run.md are read-only evidence.
+- Direct artifact writes are forbidden. Gemini must not edit run.md or any 03-07 artifact, and it must not execute r2p repair commands.
 - Public CLI commands are drfx doctor, drfx install, and drfx uninstall; drfx workflow is the internal deterministic interface used by this generated route.
-- The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, diff judgment, and final coordinator agreement are LLM work.
+- The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, owner-stage mapping, and final coordinator agreement are LLM work.
 - Gemini routes are no-state advisory routes; do not read or reuse .drfx/targets/<target-key>/ for resume/reset.
 - Gemini is advisory-only.
 - Gemini v1 is advisory-only and produces read-only findings.
 - automatic fixing is unavailable in Gemini v1.
 - workflow PASS is unavailable in Gemini v1.
-- Gemini must not edit 07-plan.md, the upstream docs (03–06), run.md, or workflow state except through no-state workflow outputs.
+- Gemini must not edit 07-plan.md, the upstream docs (03-06), run.md, or workflow state except through no-state workflow outputs.

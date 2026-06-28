@@ -59,84 +59,84 @@ const GENERATED_SHELL_BASELINE_BYTES = Object.freeze({
 const CODEX_SHARED_DEDUP_EXPECTED_MEASUREMENT = Object.freeze({
   routes: Object.freeze({
     'review-fix-spec': Object.freeze({
-      routeBytes: 81392,
-      embeddedSharedBytes: 59197,
-      copiedSharedBytes: 58899,
-      duplicateBytes: 58899,
-      copiedRouteBytes: 23401,
-      shrinkBytes: 57991,
-      shrinkPercent: 71.25,
+      routeBytes: 82705,
+      embeddedSharedBytes: 60511,
+      copiedSharedBytes: 60213,
+      duplicateBytes: 60213,
+      copiedRouteBytes: 23400,
+      shrinkBytes: 59305,
+      shrinkPercent: 71.71,
       wouldGrow: false
     }),
     'review-fix-plan': Object.freeze({
-      routeBytes: 81700,
-      embeddedSharedBytes: 59505,
-      copiedSharedBytes: 59207,
-      duplicateBytes: 59207,
-      copiedRouteBytes: 23401,
-      shrinkBytes: 58299,
-      shrinkPercent: 71.36,
+      routeBytes: 83013,
+      embeddedSharedBytes: 60819,
+      copiedSharedBytes: 60521,
+      duplicateBytes: 60521,
+      copiedRouteBytes: 23400,
+      shrinkBytes: 59613,
+      shrinkPercent: 71.81,
       wouldGrow: false
     }),
     'review-fix-design': Object.freeze({
-      routeBytes: 81502,
-      embeddedSharedBytes: 59259,
-      copiedSharedBytes: 58959,
-      duplicateBytes: 58959,
-      copiedRouteBytes: 23451,
-      shrinkBytes: 58051,
-      shrinkPercent: 71.23,
+      routeBytes: 82815,
+      embeddedSharedBytes: 60573,
+      copiedSharedBytes: 60273,
+      duplicateBytes: 60273,
+      copiedRouteBytes: 23450,
+      shrinkBytes: 59365,
+      shrinkPercent: 71.68,
       wouldGrow: false
     }),
     'review-fix-doc': Object.freeze({
-      routeBytes: 78199,
-      embeddedSharedBytes: 56019,
-      copiedSharedBytes: 55760,
-      duplicateBytes: 55760,
-      copiedRouteBytes: 23359,
-      shrinkBytes: 54840,
-      shrinkPercent: 70.13,
+      routeBytes: 79512,
+      embeddedSharedBytes: 57333,
+      copiedSharedBytes: 57074,
+      duplicateBytes: 57074,
+      copiedRouteBytes: 23358,
+      shrinkBytes: 56154,
+      shrinkPercent: 70.62,
       wouldGrow: false
     }),
     'review-fix-pr': Object.freeze({
-      routeBytes: 78541,
-      embeddedSharedBytes: 56524,
-      copiedSharedBytes: 56269,
-      duplicateBytes: 56269,
-      copiedRouteBytes: 23192,
-      shrinkBytes: 55349,
-      shrinkPercent: 70.47,
+      routeBytes: 79854,
+      embeddedSharedBytes: 57838,
+      copiedSharedBytes: 57583,
+      duplicateBytes: 57583,
+      copiedRouteBytes: 23191,
+      shrinkBytes: 56663,
+      shrinkPercent: 70.96,
       wouldGrow: false
     }),
     'review-fix-code': Object.freeze({
-      routeBytes: 89526,
-      embeddedSharedBytes: 60124,
-      copiedSharedBytes: 59867,
-      duplicateBytes: 59867,
-      copiedRouteBytes: 30579,
-      shrinkBytes: 58947,
-      shrinkPercent: 65.84,
+      routeBytes: 90839,
+      embeddedSharedBytes: 61438,
+      copiedSharedBytes: 61181,
+      duplicateBytes: 61181,
+      copiedRouteBytes: 30578,
+      shrinkBytes: 60261,
+      shrinkPercent: 66.34,
       wouldGrow: false
     }),
     'review-fix-r2p': Object.freeze({
-      routeBytes: 81635,
-      embeddedSharedBytes: 59505,
-      copiedSharedBytes: 59207,
-      duplicateBytes: 59207,
-      copiedRouteBytes: 23336,
-      shrinkBytes: 58299,
-      shrinkPercent: 71.41,
+      routeBytes: 80535,
+      embeddedSharedBytes: 60819,
+      copiedSharedBytes: 60521,
+      duplicateBytes: 60521,
+      copiedRouteBytes: 20922,
+      shrinkBytes: 59613,
+      shrinkPercent: 74.02,
       wouldGrow: false
     })
   }),
   totals: Object.freeze({
-    routeBytes: 572495,
-    embeddedSharedBytes: 410133,
-    copiedSharedBytes: 408168,
-    duplicateBytes: 408168
+    routeBytes: 579273,
+    embeddedSharedBytes: 419331,
+    copiedSharedBytes: 417366,
+    duplicateBytes: 417366
   }),
-  largestShellShrinkBytes: 58947,
-  largestShellShrinkPercent: 65.84,
+  largestShellShrinkBytes: 60261,
+  largestShellShrinkPercent: 66.34,
   anyCodexRouteWouldGrow: false,
   gateEntered: true
 });
@@ -389,13 +389,19 @@ test('Claude and Codex generated starts preserve materialized rounds and state-c
     for (const route of listRoutes()) {
       const rendered = renderPlatformRoute(platform, route.routeName, { packageVersion: SNAPSHOT_VERSION });
       const startLines = rendered.split('\n').filter((line) => line.startsWith('drfx workflow start '));
+      const strictNeedle = route.routeKind === 'r2p'
+        ? '<selectedMode> <stateControlToken> rounds=<roundLimit> --assurance strict-verified'
+        : '<selectedMode> <stateControlToken> rounds=<roundLimit> guard=<selectedGuard>';
+      const practicalNeedle = route.routeKind === 'r2p'
+        ? 'review-and-fix <stateControlToken> rounds=<roundLimit> --assurance practical'
+        : 'review-and-fix <stateControlToken> rounds=<roundLimit> guard=<selectedGuard>';
 
       assert.ok(
-        startLines.some((line) => line.includes('<selectedMode> <stateControlToken> rounds=<roundLimit> guard=<selectedGuard>')),
+        startLines.some((line) => line.includes(strictNeedle)),
         `${platform}:${route.routeName} strict start must carry the materialized rounds and state-control tokens`
       );
       assert.ok(
-        startLines.some((line) => line.includes('review-and-fix <stateControlToken> rounds=<roundLimit> guard=<selectedGuard>')),
+        startLines.some((line) => line.includes(practicalNeedle)),
         `${platform}:${route.routeName} practical start must carry the materialized rounds and state-control tokens`
       );
     }
@@ -418,25 +424,30 @@ test('Claude and Codex file-set review-and-fix routes require full re-review aft
   }
 });
 
-test('generated r2p practical start text keeps snapshot as the materialized default guard', () => {
+test('generated r2p route text uses workId shorthand and exposes no user-facing guard token', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
   for (const platform of ['claude', 'codex', 'opencode']) {
     const rendered = renderPlatformRoute(platform, 'review-fix-r2p', { packageVersion: SNAPSHOT_VERSION });
     assert.match(
       rendered,
-      /persistent practical command[\s\S]*?<selectedGuard>` is explicit guard or default `snapshot`/,
-      `${platform}:review-fix-r2p practical path must preserve snapshot as the default guard`
+      /persistent practical command[\s\S]*?route exposes no `guard=` token/i,
+      `${platform}:review-fix-r2p practical path must document that guard is not user-facing`
     );
     assert.match(
       rendered,
-      /bare requirement directory[^\n]*shorthand for `target=<requirement-dir>`/i,
-      `${platform}:review-fix-r2p must document the valid bare requirement-dir target shorthand`
+      /bare `?WF-[^\n]*shorthand for `?workId=<WF-\.\.\.>`?/i,
+      `${platform}:review-fix-r2p must document the valid bare workId shorthand`
     );
     assert.doesNotMatch(
       rendered,
       /no bare-path/i,
-      `${platform}:review-fix-r2p must not reject the documented bare target shorthand`
+      `${platform}:review-fix-r2p must not reject the documented bare workId shorthand`
+    );
+    assert.doesNotMatch(
+      rendered,
+      /target=<requirement-dir>|guard=<selectedGuard>/,
+      `${platform}:review-fix-r2p must not expose path-based target or guard tokens`
     );
   }
 });
@@ -456,20 +467,21 @@ test('generated r2p route text does not expose user-facing assurance tokens', ()
 
   for (const platform of ['claude', 'codex', 'opencode']) {
     const rendered = renderPlatformRoute(platform, 'review-fix-r2p', { packageVersion: SNAPSHOT_VERSION });
+    const shell = maskEmbeddedSharedContent(platform, rendered);
 
     assert.match(
-      rendered,
-      /This route has a fixed PLAN rubric and exposes no `assurance=` token/,
+      shell,
+      /This route has a fixed PLAN rubric and exposes no `assurance=`(?: or `guard=`)? token/,
       `${platform}:review-fix-r2p must document that assurance is internal-only`
     );
     assert.match(
-      rendered,
+      shell,
       /--assurance practical/,
       `${platform}:review-fix-r2p must keep internal practical assurance materialization`
     );
 
     for (const pattern of forbiddenUserTokenGuidance) {
-      assert.doesNotMatch(rendered, pattern, `${platform}:review-fix-r2p must not expose ${pattern}`);
+      assert.doesNotMatch(shell, pattern, `${platform}:review-fix-r2p must not expose ${pattern}`);
     }
   }
 });
@@ -1072,9 +1084,9 @@ test('strict verified route proof uses same-flow check json only', () => {
 
 test('record-diff-review route handoff uses result stdin flag', () => {
   const sourceText = [
-    'templates/claude-command.md.tmpl',
-    'templates/codex-skill.md.tmpl'
-  ].map(read).join('\n\n');
+    renderedDocumentRoute('claude'),
+    renderedDocumentRoute('codex')
+  ].join('\n\n');
 
   assert.match(sourceText, /record-diff-review[\s\S]{0,120}--result-stdin/);
   assert.doesNotMatch(sourceText, /record-diff-review[\s\S]{0,120}--diff-review-stdin/);
@@ -1614,19 +1626,24 @@ test('routes and prompts list stopped-no-progress as a terminal state', () => {
   assert.match(finalStatusLine[1], /stopped-no-progress/);
   assert.match(buildFinalResponseChecklist(), /stopped-no-progress[\s\S]*no-progress-detected/);
 
+  const renderedRouteText = [
+    renderedDocumentRoute('claude'),
+    renderedDocumentRoute('codex'),
+    renderPlatformRoute('gemini', 'review-fix-spec', { packageVersion: '0.0.0-test' })
+  ].join('\n\n');
+
   for (const rel of [
     'shared/core.md',
     'shared/prompts/coordinator.md',
     'skills/review-fix-spec/SKILL.md',
     'skills/review-fix-plan/SKILL.md',
     'skills/review-fix-design/SKILL.md',
-    'skills/review-fix-doc/SKILL.md',
-    'templates/claude-command.md.tmpl',
-    'templates/codex-skill.md.tmpl',
-    'templates/gemini-command.toml.tmpl'
+    'skills/review-fix-doc/SKILL.md'
   ]) {
     assert.match(read(rel), /stopped-no-progress/, `${rel} must list stopped-no-progress`);
   }
+
+  assert.match(renderedRouteText, /stopped-no-progress/, 'rendered route text must list stopped-no-progress');
 });
 
 test('coordinator defines a recurrence + fix-attempt-cap convergence rule', () => {

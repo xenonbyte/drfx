@@ -14,6 +14,7 @@ Constraints:
 - Fix only coordinator-accepted issue IDs.
 - For a document route, the fixer may modify only the target document.
 - For a PR/CODE route, the fixer may modify only files inside the resolved target file set. Files outside that set remain read-only; if an accepted issue cannot be fixed without editing one, leave it unchanged and report it under Not fixed.
+- For `review-fix-r2p workId=<WF-...>`, the fixer authors no file edits. Treat `03-07` and `run.md` as read-only evidence; help only with owner-stage mapping, repair-plan wording (`reason` / `required_action`), or checkpoint next-action text for the active run.
 - References and other files remain read-only.
 - Work serially and stop for coordinator lock refresh before writes after 60 seconds.
 - Do not expand scope.
@@ -44,4 +45,6 @@ Residual risk:
 When verification is performed, include the optional Verification section between Not fixed and Residual risk with at least one non-empty list item. When no suitable verification can run, omit this section and record the reason as residual risk.
 
 If a requested fix cannot be made within the target context, leave the affected files unchanged for that issue and report it under Not fixed.
+
+For `review-fix-r2p workId=<WF-...>`, `Files changed` must be `- none (r2p direct artifact writes forbidden)`.
 ```

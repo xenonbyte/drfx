@@ -114,15 +114,18 @@ Triage and PASS rules:
 - Surfacing and deferring are one action, not a fix. When deferring such a finding, the coordinator (or fixer, which fixes directly by default) writes the `DECISION NEEDED: <question + options>` marker into the document — the marker is the in-document evidence of the deferral, not a resolved fix, so the finding stays `deferred` and does not count toward PASS. On the next round the reviewer sees the point is now explicitly surfaced (per the COMMON Resolution rule) and does not re-raise it as silent ambiguity, so it never trips `stopped-no-progress`. The loop continues on the other findings and ends `stopped-with-deferrals` (not PASS), the surfaced points listed.
 - Low findings block only in strict mode unless accepted non-blocking and included in the next reviewer context.
 
-r2p finding-to-owner-doc map (`review-fix-r2p` only):
-- r2p reviews `07-plan.md`; the editable set is the `03`–`07` owner docs and `run.md` is read-only/protected (never edit it).
-- Map each blocking finding to the doc that owns its root cause, and fix backward there (in `review-and-fix`) or name that owner doc in the read-only report:
-  - acceptance criteria / observable behavior gap -> `06-spec.md`
-  - architecture, interface, or sequencing gap -> `05-design.md`
-  - unmitigated risk or missing rollback -> `04-risk-discovery.md`
-  - scope or requirement ambiguity -> `03-requirement-brief.md`
-  - pure execution-ordering or tooling issue local to the plan -> `07-plan.md` only
-- A finding whose root cause is upstream is fixed in the owning upstream doc, not patched only in `07-plan.md`. In read-only mode, name the owning doc for each blocking finding and stop as read-only-findings (never PASS).
+r2p finding-to-ownerStage map (`review-fix-r2p workId=<WF-...>` only):
+- `review-fix-r2p` reviews the active run named by `workId=<WF-...>`. `07-plan.md` is the review anchor, while `03-07` and `run.md` are read-only evidence. Direct artifact writes are forbidden; never edit run artifacts in this route.
+- Map each blocking finding to the owning r2p stage, not to an editable file:
+  - raw requirement conflict with the plan direction -> `raw_requirement`
+  - unclear scope, goal, non-goal, or acceptance direction -> `requirement_brief`
+  - risk, rollback, change-management, security, or dependency gap -> `risk_discovery`
+  - architecture, interface, module-boundary, or implementation-strategy issue -> `design`
+  - insufficient observable behavior, acceptance, or verification criteria -> `spec`
+  - pure task decomposition, ordering, command, or plan-local issue -> `plan`
+- In `review-and-fix`, accepted findings become one validated r2p repair plan: `r2p-reopen` for closed/executing runs, `r2p-gap-open` for open runs whose owner stage is strictly upstream of `current_stage`, and `r2p-current-stage-repair-required` checkpoint when the owning stage equals `current_stage`.
+- After `apply-r2p-repair`, stop at checkpoint with `r2p-repair-applied`. Tell the user to run `r2p-continue`, let r2p regenerate artifacts, then rerun `review-fix-r2p workId=<new-or-same-WF-...>`. PASS is allowed only on that clean rerun.
+- In `read-only`, name the owning stage for each blocking finding and stop as read-only-findings (never PASS).
 
 Convergence:
 - The workflow enforces a deterministic fix-attempt cap (default 5 fixes per target); the 6th begin-fix is refused as stopped-no-progress.
