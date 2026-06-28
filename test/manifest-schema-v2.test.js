@@ -346,9 +346,9 @@ function makeR2pManifest(overrides = {}) {
     lastTriageReportPath: 'none',
     lastFixReportPath: 'none',
     lastDiffReviewReportPath: 'none',
-    requirementDir: 'requirements/feature-x',
+    workId: 'WF-20260627-feature-x',
     runMdSha256: 'b'.repeat(64),
-    fileSetFingerprint: 'c'.repeat(64),
+    reviewSetFingerprint: 'c'.repeat(64),
     lastModifiedAt: '2026-06-24T00:00:00.000Z',
     references: [],
     createdAt: '2026-06-24T00:00:00.000Z',
@@ -360,33 +360,32 @@ function makeR2pManifest(overrides = {}) {
 test('r2p-kind manifest round-trips through format/parse/normalize', () => {
   const text = formatManifestV2(makeR2pManifest());
   assert.match(text, /Target context kind: r2p/);
-  assert.match(text, /Requirement dir: requirements\/feature-x/);
+  assert.match(text, /Work id: WF-20260627-feature-x/);
   assert.match(text, /Run md sha256: b{64}/);
-  assert.match(text, /File set fingerprint: c{64}/);
+  assert.match(text, /Review set fingerprint: c{64}/);
   assert.match(text, /Last modified at: 2026-06-24T00:00:00.000Z/);
 
   const parsed = parseManifestV2(text);
   assert.equal(parsed.targetContextKind, 'r2p');
   assert.equal(parsed.documentType, 'none');
-  assert.equal(parsed.requirementDir, 'requirements/feature-x');
+  assert.equal(parsed.workId, 'WF-20260627-feature-x');
   assert.equal(parsed.runMdSha256, 'b'.repeat(64));
-  assert.equal(parsed.fileSetFingerprint, 'c'.repeat(64));
+  assert.equal(parsed.reviewSetFingerprint, 'c'.repeat(64));
   assert.equal(parsed.lastModifiedAt, '2026-06-24T00:00:00.000Z');
   // byte-stable round-trip
   assert.equal(formatManifestV2(parsed), text);
 });
 
-test('r2p-kind manifest rejects absolute or escaping requirementDir values', () => {
-  for (const requirementDir of [
-    '/tmp/outside/WF-unsafe',
-    '../outside/WF-unsafe',
-    '.req-to-plan/../outside/WF-unsafe',
-    'safe/../../outside/WF-unsafe'
+test('r2p-kind manifest requires a non-empty workId value', () => {
+  for (const workId of [
+    '',
+    'none',
+    '   '
   ]) {
     assert.throws(
-      () => formatManifestV2(makeR2pManifest({ requirementDir })),
-      /Requirement dir/,
-      requirementDir
+      () => formatManifestV2(makeR2pManifest({ workId })),
+      /Work id/,
+      workId
     );
   }
 });
@@ -417,9 +416,9 @@ test('r2p-kind manifest optional roundLimit round-trips and is omitted when none
 test('requiredManifestV2Keys returns exactly the r2p key set', () => {
   const keys = requiredManifestV2Keys('r2p');
   // r2p-specific fields
-  assert.ok(keys.includes('requirementDir'), 'must include requirementDir');
+  assert.ok(keys.includes('workId'), 'must include workId');
   assert.ok(keys.includes('runMdSha256'), 'must include runMdSha256');
-  assert.ok(keys.includes('fileSetFingerprint'), 'must include fileSetFingerprint');
+  assert.ok(keys.includes('reviewSetFingerprint'), 'must include reviewSetFingerprint');
   assert.ok(keys.includes('lastModifiedAt'), 'must include lastModifiedAt');
   // shared head fields
   assert.ok(keys.includes('manifestSchema'), 'must include manifestSchema');
@@ -434,4 +433,7 @@ test('requiredManifestV2Keys returns exactly the r2p key set', () => {
   // must NOT include PR-specific fields
   assert.ok(!keys.includes('base'), 'must not include base');
   assert.ok(!keys.includes('baseRevision'), 'must not include baseRevision');
+  // must NOT include retired r2p editable-set fields
+  assert.ok(!keys.includes('requirementDir'), 'must not include requirementDir');
+  assert.ok(!keys.includes('fileSetFingerprint'), 'must not include fileSetFingerprint');
 });

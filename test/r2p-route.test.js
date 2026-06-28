@@ -18,6 +18,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const { getRouteDescriptor } = require('../lib/routes');
+const { formatManifestV2, parseManifestV2, requiredManifestV2Keys } = require('../lib/workflow-state');
 const { runWorkflowCommand, parseWorkflowArgs } = require('../lib/workflow');
 const {
   resolveR2pCommands,
@@ -471,6 +472,65 @@ test('gate4 stable target key stays content-independent for the same workId', as
   const otherParsed = parseWorkflowArgs('start', workflowInvocation(otherWorkId));
   const other = resolveRouteTargetMetadata(otherParsed, { cwd: root, rootCwd: root });
   assert.notEqual(first.targetKey, other.targetKey);
+});
+
+test('gate4 manifest round-trips r2p workId review-set fields without retired editable-set keys', () => {
+  const manifest = {
+    manifestSchema: 2,
+    targetContextKind: 'r2p',
+    target: 'none',
+    normalizedTarget: 'none',
+    documentType: 'none',
+    strictness: 'normal',
+    mode: 'review-and-fix',
+    guardMode: 'git',
+    targetKey: 'r2p-aaaaaaaaaaaa',
+    ledgerPath: 'none',
+    status: 'review',
+    currentPhase: 'review',
+    currentRound: 1,
+    fixAttemptCount: 0,
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    descriptorPlatform: 'none',
+    assuranceProof: 'none',
+    runtimeSubagentProbe: 'ready',
+    runtimeSubagentProbeEvidence: 'route-asserted-ready',
+    runtimeFingerprintGuard: 'not-run',
+    runtimeStdinHandoff: 'ready',
+    runtimeStdinHandoffEvidence: 'route-asserted-ready',
+    runtimeDowngradeReason: 'none',
+    blockingReason: 'none',
+    statusReason: 'none',
+    currentReportPath: 'none',
+    lastReviewerReportPath: 'none',
+    lastTriageReportPath: 'none',
+    lastFixReportPath: 'none',
+    lastDiffReviewReportPath: 'none',
+    workId: 'WF-20260627-manifest',
+    runMdSha256: 'a'.repeat(64),
+    reviewSetFingerprint: 'b'.repeat(64),
+    lastModifiedAt: '2026-06-28T00:00:00.000Z',
+    references: [],
+    createdAt: '2026-06-28T00:00:00.000Z',
+    updatedAt: '2026-06-28T00:00:00.000Z'
+  };
+
+  const text = formatManifestV2(manifest);
+  assert.match(text, /Work id: WF-20260627-manifest/);
+  assert.match(text, /Review set fingerprint: b{64}/);
+  assert.doesNotMatch(text, /^Requirement dir:/m);
+  assert.doesNotMatch(text, /^File set fingerprint:/m);
+
+  const parsed = parseManifestV2(text);
+  assert.equal(parsed.workId, manifest.workId);
+  assert.equal(parsed.runMdSha256, manifest.runMdSha256);
+  assert.equal(parsed.reviewSetFingerprint, manifest.reviewSetFingerprint);
+  assert.ok(requiredManifestV2Keys('r2p').includes('workId'));
+  assert.ok(requiredManifestV2Keys('r2p').includes('reviewSetFingerprint'));
+  assert.ok(!requiredManifestV2Keys('r2p').includes('requirementDir'));
+  assert.ok(!requiredManifestV2Keys('r2p').includes('fileSetFingerprint'));
+  assert.equal(formatManifestV2(parsed), text);
 });
 
 test('gate5 no-direct-write both directions (drfx fails; r2p-authored change allowed)', async (t) => {
