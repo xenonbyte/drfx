@@ -368,7 +368,7 @@ test('r2p advisory blocks on an archive-only workId before reviewer-recording', 
   assert.equal(context.ok, false, JSON.stringify(context));
   assert.equal(context.status, 'blocked');
   assert.equal(context.errorCode, 'ERR_R2P_WORK_ID_ARCHIVED');
-  assert.equal(context.blockingReason, 'state-validation-failed');
+  assert.equal(context.blockingReason, 'r2p-run-archived');
 
   const review = await runWorkflowCommand('record-review', [
     '--no-state',
@@ -381,4 +381,29 @@ test('r2p advisory blocks on an archive-only workId before reviewer-recording', 
   assert.equal(review.status, 'blocked');
   assert.equal(review.errorCode, 'ERR_R2P_WORK_ID_ARCHIVED');
   assert.notEqual(review.status, 'recorded-review');
+});
+
+test('r2p advisory context preserves resolver-specific blockers', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const missingWorkId = 'WF-20260624-missing';
+  const missingArgs = r2pArgs(missingWorkId);
+  const missingContext = await runWorkflowCommand('context', ['--no-state', ...missingArgs], {
+    cwd: root,
+    homeDir,
+    env: installFakeR2pCli(root, missingWorkId)
+  });
+  assert.equal(missingContext.ok, false, JSON.stringify(missingContext));
+  assert.equal(missingContext.blockingReason, 'r2p-workspace-not-found');
+
+  const unsafeWorkId = 'WF-20260624-unsafe-artifact';
+  const wfDir = makeWfDir(root, unsafeWorkId);
+  fs.rmSync(path.join(wfDir, '06-spec.md'));
+  fs.symlinkSync(path.join(wfDir, '07-plan.md'), path.join(wfDir, '06-spec.md'));
+  const unsafeContext = await runWorkflowCommand('context', ['--no-state', ...r2pArgs(unsafeWorkId)], {
+    cwd: root,
+    homeDir,
+    env: installFakeR2pCli(root, unsafeWorkId)
+  });
+  assert.equal(unsafeContext.ok, false, JSON.stringify(unsafeContext));
+  assert.equal(unsafeContext.blockingReason, 'r2p-artifact-missing-or-unsafe');
 });
