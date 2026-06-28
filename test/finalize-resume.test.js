@@ -269,6 +269,32 @@ test('persistent finalize accepts practical pass only with required state', () =
   assert.equal(result.status, 'pass');
 });
 
+test('final response validation accepts r2p blocker reasons from generated route contracts', () => {
+  const result = validateFinalResponse({
+    finalResponse: {
+      ...baseBlock,
+      finalStatus: 'blocked',
+      target: 'none',
+      filesChanged: 'none',
+      fixedIssueIds: 'none',
+      verificationPerformed: 'r2p repair command preflight',
+      deferralsOrBlockers: 'r2p direct artifact writes are forbidden',
+      blockingReason: 'r2p-direct-artifact-write-forbidden',
+      residualRisk: 'r2p run still needs lifecycle repair',
+      coordinatorAgreement: 'none'
+    },
+    state: {
+      noState: true,
+      mode: 'review-and-fix',
+      assurance: 'practical',
+      runtimePlatform: 'codex'
+    }
+  });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.finalResponse.blockingReason, 'r2p-direct-artifact-write-forbidden');
+});
+
 test('persistent finalize rejects advisory pass', () => {
   assert.throws(
     () => validateFinalResponse({

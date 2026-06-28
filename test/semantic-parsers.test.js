@@ -364,6 +364,29 @@ test('final response rejects invalid enum and missing coordinator agreement on p
   assert.throws(() => parseFinalResponseBlock(missingAgreement), /Coordinator agreement/i);
 });
 
+test('final response parser accepts documented r2p blocking reasons', () => {
+  const block = [
+    'Final status: blocked',
+    'Assurance: practical',
+    'Runtime platform: codex',
+    'Mode: review-and-fix',
+    'Target: none',
+    'Files changed: none',
+    'Fixed issue IDs: none',
+    'Verification performed: r2p-status JSON probe',
+    'Deferrals or blockers: r2p command cannot run from the current run state',
+    'Blocking reason: r2p-run-status-unsupported',
+    'Status reason: none',
+    'Residual risk: r2p run remains unrepaired',
+    'Redaction statement: no sensitive values persisted',
+    'Coordinator agreement: none'
+  ].join('\n');
+
+  const parsed = parseFinalResponseBlock(block, { allowFileSet: true });
+  assert.equal(parsed.finalStatus, 'blocked');
+  assert.equal(parsed.blockingReason, 'r2p-run-status-unsupported');
+});
+
 test('readSemanticPayload reads safe OS temp file', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-payload-'));
   const filePath = path.join(tempDir, 'payload.md');

@@ -119,19 +119,19 @@ const CODEX_SHARED_DEDUP_EXPECTED_MEASUREMENT = Object.freeze({
       wouldGrow: false
     }),
     'review-fix-r2p': Object.freeze({
-      routeBytes: 80447,
-      embeddedSharedBytes: 60923,
+      routeBytes: 81459,
+      embeddedSharedBytes: 61139,
       copiedSharedBytes: 60521,
       duplicateBytes: 60521,
-      copiedRouteBytes: 20730,
-      shrinkBytes: 59717,
-      shrinkPercent: 74.23,
+      copiedRouteBytes: 21526,
+      shrinkBytes: 59933,
+      shrinkPercent: 73.57,
       wouldGrow: false
     })
   }),
   totals: Object.freeze({
-    routeBytes: 579185,
-    embeddedSharedBytes: 419435,
+    routeBytes: 580197,
+    embeddedSharedBytes: 419651,
     copiedSharedBytes: 417366,
     duplicateBytes: 417366
   }),

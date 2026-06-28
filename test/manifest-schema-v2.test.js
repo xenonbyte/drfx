@@ -376,6 +376,19 @@ test('r2p-kind manifest round-trips through format/parse/normalize', () => {
   assert.equal(formatManifestV2(parsed), text);
 });
 
+test('r2p-kind blocked manifest accepts r2p blocker reasons', () => {
+  const text = formatManifestV2(makeR2pManifest({
+    status: 'blocked',
+    currentPhase: 'final',
+    blockingReason: 'r2p-run-status-unsupported'
+  }));
+  const parsed = parseManifestV2(text);
+
+  assert.equal(parsed.status, 'blocked');
+  assert.equal(parsed.blockingReason, 'r2p-run-status-unsupported');
+  assert.equal(formatManifestV2(parsed), text);
+});
+
 test('r2p-kind manifest requires a non-empty workId value', () => {
   for (const workId of [
     '',
