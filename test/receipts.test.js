@@ -9,7 +9,8 @@ const {
   shouldWriteRoundReceipt,
   roundReceiptPath,
   formatRoundReceipt,
-  writeRoundReceipt
+  writeRoundReceipt,
+  readRoundReceiptArtifacts
 } = require('../lib/receipts');
 
 test('decides when round receipts are required', () => {
@@ -125,6 +126,21 @@ test('writeRoundReceipt rejects symlinked rounds directory without writing outsi
     /round receipt|symlink|target state/i
   );
   assert.equal(fs.existsSync(path.join(outside, '001-review.md')), false);
+});
+
+test('readRoundReceiptArtifacts skips symlinked round receipts and keeps regular files only', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-read-receipts-'));
+  const targetDir = path.join(root, '.drfx', 'targets', 'spec-md-123456789abc');
+  const roundsDir = path.join(targetDir, 'rounds');
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-read-receipts-outside-'));
+  fs.mkdirSync(roundsDir, { recursive: true });
+  fs.writeFileSync(path.join(roundsDir, '001-review.md'), 'safe receipt\n');
+  fs.writeFileSync(path.join(outside, 'evil.md'), 'unsafe receipt\n');
+  fs.symlinkSync(path.join(outside, 'evil.md'), path.join(roundsDir, '001-evil.md'));
+
+  const receipts = readRoundReceiptArtifacts(targetDir, { fileNamePrefix: '001-' });
+  assert.deepEqual(receipts.map((entry) => path.basename(entry.receiptPath)), ['001-review.md']);
+  assert.deepEqual(receipts.map((entry) => entry.text), ['safe receipt\n']);
 });
 
 test('redacts sensitive values from all formatted receipt fields', () => {

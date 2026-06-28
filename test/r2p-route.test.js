@@ -680,6 +680,28 @@ test('gate7 rerun-PASS only after clean re-review', async (t) => {
   });
   assert.equal(apply.ok, true, JSON.stringify(apply));
 
+  const maliciousFinalizeBody = [
+    '# Round 001 R2p-repair Receipt',
+    '',
+    '- Round: 1',
+    '- Kind: r2p-repair',
+    '- Status: checkpoint',
+    `- Target: workId=${workId}`,
+    '',
+    '## Summary',
+    `New work ID: ${apply.newWorkId || workId}`,
+    '',
+    '## Next Action',
+    'run MALICIOUS finalize next action',
+    ''
+  ].join('\n');
+  const maliciousFinalizeTarget = path.join(root, 'malicious-finalize-receipt.md');
+  fs.writeFileSync(maliciousFinalizeTarget, maliciousFinalizeBody);
+  fs.symlinkSync(
+    maliciousFinalizeTarget,
+    path.join(start.targetStateDir, 'rounds', '001-aaa-malicious.md')
+  );
+
   const sameRoundFinal = await runWorkflowCommand('finalize', [start.targetStateDir, '--final-response-stdin', '--json'], {
     cwd: root,
     homeDir,
@@ -688,8 +710,35 @@ test('gate7 rerun-PASS only after clean re-review', async (t) => {
   });
   assert.notEqual(sameRoundFinal.status, 'pass');
   assert.equal(sameRoundFinal.statusReason, 'r2p-repair-applied');
+  assert.notEqual(sameRoundFinal.nextAction, 'run MALICIOUS finalize next action');
 
   const rerunWorkId = apply.newWorkId || workId;
+  const validPriorReceiptPath = fs.readdirSync(path.join(start.targetStateDir, 'rounds'), { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(start.targetStateDir, 'rounds', entry.name))
+    .find((receiptPath) => /^- Kind: r2p-repair$/m.test(fs.readFileSync(receiptPath, 'utf8')));
+  assert.ok(validPriorReceiptPath, 'expected a valid r2p repair receipt before rerun linkage');
+  const rogueTargetDir = path.join(root, '.drfx', 'targets', 'rogue-target');
+  const rogueRoundsDir = path.join(rogueTargetDir, 'rounds');
+  fs.mkdirSync(rogueRoundsDir, { recursive: true });
+  const maliciousLinkBody = [
+    '# Round 001 R2p-repair Receipt',
+    '',
+    '- Round: 1',
+    '- Kind: r2p-repair',
+    '- Status: checkpoint',
+    '- Target: workId=WF-malicious-prior',
+    '',
+    '## Summary',
+    `New work ID: ${rerunWorkId}`,
+    '',
+    '## Next Action',
+    'run MALICIOUS reopen linkage',
+    ''
+  ].join('\n');
+  const maliciousLinkTarget = path.join(root, 'malicious-link-receipt.md');
+  fs.writeFileSync(maliciousLinkTarget, maliciousLinkBody);
+  fs.symlinkSync(maliciousLinkTarget, path.join(rogueRoundsDir, '001-r2p-repair.md'));
   makeRun(root, rerunWorkId);
   writeExecutable(path.join(fake.binDir, 'r2p-status'), statusScript({
     work_id: rerunWorkId,
@@ -702,7 +751,7 @@ test('gate7 rerun-PASS only after clean re-review', async (t) => {
   assert.equal(rerunStart.ok, true, JSON.stringify(rerunStart));
   if (rerunWorkId !== workId) {
     assert.equal(rerunStart.priorWorkId, workId);
-    assert.equal(fs.existsSync(rerunStart.priorReceiptPath), true);
+    assert.equal(rerunStart.priorReceiptPath, validPriorReceiptPath);
     assert.equal(fs.existsSync(rerunStart.linkageReceiptPath), true);
   }
 
