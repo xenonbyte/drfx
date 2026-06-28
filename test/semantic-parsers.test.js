@@ -56,6 +56,29 @@ test('parses triage exact item schema', () => {
   assert.deepEqual(parsed.warnings, []);
 });
 
+test('triage accepts optional r2p repair metadata fields', () => {
+  const text = [
+    'Triage:',
+    '- reviewer_id: R001',
+    '  issue_id: ISSUE-001',
+    '  decision: accepted',
+    '  severity: high',
+    '  original_severity: high',
+    '  rationale: Confirmed workflow state gap.',
+    '  merged_into: none',
+    '  deferred_owner: none',
+    '  deferred_next_action: none',
+    '  non_blocking: false',
+    '  owner_stage: design',
+    '  reason: Reopen design to address the accepted finding.',
+    '  required_action: Clarify design constraints.'
+  ].join('\n');
+  const parsed = parseTriageResult(text);
+  assert.equal(parsed.decisions[0].owner_stage, 'design');
+  assert.equal(parsed.decisions[0].reason, 'Reopen design to address the accepted finding.');
+  assert.equal(parsed.decisions[0].required_action, 'Clarify design constraints.');
+});
+
 test('triage rejects unknown decision and malformed item indentation', () => {
   assert.throws(
     () => parseTriageResult([

@@ -46,6 +46,36 @@ const REVIEW_FAIL = [
   '  sensitive: false'
 ].join('\n');
 
+const REVIEW_FAIL_WITH_OWNER_STAGE = [
+  'FAIL',
+  'Findings:',
+  '- id: R001',
+  '  severity: high',
+  '  location: 07-plan.md#repair',
+  '  issue: The plan depends on an upstream design decision that is not yet settled.',
+  '  why_it_matters: The run cannot truthfully PASS until r2p regenerates the staged artifacts.',
+  '  suggested_fix: Reopen design so r2p can regenerate the downstream artifacts.',
+  '  confidence: confirmed',
+  '  sensitive: false',
+  '  owner_stage: design',
+  '  reason: Reopen design so r2p can regenerate the downstream artifacts.'
+].join('\n');
+
+const REVIEW_FAIL_WITH_SPEC_OWNER_STAGE = [
+  'FAIL',
+  'Findings:',
+  '- id: R001',
+  '  severity: high',
+  '  location: 07-plan.md#repair',
+  '  issue: The plan depends on an upstream spec decision that is not yet settled.',
+  '  why_it_matters: The run cannot truthfully PASS until r2p regenerates the staged artifacts.',
+  '  suggested_fix: Rework the spec so r2p can regenerate the downstream artifacts.',
+  '  confidence: confirmed',
+  '  sensitive: false',
+  '  owner_stage: spec',
+  '  reason: Rework the spec so r2p can regenerate the downstream artifacts.'
+].join('\n');
+
 const TRIAGE_ACCEPT = [
   'Triage:',
   '- reviewer_id: R001',
@@ -399,10 +429,40 @@ test('gate2 command-env + R2P_JSON probe', async (t) => {
   assert.equal(blocked.ok, false);
   assert.equal(blocked.blockingReason, 'r2p-json-contract-unavailable');
 
+  const explicitPreflight = await runWorkflowCommand('preflight', runtimeArgs([
+    'review-fix-r2p',
+    `workId=${workId}`,
+    'review-and-fix'
+  ], {
+    subagent: 'not-required',
+    stdin: 'not-required'
+  }), {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(explicitPreflight.ok, false);
+  assert.equal(explicitPreflight.blockingReason, 'r2p-json-contract-unavailable');
+
   fs.rmSync(path.join(fake.binDir, 'r2p-gap-open'));
   const missing = await startFor(root, homeDir, workId, [], { env });
   assert.equal(missing.ok, false);
   assert.equal(missing.blockingReason, 'r2p-command-unavailable');
+
+  const missingExplicitPreflight = await runWorkflowCommand('preflight', runtimeArgs([
+    'review-fix-r2p',
+    `workId=${workId}`,
+    'review-and-fix'
+  ], {
+    subagent: 'not-required',
+    stdin: 'not-required'
+  }), {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(missingExplicitPreflight.ok, false);
+  assert.equal(missingExplicitPreflight.blockingReason, 'r2p-command-unavailable');
 });
 
 test('gate3 workspace preflight', async (t) => {
@@ -843,7 +903,26 @@ test('gate7 resume keeps same-workId r2p repair receipts across regenerated arti
   });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
 
-  const { start } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
+  const start = await startFor(root, homeDir, workId, [], { env });
+  assert.equal(start.ok, true, JSON.stringify(start));
+  const review = await runWorkflowCommand(
+    'record-review',
+    [
+      ...workflowInvocation(workId),
+      '--phase',
+      'initial-review',
+      '--result-stdin'
+    ],
+    {
+      cwd: root,
+      homeDir,
+      stdin: REVIEW_FAIL_WITH_OWNER_STAGE,
+      env
+    }
+  );
+  assert.equal(review.ok, true, JSON.stringify(review));
+  const triage = await recordTriageFor(root, homeDir, workId, [], { env });
+  assert.equal(triage.ok, true, JSON.stringify(triage));
   const apply = await runWorkflowCommand('apply-r2p-repair', [start.targetStateDir, '--json'], {
     cwd: root,
     homeDir,
@@ -887,7 +966,26 @@ test('gate7 resume refreshes when only run.md drifted after r2p repair', async (
   });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
 
-  const { start } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
+  const start = await startFor(root, homeDir, workId, [], { env });
+  assert.equal(start.ok, true, JSON.stringify(start));
+  const review = await runWorkflowCommand(
+    'record-review',
+    [
+      ...workflowInvocation(workId),
+      '--phase',
+      'initial-review',
+      '--result-stdin'
+    ],
+    {
+      cwd: root,
+      homeDir,
+      stdin: REVIEW_FAIL_WITH_OWNER_STAGE,
+      env
+    }
+  );
+  assert.equal(review.ok, true, JSON.stringify(review));
+  const triage = await recordTriageFor(root, homeDir, workId, [], { env });
+  assert.equal(triage.ok, true, JSON.stringify(triage));
   const apply = await runWorkflowCommand('apply-r2p-repair', [start.targetStateDir, '--json'], {
     cwd: root,
     homeDir,
@@ -1093,7 +1191,21 @@ test('gate9 current-stage checkpoint', async (t) => {
 
   const start = await startFor(root, homeDir, workId, [], { env });
   assert.equal(start.ok, true);
-  const review = await recordReviewFor(root, homeDir, workId, [], { env });
+  const review = await runWorkflowCommand(
+    'record-review',
+    [
+      ...workflowInvocation(workId),
+      '--phase',
+      'initial-review',
+      '--result-stdin'
+    ],
+    {
+      cwd: root,
+      homeDir,
+      stdin: REVIEW_FAIL_WITH_SPEC_OWNER_STAGE,
+      env
+    }
+  );
   assert.equal(review.ok, true);
   const triage = await recordTriageFor(root, homeDir, workId, [], { env });
   assert.equal(triage.ok, true);
@@ -1106,6 +1218,11 @@ test('gate9 current-stage checkpoint', async (t) => {
   assert.equal(repairPlan.ok, true);
   assert.equal(repairPlan.status, 'checkpoint');
   assert.equal(repairPlan.statusReason, 'r2p-current-stage-repair-required');
+
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'checkpoint');
+  assert.equal(manifest.currentPhase, 'final');
+  assert.equal(manifest.statusReason, 'r2p-current-stage-repair-required');
 });
 
 test('gate10 earliest-stage aggregation + r2p-repair-plan-ambiguous', async (t) => {
@@ -1148,6 +1265,54 @@ test('gate10 earliest-stage aggregation + r2p-repair-plan-ambiguous', async (t) 
     ),
     (error) => error && error.blockingReason === 'r2p-repair-plan-ambiguous'
   );
+});
+
+test('gate10 persistent repair-plan path preserves owner stage and reason from accepted r2p findings', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-gate10-persistent-owner-stage';
+  makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'closed_at_plan_checkpoint',
+      current_stage: 'plan',
+      open_routes_detail: []
+    })
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+
+  const start = await startFor(root, homeDir, workId, [], { env });
+  assert.equal(start.ok, true, JSON.stringify(start));
+
+  const review = await runWorkflowCommand(
+    'record-review',
+    [
+      ...workflowInvocation(workId),
+      '--phase',
+      'initial-review',
+      '--result-stdin'
+    ],
+    {
+      cwd: root,
+      homeDir,
+      stdin: REVIEW_FAIL_WITH_OWNER_STAGE,
+      env
+    }
+  );
+  assert.equal(review.ok, true, JSON.stringify(review));
+
+  const triage = await recordTriageFor(root, homeDir, workId, [], { env });
+  assert.equal(triage.ok, true, JSON.stringify(triage));
+
+  const repairPlan = await runWorkflowCommand('record-r2p-repair-plan', [start.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(repairPlan.ok, true, JSON.stringify(repairPlan));
+  assert.equal(repairPlan.repairPlan.command_kind, 'r2p-reopen');
+  assert.equal(repairPlan.repairPlan.owner_stage, 'design');
+  assert.equal(repairPlan.repairPlan.reason, 'Reopen design so r2p can regenerate the downstream artifacts.');
 });
 
 test('redaction receipt omits raw reason/secrets', async (t) => {
