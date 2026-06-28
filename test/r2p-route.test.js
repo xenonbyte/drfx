@@ -871,6 +871,54 @@ test('gate7 resume keeps same-workId r2p repair receipts across regenerated arti
   assert.deepEqual(afterResumeReceipts, beforeResumeReceipts);
 });
 
+test('gate7 resume refreshes when only run.md drifted after r2p repair', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-gate7-runmd-only';
+  makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'active_stage_draft',
+      current_stage: 'plan',
+      open_routes_detail: [
+        { route_id: 'ROUTE-001', owner_stage: 'design', required_action: 'clarify design constraints' }
+      ]
+    })
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+
+  const { start } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
+  const apply = await runWorkflowCommand('apply-r2p-repair', [start.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(apply.ok, true, JSON.stringify(apply));
+
+  const manifestBeforeResume = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  const reviewSetBeforeResume = manifestBeforeResume.reviewSetFingerprint;
+
+  fs.appendFileSync(path.join(root, '.req-to-plan', workId, 'run.md'), '\nregenerated run metadata\n');
+  writeExecutable(path.join(fake.binDir, 'r2p-status'), statusScript({
+    work_id: workId,
+    status: 'closed_at_plan_checkpoint',
+    current_stage: 'plan',
+    open_routes_detail: []
+  }));
+
+  const resumed = await startFor(root, homeDir, workId, ['resume'], { env });
+  assert.equal(resumed.ok, true, JSON.stringify(resumed));
+  assert.equal(resumed.status, 'review');
+  assert.equal(resumed.statusReason, 'r2p-repair-applied');
+
+  const manifestAfterResume = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifestAfterResume.reviewSetFingerprint, reviewSetBeforeResume);
+  assert.equal(
+    manifestAfterResume.runMdSha256,
+    crypto.createHash('sha256').update(fs.readFileSync(path.join(root, '.req-to-plan', workId, 'run.md'))).digest('hex')
+  );
+});
+
 test('gate7 Gemini remains advisory-only and never enters persistent PASS flow', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const workId = 'WF-20260627-gate7-gemini';
