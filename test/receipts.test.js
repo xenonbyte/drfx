@@ -236,6 +236,7 @@ test('v2 receipts include fixed fields and attempt suffixes', () => {
   assert.equal(path.basename(first), '002-review.md');
   assert.equal(path.basename(second), '002-review-attempt-001.md');
   const text = fs.readFileSync(first, 'utf8');
+  assert.match(text, /- Receipt ID: receipt:spec-md-aaaaaaaaaaaa:rounds\/002-review\.md/);
   assert.match(text, /- Files changed: none/);
   assert.match(text, /- Verification: node --test test\/workflow-state-v2\.test\.js/);
   assert.match(text, /- Blocking reason: none/);

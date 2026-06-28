@@ -713,11 +713,7 @@ test('gate7 rerun-PASS only after clean re-review', async (t) => {
   assert.notEqual(sameRoundFinal.nextAction, 'run MALICIOUS finalize next action');
 
   const rerunWorkId = apply.newWorkId || workId;
-  const validPriorReceiptPath = fs.readdirSync(path.join(start.targetStateDir, 'rounds'), { withFileTypes: true })
-    .filter((entry) => entry.isFile())
-    .map((entry) => path.join(start.targetStateDir, 'rounds', entry.name))
-    .find((receiptPath) => /^- Kind: r2p-repair$/m.test(fs.readFileSync(receiptPath, 'utf8')));
-  assert.ok(validPriorReceiptPath, 'expected a valid r2p repair receipt before rerun linkage');
+  assert.ok(apply.receiptId, 'expected apply-r2p-repair to expose a stable receipt id');
   const rogueTargetDir = path.join(root, '.drfx', 'targets', 'rogue-target');
   const rogueRoundsDir = path.join(rogueTargetDir, 'rounds');
   fs.mkdirSync(rogueRoundsDir, { recursive: true });
@@ -751,7 +747,7 @@ test('gate7 rerun-PASS only after clean re-review', async (t) => {
   assert.equal(rerunStart.ok, true, JSON.stringify(rerunStart));
   if (rerunWorkId !== workId) {
     assert.equal(rerunStart.priorWorkId, workId);
-    assert.equal(rerunStart.priorReceiptPath, validPriorReceiptPath);
+    assert.equal(rerunStart.priorReceiptId, apply.receiptId);
     assert.equal(fs.existsSync(rerunStart.linkageReceiptPath), true);
   }
 
