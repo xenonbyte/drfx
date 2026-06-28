@@ -118,7 +118,7 @@ If preflight blocks, do not dispatch the semantic reviewer and do not create tar
 {{PREFLIGHT_BLOCKED_OUTPUT}}
 ```
 
-If the normalized blocking reason is `target-only-guard-unavailable`, render that the target-only guard is unavailable or unparseable and ask the user to restore guard inputs or rerun after guard data can be read. If it is `unexpected-worktree-change`, render that non-target worktree changes make automatic fixing unsafe and ask the user to commit, stash, or restore unrelated worktree changes before retrying.
+{{PREFLIGHT_BLOCKER_WORDING}}
 
 When `debug` is present, include the redacted normalized blocker reason returned by preflight. Do not create target-local state for debug output on this path.
 

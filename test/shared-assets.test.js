@@ -119,19 +119,19 @@ const CODEX_SHARED_DEDUP_EXPECTED_MEASUREMENT = Object.freeze({
       wouldGrow: false
     }),
     'review-fix-r2p': Object.freeze({
-      routeBytes: 80585,
-      embeddedSharedBytes: 60819,
+      routeBytes: 80447,
+      embeddedSharedBytes: 60923,
       copiedSharedBytes: 60521,
       duplicateBytes: 60521,
-      copiedRouteBytes: 20972,
-      shrinkBytes: 59613,
-      shrinkPercent: 73.98,
+      copiedRouteBytes: 20730,
+      shrinkBytes: 59717,
+      shrinkPercent: 74.23,
       wouldGrow: false
     })
   }),
   totals: Object.freeze({
-    routeBytes: 579323,
-    embeddedSharedBytes: 419331,
+    routeBytes: 579185,
+    embeddedSharedBytes: 419435,
     copiedSharedBytes: 417366,
     duplicateBytes: 417366
   }),
@@ -382,10 +382,10 @@ test('Codex copied shared source de-dup measurement crosses the guarded implemen
   );
 });
 
-test('Claude and Codex generated starts preserve materialized rounds and state-control tokens', () => {
+test('command-style generated starts preserve materialized rounds and state-control tokens', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
-  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
+  for (const platform of ['claude', 'codex', 'opencode']) {
     for (const route of listRoutes()) {
       const rendered = renderPlatformRoute(platform, route.routeName, { packageVersion: SNAPSHOT_VERSION });
       const startLines = rendered.split('\n').filter((line) => line.startsWith('drfx workflow start '));
@@ -427,14 +427,22 @@ test('Claude and Codex file-set review-and-fix routes require full re-review aft
 test('generated r2p route text uses workId shorthand and exposes no user-facing guard token', () => {
   const SNAPSHOT_VERSION = '0.0.0-snapshot';
 
-  for (const platform of ['claude', 'codex', 'opencode']) {
+  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
     const rendered = renderPlatformRoute(platform, 'review-fix-r2p', { packageVersion: SNAPSHOT_VERSION });
     const shell = maskEmbeddedSharedContent(platform, rendered);
-    assert.match(
-      shell,
-      /persistent practical command[\s\S]*?route exposes no `guard=` token/i,
-      `${platform}:review-fix-r2p practical path must document that guard is not user-facing`
-    );
+    if (platform !== 'gemini') {
+      assert.match(
+        shell,
+        /persistent practical command[\s\S]*?route exposes no `guard=` token/i,
+        `${platform}:review-fix-r2p practical path must document that guard is not user-facing`
+      );
+    } else {
+      assert.match(
+        rendered,
+        /This route exposes no guard= token; drift detection is internal and always on/i,
+        `${platform}:review-fix-r2p advisory path must document that guard is not user-facing`
+      );
+    }
     assert.match(
       shell,
       /bare `?WF-[^\n]*shorthand for `?workId=<WF-\.\.\.>`?/i,
@@ -451,14 +459,14 @@ test('generated r2p route text uses workId shorthand and exposes no user-facing 
       `${platform}:review-fix-r2p must not expose path-based target or guard tokens`
     );
     assert.doesNotMatch(
-      shell,
-      /clean rollback anchor|guard=snapshot when Git rollback is unavailable/i,
-      `${platform}:review-fix-r2p must not render legacy rollback guidance`
+      rendered,
+      /rollback-unavailable|target-only-guard-unavailable|clean rollback anchor|target-only guard (?:is unavailable|proof|unparseable)|guard=snapshot when Git rollback is unavailable/i,
+      `${platform}:review-fix-r2p must not render legacy guard-blocker guidance anywhere in the full route`
     );
     assert.match(
-      shell,
+      rendered,
       /cannot run repair commands from the current run state[\s\S]*r2p-reopen[\s\S]*r2p-gap-open/i,
-      `${platform}:review-fix-r2p must render workId/run-state preflight blocker guidance`
+      `${platform}:review-fix-r2p must render workId/run-state preflight blocker guidance in the full route`
     );
   }
 });

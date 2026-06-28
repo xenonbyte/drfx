@@ -95,9 +95,9 @@ The loop stops only at one of these states:
 - user stop: the user explicitly stops the loop.
 - `checkpoint`: the task pauses with durable target-local state and a concrete next action.
 
-Blocking reasons include `reviewer-mutated-file`, `lock-held`, `corrupt-lock`, `lock-release-failed`, `reviewer-output-unparseable`, `fingerprint-guard-unavailable`, `fingerprint-guard-output-invalid`, `state-validation-failed`, `state-token-too-large`, `final-validation-failed`, `target-only-guard-unavailable`, `unexpected-worktree-change`, `reference-mutated-file`, `fix-report-mismatch`, `diff-review-failed`, `rollback-unavailable`, and `unsafe-handoff-file`. Status reasons include `none`, `strict-proof-validation-failed`, `target-fingerprint-mismatch`, `manifest-fingerprint-mismatch`, `stale-fingerprint-mismatch`, `same-path-replacement-suspected`, `read-only-blocking-findings`, `deferred-findings`, `coverage-incomplete`, `no-progress-detected`, `unsupported-runtime-capability`, and `checkpoint-requested`.
+Blocking reasons include `reviewer-mutated-file`, `lock-held`, `corrupt-lock`, `lock-release-failed`, `reviewer-output-unparseable`, `fingerprint-guard-unavailable`, `fingerprint-guard-output-invalid`, `state-validation-failed`, `state-token-too-large`, `final-validation-failed`, `reference-mutated-file`, `fix-report-mismatch`, `diff-review-failed`, `unsafe-handoff-file`, `invalid-r2p-invocation`, `r2p-command-unavailable`, `r2p-json-contract-unavailable`, `r2p-run-status-unsupported`, `r2p-repair-plan-ambiguous`, and `r2p-direct-artifact-write-forbidden`. Status reasons include `none`, `strict-proof-validation-failed`, `target-fingerprint-mismatch`, `manifest-fingerprint-mismatch`, `stale-fingerprint-mismatch`, `same-path-replacement-suspected`, `read-only-blocking-findings`, `deferred-findings`, `coverage-incomplete`, `no-progress-detected`, `unsupported-runtime-capability`, and `checkpoint-requested`.
 
-Blocker wording must distinguish guard failures: `rollback-unavailable` means the target lacks a clean rollback anchor, `target-only-guard-unavailable` means the target-only guard is unavailable or unparseable, and `unexpected-worktree-change` means non-target worktree changes make automatic fixing unsafe.
+For `review-fix-r2p`, blocker wording must stay in the workId/run-state/repair-command model. Describe blocker recovery in terms of the active run state, the allowlisted r2p commands, and direct-write prohibition; do not describe rollback anchors or target-only guards.
 
 Unknown Markdown rule files under `.drfx/rules/` or `~/.drfx/rules/` are a normal-mode warning and a strict-mode blocker before target state is written.
 
@@ -740,7 +740,7 @@ Ledger and receipts:
 - Store accepted, fixed, merged, rejected, deferred, and reopened statuses.
 - Write receipts for auditable trails, round 2+, interruption, context pressure, or blockers.
 - Keep continuity compact and target-local.
-- For blockers, distinguish `rollback-unavailable` as a missing clean rollback anchor, `target-only-guard-unavailable` as unavailable target-only guard proof, and `unexpected-worktree-change` as unsafe non-target worktree changes.
+- For `review-fix-r2p` blockers, keep wording in the workId/run-state/repair-command model: name the active run state, the allowlisted `r2p-reopen` / `r2p-gap-open` repair boundary, or the direct-write prohibition; do not restate rollback-anchor or target-only-guard wording.
 
 Triage and PASS rules:
 - Triage decisions are `accepted`, `merged`, `downgraded`, `rejected`, and `deferred`.

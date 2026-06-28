@@ -150,7 +150,7 @@ Blocked: `review-fix-r2p workId=<WF-...>` cannot run repair commands from the cu
 Next: rerun with `read-only` to inspect findings, or restore the active run so `r2p-reopen` or `r2p-gap-open` can run, then rerun `review-and-fix`.
 ```
 
-If the normalized blocking reason is `target-only-guard-unavailable`, render that the target-only guard is unavailable or unparseable and ask the user to restore guard inputs or rerun after guard data can be read. If it is `unexpected-worktree-change`, render that non-target worktree changes make automatic fixing unsafe and ask the user to commit, stash, or restore unrelated worktree changes before retrying.
+For r2p preflight blockers, keep wording in the workId/run-state/repair-command model. Do not mention rollback anchors, target-only guards, or `guard=snapshot` recovery.
 
 When `debug` is present, include the redacted normalized blocker reason returned by preflight. Do not create target-local state for debug output on this path.
 
