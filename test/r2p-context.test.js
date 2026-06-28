@@ -241,6 +241,39 @@ test('r2p persistent start resolves relative target from explicit root outside c
   assert.equal(manifest.workId, workId);
 });
 
+test('r2p persistent record-review blocks when context has not established reviewer guard baseline', async (t) => {
+  const workId = 'WF-20260624-context-required';
+  const { root, homeDir, env } = makeR2pProject(t, workId);
+  const opts = { cwd: root, homeDir, env };
+  const args = r2pArgs(workId);
+
+  const start = await runWorkflowCommand('start', args, opts);
+  assert.equal(start.ok, true, JSON.stringify(start));
+
+  const review = await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], {
+    ...opts,
+    stdin: [
+      'PASS',
+      'Summary: no blocking findings'
+    ].join('\n')
+  });
+
+  assert.equal(review.ok, false, JSON.stringify(review));
+  assert.equal(review.status, 'blocked');
+  assert.equal(review.blockingReason, 'state-validation-failed');
+  assert.equal(review.errorCode, 'ERR_R2P_CONTEXT_REQUIRED');
+
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'blocked');
+  assert.equal(manifest.blockingReason, 'state-validation-failed');
+  assert.equal(manifest.lastReviewerReportPath, 'none');
+});
+
 // ---------------------------------------------------------------------------
 // Persisted manifest round-trips as targetContextKind:'r2p' with run.md
 // fingerprint + editable-set fingerprint.

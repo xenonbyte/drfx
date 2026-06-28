@@ -358,13 +358,16 @@ async function reachAcceptedRepairState(root, homeDir, workId, extraTokens = [],
   const start = await startFor(root, homeDir, workId, extraTokens, overrides);
   assert.equal(start.ok, true, JSON.stringify(start));
 
+  const context = await contextFor(root, homeDir, workId, extraTokens, overrides);
+  assert.equal(context.ok, true, JSON.stringify(context));
+
   const review = await recordReviewFor(root, homeDir, workId, extraTokens, overrides);
   assert.equal(review.ok, true, JSON.stringify(review));
 
   const triage = await recordTriageFor(root, homeDir, workId, extraTokens, overrides);
   assert.equal(triage.ok, true, JSON.stringify(triage));
 
-  return { start, review, triage };
+  return { start, context, review, triage };
 }
 
 test('descriptor fields expose r2p repair policy and no defaultGuard', () => {
@@ -940,6 +943,8 @@ test('gate7 resume keeps same-workId r2p repair receipts across regenerated arti
 
   const start = await startFor(root, homeDir, workId, [], { env });
   assert.equal(start.ok, true, JSON.stringify(start));
+  const context = await contextFor(root, homeDir, workId, [], { env });
+  assert.equal(context.ok, true, JSON.stringify(context));
   const review = await runWorkflowCommand(
     'record-review',
     [
@@ -1003,6 +1008,8 @@ test('gate7 resume refreshes when only run.md drifted after r2p repair', async (
 
   const start = await startFor(root, homeDir, workId, [], { env });
   assert.equal(start.ok, true, JSON.stringify(start));
+  const context = await contextFor(root, homeDir, workId, [], { env });
+  assert.equal(context.ok, true, JSON.stringify(context));
   const review = await runWorkflowCommand(
     'record-review',
     [
@@ -1226,6 +1233,8 @@ test('gate9 current-stage checkpoint', async (t) => {
 
   const start = await startFor(root, homeDir, workId, [], { env });
   assert.equal(start.ok, true);
+  const context = await contextFor(root, homeDir, workId, [], { env });
+  assert.equal(context.ok, true, JSON.stringify(context));
   const review = await runWorkflowCommand(
     'record-review',
     [
@@ -1318,6 +1327,8 @@ test('gate10 persistent repair-plan path preserves owner stage and reason from a
 
   const start = await startFor(root, homeDir, workId, [], { env });
   assert.equal(start.ok, true, JSON.stringify(start));
+  const context = await contextFor(root, homeDir, workId, [], { env });
+  assert.equal(context.ok, true, JSON.stringify(context));
 
   const review = await runWorkflowCommand(
     'record-review',
