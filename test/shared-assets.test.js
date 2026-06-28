@@ -119,18 +119,18 @@ const CODEX_SHARED_DEDUP_EXPECTED_MEASUREMENT = Object.freeze({
       wouldGrow: false
     }),
     'review-fix-r2p': Object.freeze({
-      routeBytes: 80535,
+      routeBytes: 80585,
       embeddedSharedBytes: 60819,
       copiedSharedBytes: 60521,
       duplicateBytes: 60521,
-      copiedRouteBytes: 20922,
+      copiedRouteBytes: 20972,
       shrinkBytes: 59613,
-      shrinkPercent: 74.02,
+      shrinkPercent: 73.98,
       wouldGrow: false
     })
   }),
   totals: Object.freeze({
-    routeBytes: 579273,
+    routeBytes: 579323,
     embeddedSharedBytes: 419331,
     copiedSharedBytes: 417366,
     duplicateBytes: 417366
@@ -429,25 +429,36 @@ test('generated r2p route text uses workId shorthand and exposes no user-facing 
 
   for (const platform of ['claude', 'codex', 'opencode']) {
     const rendered = renderPlatformRoute(platform, 'review-fix-r2p', { packageVersion: SNAPSHOT_VERSION });
+    const shell = maskEmbeddedSharedContent(platform, rendered);
     assert.match(
-      rendered,
+      shell,
       /persistent practical command[\s\S]*?route exposes no `guard=` token/i,
       `${platform}:review-fix-r2p practical path must document that guard is not user-facing`
     );
     assert.match(
-      rendered,
+      shell,
       /bare `?WF-[^\n]*shorthand for `?workId=<WF-\.\.\.>`?/i,
       `${platform}:review-fix-r2p must document the valid bare workId shorthand`
     );
     assert.doesNotMatch(
-      rendered,
+      shell,
       /no bare-path/i,
       `${platform}:review-fix-r2p must not reject the documented bare workId shorthand`
     );
     assert.doesNotMatch(
-      rendered,
+      shell,
       /target=<requirement-dir>|guard=<selectedGuard>/,
       `${platform}:review-fix-r2p must not expose path-based target or guard tokens`
+    );
+    assert.doesNotMatch(
+      shell,
+      /clean rollback anchor|guard=snapshot when Git rollback is unavailable/i,
+      `${platform}:review-fix-r2p must not render legacy rollback guidance`
+    );
+    assert.match(
+      shell,
+      /cannot run repair commands from the current run state[\s\S]*r2p-reopen[\s\S]*r2p-gap-open/i,
+      `${platform}:review-fix-r2p must render workId/run-state preflight blocker guidance`
     );
   }
 });
@@ -1375,6 +1386,17 @@ test('codex and claude routes run write eligibility preflight before semantic re
   for (const rendered of fileSetRoutes) {
     assert.match(rendered, /before runtime readiness probe, semantic reviewer dispatch, semantic file-set review, and target-local workflow state creation/i);
     assert.doesNotMatch(rendered, /semantic document review/i);
+  }
+
+  const r2pRoutes = [
+    { platform: 'codex', rendered: renderPlatformRoute('codex', 'review-fix-r2p', { packageVersion: '0.0.0-test' }) },
+    { platform: 'claude', rendered: renderPlatformRoute('claude', 'review-fix-r2p', { packageVersion: '0.0.0-test' }) }
+  ];
+  for (const { platform, rendered } of r2pRoutes) {
+    const shell = maskEmbeddedSharedContent(platform, rendered);
+    assert.match(shell, /before runtime readiness probe, semantic reviewer dispatch, semantic document review, and target-local workflow state creation/i);
+    assert.match(shell, /cannot run repair commands from the current run state/i);
+    assert.doesNotMatch(shell, /clean rollback anchor|guard=snapshot when Git rollback is unavailable/i);
   }
 });
 

@@ -4,6 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
+const { renderPlatformRoute } = require('../lib/generator');
 
 const REPO_ROOT = path.join(__dirname, '..');
 const DOC_FILES = [
@@ -42,6 +43,17 @@ test('gate11 r2p docs describe only the new model, no legacy/migration language'
 
     assert.match(text, /workId/, relativePath);
     assert.doesNotMatch(text, /target=<requirement-dir>|\br2q\b|migrat|backward compat/i, relativePath);
+  }
+});
+
+test('generated r2p routes omit legacy rollback guidance', () => {
+  for (const platform of ['claude', 'codex', 'opencode']) {
+    const rendered = renderPlatformRoute(platform, 'review-fix-r2p', { packageVersion: '0.0.0-test' });
+    const shell = rendered.split('\n## Embedded Shared Content\n')[0];
+
+    assert.doesNotMatch(shell, /clean rollback anchor|guard=snapshot when Git rollback is unavailable/i, platform);
+    assert.match(shell, /workId=<WF-\.\.\.>/, platform);
+    assert.match(shell, /r2p-reopen|r2p-gap-open/, platform);
   }
 });
 

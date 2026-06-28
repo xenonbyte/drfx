@@ -145,9 +145,9 @@ For r2p, this internal preflight command accepts materialized `--assurance pract
 If preflight blocks, do not dispatch the semantic reviewer and do not create target state. Render concise default output:
 
 ```text
-Blocked: <target> cannot be auto-fixed because it lacks a clean rollback anchor.
+Blocked: `review-fix-r2p workId=<WF-...>` cannot run repair commands from the current run state.
 
-Next: commit or restore the target, rerun with read-only, or use guard=snapshot when Git rollback is unavailable.
+Next: rerun with `read-only` to inspect findings, or restore the active run so `r2p-reopen` or `r2p-gap-open` can run, then rerun `review-and-fix`.
 ```
 
 If the normalized blocking reason is `target-only-guard-unavailable`, render that the target-only guard is unavailable or unparseable and ask the user to restore guard inputs or rerun after guard data can be read. If it is `unexpected-worktree-change`, render that non-target worktree changes make automatic fixing unsafe and ask the user to commit, stash, or restore unrelated worktree changes before retrying.
