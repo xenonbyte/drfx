@@ -694,6 +694,41 @@ test('gate5 r2p-authored change after apply-r2p-repair is allowed', async (t) =>
   assert.match(fs.readFileSync(path.join(runDir, '07-plan.md'), 'utf8'), /r2p-side-effect/);
 });
 
+test('gate5 unsupported repair status returns specific blocker without invalid manifest value', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-gate5-unsupported';
+  makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'closed_at_plan_checkpoint',
+      current_stage: 'plan',
+      open_routes_detail: []
+    })
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+  const { start, triage } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
+
+  writeExecutable(path.join(fake.binDir, 'r2p-status'), statusScript({
+    work_id: workId,
+    status: 'unknown_terminal_state',
+    current_stage: 'plan',
+    open_routes_detail: []
+  }));
+
+  const apply = await runWorkflowCommand('apply-r2p-repair', [triage.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(apply.ok, false, JSON.stringify(apply));
+  assert.equal(apply.blockingReason, 'r2p-run-status-unsupported');
+
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'blocked');
+  assert.equal(manifest.blockingReason, 'state-validation-failed');
+});
+
 test('gate6 repair exec argv shell:false; capture new_work_id/route_id; checkpoint, no PASS', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const workId = 'WF-20260627-gate6-reopen';
