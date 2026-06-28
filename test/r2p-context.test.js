@@ -1,20 +1,20 @@
 'use strict';
 
 // ---------------------------------------------------------------------------
-// review-fix-r2p — PERSISTENT (stateful) context resolution (Task 8).
+// review-fix-r2p — PERSISTENT (stateful) context resolution.
 //
 // These tests are DETERMINISTIC: no LLM / CLI semantic reviewer runs. The test
-// harness builds a real WF-* requirement directory (03–07 + run.md), drives the
+// harness builds a real WF-* run directory (03–07 + run.md), drives the
 // PERSISTENT `start` then `context` workflow commands, and asserts the assembled
 // r2p context + the persisted V2 manifest directly.
 //
 // What they pin:
-//   - The assembled r2p context's editable file set is EXACTLY the five 03–07
+//   - The assembled r2p context's review file set is EXACTLY the five 03–07
 //     *.md files (run.md is NOT among them).
 //   - run.md appears as a PROTECTED read-only dependency (its sha256 fingerprint
-//     is carried in the context pack) and is NEVER part of the editable set.
+//     is carried in the context pack) and is NEVER part of the review set.
 //   - The persisted V2 MANIFEST.md round-trips with targetContextKind:'r2p' and
-//     the correct runMdSha256 + fileSetFingerprint (matching resolveR2pTarget).
+//     the correct workId + runMdSha256 + reviewSetFingerprint.
 //   - r2p is dispatched as its own route kind — never mislabeled 'code'.
 // ---------------------------------------------------------------------------
 
@@ -28,7 +28,7 @@ const test = require('node:test');
 
 const { runWorkflowCommand } = require('../lib/workflow');
 const { parseManifestV2 } = require('../lib/workflow-state');
-const { buildR2pIdentity, resolveR2pTarget } = require('../lib/target-context');
+const { resolveR2pWorkIdTarget } = require('../lib/target-context');
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -68,6 +68,44 @@ function git(cwd, args) {
   });
 }
 
+function writeExecutable(filePath, body) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, body, { mode: 0o755 });
+}
+
+function installFakeR2pCli(root, workId) {
+  const binDir = path.join(root, 'fake-r2p-bin');
+  const scripts = {
+    'r2p-status': [
+      '#!/bin/sh',
+      'set -eu',
+      `printf "%s\\n" '[{"work_id":"${workId}","status":"closed_at_plan_checkpoint","current_stage":"plan","open_routes_detail":[]}]'`
+    ].join('\n'),
+    'r2p-reopen': [
+      '#!/bin/sh',
+      'set -eu',
+      'printf "%s\\n" \'{"new_work_id":"WF-fake-reopen"}\''
+    ].join('\n'),
+    'r2p-gap-open': [
+      '#!/bin/sh',
+      'set -eu',
+      'printf "%s\\n" \'{"route_id":"route-fake","staled_stages":["plan"]}\''
+    ].join('\n'),
+    'r2p-continue': [
+      '#!/bin/sh',
+      'set -eu',
+      'printf "%s\\n" \'{"ok":true}\''
+    ].join('\n')
+  };
+  for (const [name, body] of Object.entries(scripts)) {
+    writeExecutable(path.join(binDir, name), body);
+  }
+  return {
+    ...process.env,
+    PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`
+  };
+}
+
 // A git-backed project root (default guard=git for the persistent path) containing
 // an active <root>/.req-to-plan/WF-* requirement directory with run.md + 03–07.
 function makeR2pProject(t, name = 'WF-20260624-context') {
@@ -86,7 +124,7 @@ function makeR2pProject(t, name = 'WF-20260624-context') {
   // Commit so the default git guard sees a clean worktree at start.
   git(root, ['add', '.']);
   git(root, ['commit', '-m', 'seed requirement']);
-  return { root, homeDir, wfDir };
+  return { root, homeDir, wfDir, env: installFakeR2pCli(root, name) };
 }
 
 function sha256OfFile(filePath) {
@@ -106,10 +144,10 @@ function projectRelative(root, wfDir, name) {
   return path.relative(root, path.join(wfDir, name)).split(path.sep).join('/');
 }
 
-function r2pArgs(wfDir) {
+function r2pArgs(workId) {
   return [
     'review-fix-r2p',
-    `target=${wfDir}`,
+    `workId=${workId}`,
     'review-and-fix',
     '--assurance',
     'practical',
@@ -123,10 +161,10 @@ function r2pArgs(wfDir) {
   ];
 }
 
-function r2pArgsForTarget(target) {
+function r2pArgsForWorkId(workId) {
   return [
     'review-fix-r2p',
-    `target=${target}`,
+    `workId=${workId}`,
     'review-and-fix',
     '--assurance',
     'practical',
@@ -145,9 +183,10 @@ function r2pArgsForTarget(target) {
 // ---------------------------------------------------------------------------
 
 test('r2p persistent start + context assembles the 03–07 editable set with run.md protected', async (t) => {
-  const { root, homeDir, wfDir } = makeR2pProject(t);
-  const opts = { cwd: root, homeDir };
-  const args = r2pArgs(wfDir);
+  const workId = 'WF-20260624-context';
+  const { root, homeDir, wfDir, env } = makeR2pProject(t, workId);
+  const opts = { cwd: root, homeDir, env };
+  const args = r2pArgs(workId);
   const before = snapshotProtectedFiles(wfDir);
 
   const start = await runWorkflowCommand('start', args, opts);
@@ -160,45 +199,28 @@ test('r2p persistent start + context assembles the 03–07 editable set with run
   assert.equal(context.ok, true, JSON.stringify(context));
   assert.equal(context.status, 'context');
   const pack = context.contextPackSkeleton;
-  assert.equal(pack.fileSet.routeKind, 'r2p');
-  assert.equal(pack.documentType, 'none');
-  assert.equal(pack.target, 'none');
-
-  // The editable file set is EXACTLY the five 03–07 docs — run.md is NOT in it.
-  const editable = pack.fileSet.files.map((file) => file.path).sort();
-  const expectedEditable = R2P_EDITABLE_DOCS.map((doc) => projectRelative(root, wfDir, doc)).sort();
-  assert.deepEqual(editable, expectedEditable);
-  assert.ok(!editable.some((file) => file.endsWith('/run.md')), 'run.md must never be in the editable set');
-
-  // The guard baseline must use real on-disk hashes for the same editable file set.
-  const guardFiles = pack.reviewerGuardBaseline.files;
-  assert.equal(guardFiles.length, R2P_EDITABLE_DOCS.length);
-  assert.ok(guardFiles.every((file) => file.kind === 'file'), 'all r2p guard files must exist on disk');
-  assert.ok(guardFiles.every((file) => file.sha256 !== 'none'), 'all r2p guard files must carry real hashes');
+  assert.equal(pack.routeKind, 'r2p');
+  assert.equal(pack.workId, workId);
+  assert.equal(pack.runLocation, `.req-to-plan/${workId}`);
+  assert.deepEqual(pack.reviewFiles, R2P_EDITABLE_DOCS);
+  assert.deepEqual(pack.editableFiles, []);
+  assert.equal(pack.directArtifactWrites, 'forbidden');
 
   // run.md appears as a PROTECTED read-only dependency, fingerprinted.
-  const expected = resolveR2pTarget({ cwd: root, target: wfDir });
-  assert.ok(Array.isArray(pack.protectedDependencies), 'protectedDependencies must be present');
-  const protectedPaths = pack.protectedDependencies.map((dep) => dep.path);
-  assert.deepEqual(protectedPaths, [projectRelative(root, wfDir, 'run.md')]);
-  const runMdDep = pack.protectedDependencies[0];
-  assert.equal(runMdDep.readOnly, true);
-  assert.equal(runMdDep.sha256, expected.runMdSha256);
-
-  // Drift fingerprint covers the editable 03–07 set.
-  assert.equal(context.fileSetFingerprint, expected.fileSetFingerprint);
+  assert.deepEqual(pack.protectedDependencies, ['run.md']);
 
   // Nothing under the requirement directory was mutated by start/context.
   assert.deepEqual(changedFiles(wfDir, before), []);
 });
 
 test('r2p persistent start resolves relative target from explicit root outside cwd', async (t) => {
-  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-root');
+  const workId = 'WF-20260624-root';
+  const { root, homeDir, env } = makeR2pProject(t, workId);
   const outside = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-outside-')));
   t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
   const args = [
     'review-fix-r2p',
-    'target=.req-to-plan/WF-20260624-root',
+    `workId=${workId}`,
     'review-and-fix',
     `root=${root}`,
     '--assurance',
@@ -212,115 +234,11 @@ test('r2p persistent start resolves relative target from explicit root outside c
     '--json'
   ];
 
-  const start = await runWorkflowCommand('start', args, { cwd: outside, homeDir });
+  const start = await runWorkflowCommand('start', args, { cwd: outside, homeDir, env });
   assert.equal(start.ok, true, JSON.stringify(start));
   const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
   assert.equal(manifest.targetContextKind, 'r2p');
-  assert.equal(manifest.requirementDir, path.relative(root, wfDir).split(path.sep).join('/'));
-});
-
-test('r2p persistent start resolves relative root from the original cwd when base recomputes from project root', async (t) => {
-  const parent = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-relative-parent-')));
-  const root = path.join(parent, 'proj');
-  fs.mkdirSync(root, { recursive: true });
-  const homeDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'drfx-r2p-relative-home-')));
-  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
-  t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
-
-  git(root, ['init', '-b', 'main']);
-  const wfDir = path.join(root, '.req-to-plan', 'WF-20260624-relative-root');
-  fs.mkdirSync(wfDir, { recursive: true });
-  fs.writeFileSync(path.join(wfDir, 'run.md'), planApprovedRunMd);
-  for (const doc of R2P_EDITABLE_DOCS) {
-    fs.writeFileSync(path.join(wfDir, doc), `# ${doc}\nContent of ${doc}\n`);
-  }
-  git(root, ['add', '.']);
-  git(root, ['commit', '-m', 'seed requirement']);
-
-  const args = [
-    'review-fix-r2p',
-    'target=.req-to-plan/WF-20260624-relative-root',
-    'review-and-fix',
-    'root=proj',
-    '--assurance',
-    'practical',
-    '--runtime-platform',
-    'codex',
-    '--runtime-subagent-probe',
-    'ready',
-    '--runtime-stdin-handoff',
-    'ready',
-    '--json'
-  ];
-
-  const start = await runWorkflowCommand('start', args, { cwd: parent, homeDir });
-  assert.equal(start.ok, true, JSON.stringify(start));
-  assert.equal(start.routeKind, 'r2p');
-  assert.equal(start.targetKey, parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8')).targetKey);
-
-  const resumeArgs = args.slice();
-  resumeArgs.splice(3, 0, 'resume');
-  const resume = await runWorkflowCommand('start', resumeArgs, { cwd: root, homeDir });
-  assert.equal(resume.ok, true, JSON.stringify(resume));
-  assert.equal(resume.status, 'review');
-  assert.equal(resume.targetKey, start.targetKey);
-
-  const context = await runWorkflowCommand('context', args, { cwd: root, homeDir });
-  assert.equal(context.ok, true, JSON.stringify(context));
-  assert.equal(context.status, 'context');
-  assert.equal(context.targetKey, start.targetKey);
-});
-
-test('r2p persistent cwd-relative target remains stable after project-root discovery', async (t) => {
-  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-relative-target');
-  const subdir = path.join(root, 'subdir');
-  fs.mkdirSync(subdir);
-  const relativeTarget = path.relative(subdir, wfDir).split(path.sep).join('/');
-  const opts = { cwd: subdir, homeDir };
-  const args = r2pArgsForTarget(relativeTarget);
-
-  const start = await runWorkflowCommand('start', args, opts);
-  assert.equal(start.ok, true, JSON.stringify(start));
-  assert.equal(start.status, 'review');
-  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
-  assert.equal(manifest.requirementDir, '.req-to-plan/WF-20260624-relative-target');
-
-  const context = await runWorkflowCommand('context', args, opts);
-  assert.equal(context.ok, true, JSON.stringify(context));
-  assert.equal(context.contextPackSkeleton.fileSet.routeKind, 'r2p');
-  assert.equal(
-    context.contextPackSkeleton.fileSet.requirementDir,
-    '.req-to-plan/WF-20260624-relative-target',
-    'context must use the originally resolved requirement directory, not rebase target= against project root'
-  );
-
-  const resumeArgs = args.slice();
-  resumeArgs.splice(3, 0, 'resume');
-  const resume = await runWorkflowCommand('start', resumeArgs, opts);
-  assert.equal(resume.ok, true, JSON.stringify(resume));
-  assert.equal(resume.status, 'review');
-  assert.equal(resume.targetKey, start.targetKey);
-});
-
-test('r2p identity normalizes requirementDir to posix separators before manifest persistence', () => {
-  const originalRelative = path.relative;
-  path.relative = () => '.req-to-plan\\WF-20260624-windows';
-  try {
-    const identity = buildR2pIdentity({
-      context: {
-        routeKind: 'r2p',
-        projectRoot: 'C:\\repo',
-        requirementDir: 'C:\\repo\\.req-to-plan\\WF-20260624-windows',
-        runMdSha256: 'run-sha',
-        fileSetFingerprint: 'set-sha'
-      },
-      guardMode: 'snapshot',
-      roundLimit: null
-    });
-    assert.equal(identity.requirementDir, '.req-to-plan/WF-20260624-windows');
-  } finally {
-    path.relative = originalRelative;
-  }
+  assert.equal(manifest.workId, workId);
 });
 
 // ---------------------------------------------------------------------------
@@ -329,38 +247,39 @@ test('r2p identity normalizes requirementDir to posix separators before manifest
 // ---------------------------------------------------------------------------
 
 test('r2p persistent manifest round-trips with targetContextKind r2p + run.md fingerprint', async (t) => {
-  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-manifest');
-  const opts = { cwd: root, homeDir };
-  const args = r2pArgs(wfDir);
+  const workId = 'WF-20260624-manifest';
+  const { root, homeDir, wfDir, env } = makeR2pProject(t, workId);
+  const opts = { cwd: root, homeDir, env };
+  const args = r2pArgs(workId);
 
   const start = await runWorkflowCommand('start', args, opts);
   assert.equal(start.ok, true, JSON.stringify(start));
 
-  const expected = resolveR2pTarget({ cwd: root, target: wfDir });
+  const expected = resolveR2pWorkIdTarget({ projectRoot: root, workId });
   const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
 
   assert.equal(manifest.targetContextKind, 'r2p');
   assert.equal(manifest.documentType, 'none');
+  assert.equal(manifest.workId, workId);
   assert.equal(manifest.runMdSha256, expected.runMdSha256);
-  assert.equal(manifest.fileSetFingerprint, expected.fileSetFingerprint);
-  // requirementDir is stored project-root-relative, posix-normalized.
-  const relRequirementDir = path.relative(root, wfDir).split(path.sep).join('/');
-  assert.equal(manifest.requirementDir, relRequirementDir);
+  assert.equal(manifest.reviewSetFingerprint, expected.fileSetFingerprint);
 
   // The manifest has NO CODE/PR identity fields: r2p is neither.
   assert.ok(!Object.hasOwn(manifest, 'base'), 'r2p manifest must not carry a PR base');
   assert.ok(!Object.hasOwn(manifest, 'normalizedScopes'), 'r2p manifest must not carry CODE scopes');
+  assert.ok(!Object.hasOwn(manifest, 'requirementDir'), 'r2p manifest must not carry the retired requirementDir field');
 
-  // run.md is the protected gate, never an editable member: its sha256 is the
-  // manifest runMdSha256 and differs from the editable-set fingerprint.
+  // run.md is the protected gate, never a review-set member: its sha256 is the
+  // manifest runMdSha256 and differs from the review-set fingerprint.
   assert.equal(manifest.runMdSha256, sha256OfFile(path.join(wfDir, 'run.md')));
-  assert.notEqual(manifest.runMdSha256, manifest.fileSetFingerprint);
+  assert.notEqual(manifest.runMdSha256, manifest.reviewSetFingerprint);
 });
 
 test('r2p persistent record-review blocks when protected run.md drifts after context', async (t) => {
-  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-context-drift');
-  const opts = { cwd: root, homeDir };
-  const args = r2pArgs(wfDir);
+  const workId = 'WF-20260624-context-drift';
+  const { root, homeDir, wfDir, env } = makeR2pProject(t, workId);
+  const opts = { cwd: root, homeDir, env };
+  const args = r2pArgs(workId);
 
   const start = await runWorkflowCommand('start', args, opts);
   assert.equal(start.ok, true, JSON.stringify(start));
@@ -368,8 +287,8 @@ test('r2p persistent record-review blocks when protected run.md drifts after con
   const context = await runWorkflowCommand('context', args, opts);
   assert.equal(context.ok, true, JSON.stringify(context));
   assert.equal(
-    context.contextPackSkeleton.reviewerGuardBaseline.protectedDependencies[0].path,
-    projectRelative(root, wfDir, 'run.md')
+    context.contextPackSkeleton.protectedDependencies[0],
+    'run.md'
   );
 
   fs.appendFileSync(path.join(wfDir, 'run.md'), '\nchanged after reviewer context\n');
@@ -393,12 +312,13 @@ test('r2p persistent record-review blocks when protected run.md drifts after con
 });
 
 // ---------------------------------------------------------------------------
-// The persistent path enforces the run.md gate before writing any state.
+// Persistent context re-resolves the active run on each step and reports
+// structured blockers when the review evidence disappears.
 // ---------------------------------------------------------------------------
 
-test('r2p persistent start blocks on an incomplete-plan run.md and writes no state', async (t) => {
-  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-incomplete');
-  // Demote run.md to an incomplete plan stage AFTER seeding so the gate fails.
+test('r2p persistent start accepts an incomplete-plan run.md when the active workId exists', async (t) => {
+  const workId = 'WF-20260624-incomplete';
+  const { root, homeDir, wfDir, env } = makeR2pProject(t, workId);
   fs.writeFileSync(path.join(wfDir, 'run.md'), [
     '# Requirement Run',
     '',
@@ -412,43 +332,41 @@ test('r2p persistent start blocks on an incomplete-plan run.md and writes no sta
   git(root, ['add', '.']);
   git(root, ['commit', '-m', 'demote run.md']);
 
-  const opts = { cwd: root, homeDir };
-  const start = await runWorkflowCommand('start', r2pArgs(wfDir), opts);
-  assert.equal(start.ok, false, JSON.stringify(start));
-  assert.equal(start.status, 'blocked');
-  assert.equal(start.errorCode, 'ERR_R2P_GATE_PLAN_INCOMPLETE');
-  assert.equal(start.manifestPath, null);
-  assert.equal(fs.existsSync(path.join(root, '.drfx')), false);
+  const opts = { cwd: root, homeDir, env };
+  const start = await runWorkflowCommand('start', r2pArgs(workId), opts);
+  assert.equal(start.ok, true, JSON.stringify(start));
+  assert.equal(start.status, 'review');
+  assert.equal(fs.existsSync(start.manifestPath), true);
 });
 
-test('r2p persistent context returns structured blocked when run.md is deleted after start', async (t) => {
-  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-missing-run');
-  const opts = { cwd: root, homeDir };
-  const args = r2pArgs(wfDir);
+test('r2p persistent context rejects when run.md is deleted after start', async (t) => {
+  const workId = 'WF-20260624-missing-run';
+  const { root, homeDir, wfDir, env } = makeR2pProject(t, workId);
+  const opts = { cwd: root, homeDir, env };
+  const args = r2pArgs(workId);
 
   const start = await runWorkflowCommand('start', args, opts);
   assert.equal(start.ok, true, JSON.stringify(start));
   fs.rmSync(path.join(wfDir, 'run.md'));
 
-  const context = await runWorkflowCommand('context', args, opts);
-  assert.equal(context.ok, false, JSON.stringify(context));
-  assert.equal(context.status, 'blocked');
-  assert.equal(context.blockingReason, 'state-validation-failed');
-  assert.equal(context.errorCode, 'ERR_R2P_RUNMD_MISSING');
+  await assert.rejects(
+    () => runWorkflowCommand('context', args, opts),
+    (error) => error.code === 'ERR_R2P_ARTIFACT_MISSING'
+  );
 });
 
-test('r2p persistent context returns structured blocked when an owner doc is deleted after start', async (t) => {
-  const { root, homeDir, wfDir } = makeR2pProject(t, 'WF-20260624-missing-doc');
-  const opts = { cwd: root, homeDir };
-  const args = r2pArgs(wfDir);
+test('r2p persistent context rejects when an owner doc is deleted after start', async (t) => {
+  const workId = 'WF-20260624-missing-doc';
+  const { root, homeDir, wfDir, env } = makeR2pProject(t, workId);
+  const opts = { cwd: root, homeDir, env };
+  const args = r2pArgs(workId);
 
   const start = await runWorkflowCommand('start', args, opts);
   assert.equal(start.ok, true, JSON.stringify(start));
   fs.rmSync(path.join(wfDir, '05-design.md'));
 
-  const context = await runWorkflowCommand('context', args, opts);
-  assert.equal(context.ok, false, JSON.stringify(context));
-  assert.equal(context.status, 'blocked');
-  assert.equal(context.blockingReason, 'state-validation-failed');
-  assert.equal(context.errorCode, 'ERR_R2P_DOC_CHAIN_INCOMPLETE');
+  await assert.rejects(
+    () => runWorkflowCommand('context', args, opts),
+    (error) => error.code === 'ERR_R2P_ARTIFACT_MISSING'
+  );
 });
