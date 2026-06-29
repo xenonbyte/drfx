@@ -1962,6 +1962,82 @@ test('gate9 current-stage checkpoint', async (t) => {
   assert.equal(final.status, 'pass');
 });
 
+test('gate9 resume marks only high/medium blocking issues fixed, low stays accepted', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-gate9-low';
+  const roundTokens = ['rounds=2'];
+  makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'open',
+      current_stage: 'design',
+      open_routes_detail: [
+        { route_id: 'ROUTE-001', owner_stage: 'design', required_action: 'reopen design' }
+      ]
+    })
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+
+  const start = await startFor(root, homeDir, workId, roundTokens, { env });
+  assert.equal(start.ok, true, JSON.stringify(start));
+  const context = await contextFor(root, homeDir, workId, roundTokens, { env });
+  assert.equal(context.ok, true, JSON.stringify(context));
+  const review = await recordReviewFor(root, homeDir, workId, roundTokens, {
+    env,
+    stdin: REVIEW_FAIL_HIGH_DESIGN_LOW_REQUIREMENT
+  });
+  assert.equal(review.ok, true, JSON.stringify(review));
+  const triage = await recordTriageFor(root, homeDir, workId, roundTokens, {
+    env,
+    stdin: TRIAGE_ACCEPT_HIGH_AND_LOW_BLOCKING_FALSE
+  });
+  assert.equal(triage.ok, true, JSON.stringify(triage));
+
+  // Only the high design finding drives the current-stage checkpoint; the low
+  // requirement-brief finding is tracked but never enters the repair plan.
+  const repairPlan = await runWorkflowCommand('record-r2p-repair-plan', [start.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(repairPlan.ok, true, JSON.stringify(repairPlan));
+  assert.equal(repairPlan.status, 'checkpoint');
+  assert.equal(repairPlan.statusReason, 'r2p-current-stage-repair-required');
+
+  fs.appendFileSync(path.join(root, '.req-to-plan', workId, 'run.md'), '\ncurrent-stage repair metadata\n');
+  fs.appendFileSync(path.join(root, '.req-to-plan', workId, '05-design.md'), '\ncurrent-stage repair output\n');
+  writeExecutable(path.join(fake.binDir, 'r2p-status'), statusScript({
+    work_id: workId,
+    status: 'closed_at_plan_checkpoint',
+    current_stage: 'plan',
+    open_routes_detail: []
+  }));
+
+  const resumed = await startFor(root, homeDir, workId, ['resume', ...roundTokens], { env });
+  assert.equal(resumed.ok, true, JSON.stringify(resumed));
+  assert.equal(resumed.status, 'review');
+  assert.equal(resumed.statusReason, 'r2p-current-stage-repair-required');
+
+  const ledgerText = fs.readFileSync(path.join(start.targetStateDir, 'ISSUES.md'), 'utf8');
+  assert.match(ledgerText, /\| ISSUE-001 \| high \| fixed \|/);
+  assert.match(ledgerText, /\| ISSUE-002 \| low \| accepted \|/);
+
+  // A leftover accepted low issue does not block PASS (high/medium-only gate).
+  const refreshedContext = await contextFor(root, homeDir, workId, roundTokens, { env });
+  assert.equal(refreshedContext.ok, true, JSON.stringify(refreshedContext));
+  const cleanReview = await recordReviewPassFor(root, homeDir, workId, roundTokens, { env });
+  assert.equal(cleanReview.ok, true, JSON.stringify(cleanReview));
+  const final = await runWorkflowCommand('finalize', [start.targetStateDir, '--final-response-stdin', '--json'], {
+    cwd: root,
+    homeDir,
+    stdin: FINAL_PASS,
+    env
+  });
+  assert.equal(final.ok, true, JSON.stringify(final));
+  assert.equal(final.status, 'pass');
+});
+
 test('gate10 earliest-stage aggregation + r2p-repair-plan-ambiguous', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const workId = 'WF-20260627-gate10';
