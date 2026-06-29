@@ -226,6 +226,8 @@ test('r2p advisory review finalizes read-only-findings without editing any 03–
   assert.equal(context.routeKind, 'r2p');
   assert.equal(context.targetStateDir, null);
   assert.equal(typeof context.reviewGuard, 'string');
+  assert.equal(context.contextPackSkeleton.fileSet.requirementDir, `.req-to-plan/${workId}`);
+  assert.notEqual(context.contextPackSkeleton.fileSet.requirementDir, 'unknown');
   assert.deepEqual(
     context.contextPackSkeleton.fileSet.files.map((file) => file.path).sort(),
     R2P_EDITABLE_DOCS.map((doc) => projectRelative(root, wfDir, doc)).sort()
