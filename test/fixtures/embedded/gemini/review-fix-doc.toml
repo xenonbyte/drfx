@@ -121,7 +121,7 @@ The coordinator triages every reviewer finding before fixing:
 
 Accepted high and medium issues block PASS until resolved. Deferred high and medium issues stop as `stopped-with-deferrals`, not PASS. Low issues are non-blocking in normal mode unless they affect the objective; low issues block strict PASS unless explicitly accepted as non-blocking.
 
-Triage payload schema:
+Triage payload schema. For r2p routes, every `accepted` or `reopened` finding must carry `owner_stage`; use `reason` for `r2p-reopen` wording and `required_action` for `r2p-gap-open` wording when known. Use `none` for non-r2p or not applicable.
 
 ```text
 Triage:
@@ -135,6 +135,9 @@ Triage:
   deferred_owner: <owner or none>
   deferred_next_action: <next action or none>
   non_blocking: true | false
+  owner_stage: raw_requirement | requirement_brief | risk_discovery | design | spec | plan | none
+  reason: <r2p-reopen repair wording or none>
+  required_action: <r2p-gap-open repair wording or none>
 ```
 
 ## Fixer Constraints
@@ -638,7 +641,7 @@ Constraints:
 - no unconfirmed background, requirements, or external facts
 - preserve scope, terminology, readability, and structural coherence
 - "Changed since last review" is an additional regression focus only; the reviewer must still review the whole target context and must not narrow the review to only those sections
-Output schema: PASS or FAIL with findings that include severity, location, issue, why_it_matters, suggested_fix, confidence, and sensitive.
+Output schema: PASS or FAIL with findings that include severity, location, issue, why_it_matters, suggested_fix, confidence, and sensitive. For r2p findings, also include `owner_stage`, plus repair wording fields `reason` and `required_action` when known.
 
 Reviewer machine schema:
 PASS
@@ -656,6 +659,9 @@ Findings:
   suggested_fix: <specific fix>
   confidence: confirmed | unconfirmed
   sensitive: true | false
+  owner_stage: raw_requirement | requirement_brief | risk_discovery | design | spec | plan | none
+  reason: <r2p-reopen repair wording or none>
+  required_action: <r2p-gap-open repair wording or none>
 
 Advisory-only behavior:
 - Before automatic PASS or any fix, check current runtime capability for isolated reviewer execution, reviewer write blocking, and fingerprint guard availability.
@@ -727,7 +733,8 @@ r2p finding-to-ownerStage map (`review-fix-r2p workId=<WF-...>` only):
   - insufficient observable behavior, acceptance, or verification criteria -> `spec`
   - pure task decomposition, ordering, command, or plan-local issue -> `plan`
 - In `review-and-fix`, accepted findings become one validated r2p repair plan: `r2p-reopen` for closed/executing runs, `r2p-gap-open` for open runs whose owner stage is strictly upstream of `current_stage`, and `r2p-current-stage-repair-required` checkpoint when the owning stage equals `current_stage`.
-- After `apply-r2p-repair`, stop at checkpoint with `r2p-repair-applied`. Tell the user to run `r2p-continue`, let r2p regenerate artifacts, then rerun `review-fix-r2p workId=<new-or-same-WF-...>`. PASS is allowed only on that clean rerun.
+- For r2p triage payloads, every `accepted` or `reopened` finding must carry `owner_stage`; include `reason` for `r2p-reopen` wording and `required_action` for `r2p-gap-open` wording when known. Use `none` for non-r2p or not applicable.
+- After `apply-r2p-repair`, stop at checkpoint with `r2p-repair-applied`. Tell the user to run `r2p-continue`, let r2p regenerate artifacts, then follow the returned next action: `r2p-reopen` reruns `review-fix-r2p workId=<new-WF-...>`, while `r2p-gap-open` reruns `review-fix-r2p workId=<same-WF-...> resume`. PASS is allowed only on that clean rerun.
 - In `read-only`, name the owning stage for each blocking finding and stop as read-only-findings (never PASS).
 
 Convergence:
@@ -753,6 +760,9 @@ Triage:
   deferred_owner: <owner or none>
   deferred_next_action: <next action or none>
   non_blocking: true | false
+  owner_stage: raw_requirement | requirement_brief | risk_discovery | design | spec | plan | none
+  reason: <r2p-reopen repair wording or none>
+  required_action: <r2p-gap-open repair wording or none>
 
 Diff review:
 - Before full re-review, check issue mapping, unrelated scope, terminology, placeholders, readability, structural coherence, and that each claimed fix actually resolves the original finding's why_it_matters (not just that an edit was made at the location).

@@ -620,6 +620,28 @@ test('formatWorkflowError stable JSON includes full error contract fields', () =
   });
 });
 
+test('formatWorkflowError preserves coded blocker fields from thrown errors', () => {
+  const error = new Error('bad r2p root');
+  error.code = 'ERR_R2P_PROJECT_ROOT';
+  error.blockingReason = 'invalid-project-root';
+  error.nextAction = 'rerun with root=<project-root> that exists as a real directory';
+
+  const formatted = formatWorkflowError({ error });
+
+  assert.equal(formatted.status, 'blocked');
+  assert.equal(formatted.errorCode, 'ERR_R2P_PROJECT_ROOT');
+  assert.equal(formatted.blockingReason, 'invalid-project-root');
+  assert.equal(formatted.nextAction, 'rerun with root=<project-root> that exists as a real directory');
+
+  const explicit = formatWorkflowError({
+    error,
+    blockingReason: 'state-validation-failed',
+    nextAction: 'repair state'
+  });
+  assert.equal(explicit.blockingReason, 'state-validation-failed');
+  assert.equal(explicit.nextAction, 'repair state');
+});
+
 test('formatWorkflowError default blocker is schema-2 legal after stable JSON formatting', () => {
   const formatted = workflowJson(formatWorkflowError({ error: new Error('bad workflow') }));
 

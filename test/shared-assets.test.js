@@ -59,84 +59,84 @@ const GENERATED_SHELL_BASELINE_BYTES = Object.freeze({
 const CODEX_SHARED_DEDUP_EXPECTED_MEASUREMENT = Object.freeze({
   routes: Object.freeze({
     'review-fix-spec': Object.freeze({
-      routeBytes: 82705,
-      embeddedSharedBytes: 60511,
-      copiedSharedBytes: 60213,
-      duplicateBytes: 60213,
+      routeBytes: 83996,
+      embeddedSharedBytes: 61802,
+      copiedSharedBytes: 61504,
+      duplicateBytes: 61504,
       copiedRouteBytes: 23400,
-      shrinkBytes: 59305,
-      shrinkPercent: 71.71,
+      shrinkBytes: 60596,
+      shrinkPercent: 72.14,
       wouldGrow: false
     }),
     'review-fix-plan': Object.freeze({
-      routeBytes: 83013,
-      embeddedSharedBytes: 60819,
-      copiedSharedBytes: 60521,
-      duplicateBytes: 60521,
+      routeBytes: 84304,
+      embeddedSharedBytes: 62110,
+      copiedSharedBytes: 61812,
+      duplicateBytes: 61812,
       copiedRouteBytes: 23400,
-      shrinkBytes: 59613,
-      shrinkPercent: 71.81,
+      shrinkBytes: 60904,
+      shrinkPercent: 72.24,
       wouldGrow: false
     }),
     'review-fix-design': Object.freeze({
-      routeBytes: 82815,
-      embeddedSharedBytes: 60573,
-      copiedSharedBytes: 60273,
-      duplicateBytes: 60273,
+      routeBytes: 84106,
+      embeddedSharedBytes: 61864,
+      copiedSharedBytes: 61564,
+      duplicateBytes: 61564,
       copiedRouteBytes: 23450,
-      shrinkBytes: 59365,
-      shrinkPercent: 71.68,
+      shrinkBytes: 60656,
+      shrinkPercent: 72.12,
       wouldGrow: false
     }),
     'review-fix-doc': Object.freeze({
-      routeBytes: 79512,
-      embeddedSharedBytes: 57333,
-      copiedSharedBytes: 57074,
-      duplicateBytes: 57074,
+      routeBytes: 80803,
+      embeddedSharedBytes: 58624,
+      copiedSharedBytes: 58365,
+      duplicateBytes: 58365,
       copiedRouteBytes: 23358,
-      shrinkBytes: 56154,
-      shrinkPercent: 70.62,
+      shrinkBytes: 57445,
+      shrinkPercent: 71.09,
       wouldGrow: false
     }),
     'review-fix-pr': Object.freeze({
-      routeBytes: 79854,
-      embeddedSharedBytes: 57838,
-      copiedSharedBytes: 57583,
-      duplicateBytes: 57583,
+      routeBytes: 81145,
+      embeddedSharedBytes: 59129,
+      copiedSharedBytes: 58874,
+      duplicateBytes: 58874,
       copiedRouteBytes: 23191,
-      shrinkBytes: 56663,
-      shrinkPercent: 70.96,
+      shrinkBytes: 57954,
+      shrinkPercent: 71.42,
       wouldGrow: false
     }),
     'review-fix-code': Object.freeze({
-      routeBytes: 90839,
-      embeddedSharedBytes: 61438,
-      copiedSharedBytes: 61181,
-      duplicateBytes: 61181,
+      routeBytes: 92130,
+      embeddedSharedBytes: 62729,
+      copiedSharedBytes: 62472,
+      duplicateBytes: 62472,
       copiedRouteBytes: 30578,
-      shrinkBytes: 60261,
-      shrinkPercent: 66.34,
+      shrinkBytes: 61552,
+      shrinkPercent: 66.81,
       wouldGrow: false
     }),
     'review-fix-r2p': Object.freeze({
-      routeBytes: 81693,
-      embeddedSharedBytes: 61163,
-      copiedSharedBytes: 60521,
-      duplicateBytes: 60521,
-      copiedRouteBytes: 21736,
-      shrinkBytes: 59957,
-      shrinkPercent: 73.39,
+      routeBytes: 83111,
+      embeddedSharedBytes: 62454,
+      copiedSharedBytes: 61812,
+      duplicateBytes: 61812,
+      copiedRouteBytes: 21863,
+      shrinkBytes: 61248,
+      shrinkPercent: 73.69,
       wouldGrow: false
     })
   }),
   totals: Object.freeze({
-    routeBytes: 580431,
-    embeddedSharedBytes: 419675,
-    copiedSharedBytes: 417366,
-    duplicateBytes: 417366
+    routeBytes: 589595,
+    embeddedSharedBytes: 428712,
+    copiedSharedBytes: 426403,
+    duplicateBytes: 426403
   }),
-  largestShellShrinkBytes: 60261,
-  largestShellShrinkPercent: 66.34,
+  largestShellShrinkBytes: 61552,
+  largestShellShrinkPercent: 66.81,
   anyCodexRouteWouldGrow: false,
   gateEntered: true
 });
@@ -490,8 +490,8 @@ test('generated r2p workflow commands preserve the root override token', () => {
     if (platform !== 'gemini') {
       assert.match(
         rendered,
-        /rerun `review-fix-r2p workId=<new-or-same-WF-\.\.\.> <rootToken>`/,
-        `${platform}:review-fix-r2p rerun guidance must preserve root=<project-root>`
+        /r2p-reopen[^\n]+`review-fix-r2p workId=<new-WF-\.\.\.> <rootToken>`[^\n]+r2p-gap-open[^\n]+`review-fix-r2p workId=<same-WF-\.\.\.> resume <rootToken>`/,
+        `${platform}:review-fix-r2p rerun guidance must preserve root=<project-root> and same-workId resume`
       );
     }
   }
@@ -668,6 +668,10 @@ test('coordinator prompt locks triage decisions and PASS blocking rules', () => 
   assert.match(coordinator, /accepted high\/medium findings block PASS|accepted high and medium findings block PASS/i);
   assert.match(coordinator, /deferred high\/medium.*stopped-with-deferrals|deferred high and medium.*stopped-with-deferrals/i);
   assert.match(coordinator, /low findings block only in strict mode unless accepted non-blocking/i);
+  assert.match(coordinator, /r2p[\s\S]{0,120}owner_stage/i);
+  assert.match(coordinator, /owner_stage: raw_requirement \| requirement_brief \| risk_discovery \| design \| spec \| plan \| none/);
+  assert.match(coordinator, /reason: <r2p-reopen repair wording or none>/);
+  assert.match(coordinator, /required_action: <r2p-gap-open repair wording or none>/);
 });
 
 test('coordinator prompt requires diff review checks before full re-review', () => {

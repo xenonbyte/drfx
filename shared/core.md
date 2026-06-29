@@ -117,7 +117,7 @@ The coordinator triages every reviewer finding before fixing:
 
 Accepted high and medium issues block PASS until resolved. Deferred high and medium issues stop as `stopped-with-deferrals`, not PASS. Low issues are non-blocking in normal mode unless they affect the objective; low issues block strict PASS unless explicitly accepted as non-blocking.
 
-Triage payload schema:
+Triage payload schema. For r2p routes, every `accepted` or `reopened` finding must carry `owner_stage`; use `reason` for `r2p-reopen` wording and `required_action` for `r2p-gap-open` wording when known. Use `none` for non-r2p or not applicable.
 
 ```text
 Triage:
@@ -131,6 +131,9 @@ Triage:
   deferred_owner: <owner or none>
   deferred_next_action: <next action or none>
   non_blocking: true | false
+  owner_stage: raw_requirement | requirement_brief | risk_discovery | design | spec | plan | none
+  reason: <r2p-reopen repair wording or none>
+  required_action: <r2p-gap-open repair wording or none>
 ```
 
 ## Fixer Constraints

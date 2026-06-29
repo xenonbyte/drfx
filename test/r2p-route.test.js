@@ -428,23 +428,64 @@ test('gate1 invocation accept/reject incl. archive-bypass and flag-injection', a
     assert.equal(blocked.nextAction, 'rerun as review-fix-r2p workId=<WF-...>');
   }
 
+  const missingRoot = path.join(root, 'missing-project-root');
+  const missingRootWithoutCommands = await runWorkflowCommand('preflight', runtimeArgs([
+    'review-fix-r2p',
+    `workId=${workId}`,
+    `root=${missingRoot}`,
+    'review-and-fix'
+  ], {
+    subagent: 'not-required',
+    stdin: 'not-required'
+  }), { cwd: root, homeDir, env: { ...process.env, PATH: '' } });
+  assert.equal(missingRootWithoutCommands.ok, false);
+  assert.equal(missingRootWithoutCommands.status, 'blocked');
+  assert.equal(missingRootWithoutCommands.blockingReason, 'r2p-command-unavailable');
+  assert.match(missingRootWithoutCommands.nextAction, /install req-2-plan/);
+
   const fake = installFakeR2pCli(root);
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
-  const missingRoot = path.join(root, 'missing-project-root');
-  await assert.rejects(
-    () => runWorkflowCommand('preflight', runtimeArgs([
-      'review-fix-r2p',
-      `workId=${workId}`,
-      `root=${missingRoot}`,
-      'review-and-fix'
-    ], {
-      subagent: 'not-required',
-      stdin: 'not-required'
-    }), { cwd: root, homeDir, env }),
-    (error) => error &&
-      error.blockingReason === 'invalid-project-root' &&
-      error.nextAction === 'rerun with root=<project-root> that exists as a real directory'
-  );
+  const missingRootStart = await runWorkflowCommand('start', runtimeArgs([
+    'review-fix-r2p',
+    `workId=${workId}`,
+    `root=${missingRoot}`,
+    'review-and-fix'
+  ]), { cwd: root, homeDir, env });
+  assert.equal(missingRootStart.ok, false);
+  assert.equal(missingRootStart.status, 'blocked');
+  assert.equal(missingRootStart.blockingReason, 'invalid-project-root');
+  assert.equal(missingRootStart.nextAction, 'rerun with root=<project-root> that exists as a real directory');
+  assert.equal(fs.existsSync(path.join(root, '.drfx')), false);
+
+  const missingRootPreflight = await runWorkflowCommand('preflight', runtimeArgs([
+    'review-fix-r2p',
+    `workId=${workId}`,
+    `root=${missingRoot}`,
+    'review-and-fix'
+  ], {
+    subagent: 'not-required',
+    stdin: 'not-required'
+  }), { cwd: root, homeDir, env });
+  assert.equal(missingRootPreflight.ok, false);
+  assert.equal(missingRootPreflight.status, 'blocked');
+  assert.equal(missingRootPreflight.blockingReason, 'invalid-project-root');
+  assert.equal(missingRootPreflight.nextAction, 'rerun with root=<project-root> that exists as a real directory');
+
+  const symlinkRoot = path.join(root, 'project-root-symlink');
+  fs.symlinkSync(root, symlinkRoot, 'dir');
+  const symlinkRootPreflight = await runWorkflowCommand('preflight', runtimeArgs([
+    'review-fix-r2p',
+    `workId=${workId}`,
+    `root=${symlinkRoot}`,
+    'review-and-fix'
+  ], {
+    subagent: 'not-required',
+    stdin: 'not-required'
+  }), { cwd: root, homeDir, env });
+  assert.equal(symlinkRootPreflight.ok, false);
+  assert.equal(symlinkRootPreflight.status, 'blocked');
+  assert.equal(symlinkRootPreflight.blockingReason, 'invalid-project-root');
+  assert.equal(symlinkRootPreflight.nextAction, 'rerun with root=<project-root> that exists as a real directory');
 });
 
 test('gate2 command-env + R2P_JSON probe', async (t) => {
@@ -463,6 +504,8 @@ test('gate2 command-env + R2P_JSON probe', async (t) => {
   const blocked = await startFor(root, homeDir, workId, [], { env });
   assert.equal(blocked.ok, false);
   assert.equal(blocked.blockingReason, 'r2p-json-contract-unavailable');
+  assert.match(blocked.nextAction, /R2P_JSON=1 emits valid JSON/);
+  assert.doesNotMatch(blocked.nextAction, /install req-2-plan/);
 
   const explicitPreflight = await runWorkflowCommand('preflight', runtimeArgs([
     'review-fix-r2p',
@@ -478,6 +521,8 @@ test('gate2 command-env + R2P_JSON probe', async (t) => {
   });
   assert.equal(explicitPreflight.ok, false);
   assert.equal(explicitPreflight.blockingReason, 'r2p-json-contract-unavailable');
+  assert.match(explicitPreflight.nextAction, /R2P_JSON=1 emits valid JSON/);
+  assert.doesNotMatch(explicitPreflight.nextAction, /install req-2-plan/);
 
   writeExecutable(path.join(fake.binDir, 'r2p-status'), statusScript({
     work_id: workId,
@@ -508,6 +553,50 @@ test('gate2 command-env + R2P_JSON probe', async (t) => {
   });
   assert.equal(missingExplicitPreflight.ok, false);
   assert.equal(missingExplicitPreflight.blockingReason, 'r2p-command-unavailable');
+});
+
+test('gate2 root override drives r2p-status JSON probe cwd', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-gate2-root';
+  makeRun(root, workId);
+  const probeCwdLog = path.join(root, 'probe-cwd.log');
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': [
+      '#!/bin/sh',
+      'set -eu',
+      'current="$(pwd)"',
+      `printf "%s\\n" "$current" >> "${probeCwdLog}"`,
+      `if [ "$current" != "${root}" ]; then`,
+      '  printf "not-json\\n"',
+      '  exit 0',
+      'fi',
+      `printf "%s\\n" '${JSON.stringify([{
+        work_id: workId,
+        status: 'closed_at_plan_checkpoint',
+        current_stage: 'plan',
+        open_routes_detail: []
+      }])}'`
+    ].join('\n')
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+
+  const preflight = await runWorkflowCommand('preflight', runtimeArgs([
+    'review-fix-r2p',
+    `workId=${workId}`,
+    `root=${root}`,
+    'review-and-fix'
+  ], {
+    subagent: 'not-required',
+    stdin: 'not-required'
+  }), {
+    cwd: homeDir,
+    homeDir,
+    env
+  });
+
+  assert.equal(preflight.ok, true, JSON.stringify(preflight));
+  assert.equal(preflight.status, 'write-eligible');
+  assert.deepEqual(fs.readFileSync(probeCwdLog, 'utf8').trim().split('\n'), [root]);
 });
 
 test('gate3 workspace preflight', async (t) => {
@@ -920,7 +1009,8 @@ test('gate5 retry apply-r2p-repair does not rerun fixed ledger issues', async (t
     env
   });
   assert.equal(retry.ok, false, JSON.stringify(retry));
-  assert.equal(retry.blockingReason, 'r2p-repair-plan-ambiguous');
+  assert.equal(retry.blockingReason, 'state-validation-failed');
+  assert.equal(retry.errorCode, 'ERR_R2P_REPAIR_PHASE_REQUIRED');
   assert.equal(fs.readFileSync(reopenLogPath, 'utf8'), firstLog);
 });
 
@@ -995,7 +1085,7 @@ test('gate5 unsupported repair status returns specific blocker without invalid m
 
   const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
   assert.equal(manifest.status, 'blocked');
-  assert.equal(manifest.blockingReason, 'state-validation-failed');
+  assert.equal(manifest.blockingReason, 'r2p-run-status-unsupported');
 });
 
 test('gate6 repair exec argv shell:false; capture new_work_id/route_id; checkpoint, no PASS', async (t) => {
@@ -1331,6 +1421,26 @@ test('same-workId r2p repair counts against rounds limit after resume', async (t
   assert.equal(Number(afterSecondTriage.fixAttemptCount), 1);
   assert.equal(afterSecondTriage.status, 'stopped-with-deferrals');
   assert.equal(afterSecondTriage.statusReason, 'round-limit');
+
+  const reopenLogPath = path.join(fake.logDir, 'r2p-reopen.log');
+  const gapLogPath = path.join(fake.logDir, 'r2p-gap-open.log');
+  const beforeReopenLog = fs.existsSync(reopenLogPath) ? fs.readFileSync(reopenLogPath, 'utf8') : null;
+  const beforeGapLog = fs.existsSync(gapLogPath) ? fs.readFileSync(gapLogPath, 'utf8') : null;
+  const stoppedApply = await runWorkflowCommand('apply-r2p-repair', [start.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(stoppedApply.ok, false, JSON.stringify(stoppedApply));
+  assert.equal(stoppedApply.blockingReason, 'state-validation-failed');
+  assert.equal(stoppedApply.errorCode, 'ERR_R2P_REPAIR_PHASE_REQUIRED');
+  assert.match(stoppedApply.message, /Status: fix and Current phase: fix/);
+  assert.equal(fs.existsSync(reopenLogPath) ? fs.readFileSync(reopenLogPath, 'utf8') : null, beforeReopenLog);
+  assert.equal(fs.existsSync(gapLogPath) ? fs.readFileSync(gapLogPath, 'utf8') : null, beforeGapLog);
+
+  const afterStoppedApply = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(afterStoppedApply.status, 'stopped-with-deferrals');
+  assert.equal(afterStoppedApply.statusReason, 'round-limit');
 });
 
 test('r2p resume refuses changed roundLimit identity', async (t) => {
