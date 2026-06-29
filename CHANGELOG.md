@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.10.0 - 2026-06-30
+
+Reworks the `review-fix-r2p` route from in-place document editing into a review-only route that repairs exclusively through the official r2p lifecycle commands.
+
+### Changed
+
+- **`review-fix-r2p` is now review-only; repair runs only through the r2p lifecycle.** BREAKING: the route is invoked with `workId=<WF-...>` (or a bare `WF-...` shorthand) against an active run under `.req-to-plan/WF-*`, and no longer accepts `target=`, `ref=`, or any path form. It reviews the requirement plan (`07-plan.md`) against its owning upstream docs (`03–06`), but `03–07` and `run.md` are now read-only, fingerprinted evidence — drfx never writes, deletes, renames, restores, or patches them. Accepted/reopened/downgraded high/medium blocking findings map to an owning upstream stage and are repaired only by invoking `r2p-reopen` or `r2p-gap-open` through `record-r2p-repair-plan` + `apply-r2p-repair`; the route then checkpoints, directs the user to run `r2p-continue`, and earns a workflow PASS only on a clean rerun after r2p regenerates artifacts. An in-progress `review-fix-r2q`/old `review-fix-r2p` workflow state is not migrated (`lib/routes.js`, `lib/input.js`, `lib/workflow/`).
+- **Manifest V2 carries an r2p target-state shape.** The persisted `targetContextKind` discriminator now recognizes `r2p`, which additionally persists `workId`, the read-only `runMdSha256` gate fingerprint, and the read-only review-set fingerprint (`lib/manifest.js`, `lib/workflow/`).
+
+### Added
+
+- **Recorded r2p repair plan with drift detection.** `record-r2p-repair-plan` persists the normalized repair plan; `apply-r2p-repair` re-derives the live plan and refuses with `r2p-drift-detected` if review/triage state changed in between, so a stale plan can never drive an r2p lifecycle command. The repair command runs through `execFile` with an argv array and `shell:false`, same-round PASS after a repair is blocked, and finalize resolves the round's successful repair receipt to surface the `r2p-continue` next action.
+- **r2p preflight validates the requested `workId`** is present in `r2p-status` before `context`, `record-review`, `record-triage`, and `finalize`, and the route blocks `r2p-gap-open` when the run already has an open route (`r2p-existing-route-open`), matching the real `req-2-plan` CLI.
+
 ## 0.9.1 - 2026-06-25
 
 Fixes a crash in the partitioned-review `aggregate-review` command when the target-state manifest is unreadable.
