@@ -1169,6 +1169,16 @@ test('gate5 apply-r2p-repair records failed r2p command in reserved receipt', as
   assert.equal(retry.newWorkId, 'WF-20260627-gate5-receipt-failure-r1');
   assert.match(retry.nextAction, /r2p-continue/);
 
+  const sameRoundFinal = await runWorkflowCommand('finalize', [triage.targetStateDir, '--final-response-stdin', '--json'], {
+    cwd: root,
+    homeDir,
+    stdin: FINAL_PASS,
+    env
+  });
+  assert.equal(sameRoundFinal.statusReason, 'r2p-repair-applied');
+  assert.equal(sameRoundFinal.nextAction, retry.nextAction);
+  assert.doesNotMatch(sameRoundFinal.nextAction, /repair the r2p command failure/);
+
   const reopenedLog = fs.readFileSync(path.join(fake.logDir, 'r2p-reopen.log'), 'utf8').trim().split('\n');
   assert.equal(reopenedLog.length, 2);
 });
@@ -1523,6 +1533,8 @@ test('gate7 rerun-PASS only after clean re-review', async (t) => {
   assert.notEqual(sameRoundFinal.status, 'pass');
   assert.equal(sameRoundFinal.statusReason, 'r2p-repair-applied');
   assert.notEqual(sameRoundFinal.nextAction, 'run MALICIOUS finalize next action');
+  assert.notEqual(sameRoundFinal.nextAction, 'run apply-r2p-repair');
+  assert.equal(sameRoundFinal.nextAction, apply.nextAction);
 
   const rerunWorkId = apply.newWorkId || workId;
   assert.ok(apply.receiptId, 'expected apply-r2p-repair to expose a stable receipt id');
