@@ -305,6 +305,54 @@ test('r2p advisory record-review blocks when protected run.md drifts after conte
   assert.equal(review.blockingReason, 'reviewer-mutated-file');
 });
 
+test('r2p advisory no-state finalize reruns r2p JSON preflight', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260624-finalize-preflight';
+  makeWfDir(root, workId);
+  const commonArgs = r2pArgs(workId);
+  const opts = { cwd: root, homeDir, env: installFakeR2pCli(root, workId) };
+
+  const context = await runWorkflowCommand('context', ['--no-state', ...commonArgs], opts);
+  assert.equal(context.ok, true, JSON.stringify(context));
+  const review = await runWorkflowCommand('record-review', [
+    '--no-state',
+    ...commonArgs,
+    '--review-guard',
+    context.reviewGuard,
+    '--result-stdin'
+  ], { ...opts, stdin: REVIEW_FAIL });
+  assert.equal(review.ok, true, JSON.stringify(review));
+  const triage = await runWorkflowCommand('record-triage', [
+    '--no-state',
+    ...commonArgs,
+    '--state-token',
+    review.stateToken,
+    '--triage-stdin'
+  ], { ...opts, stdin: TRIAGE_ACCEPT });
+  assert.equal(triage.ok, true, JSON.stringify(triage));
+
+  writeExecutable(path.join(root, 'fake-r2p-bin', 'r2p-status'), [
+    '#!/bin/sh',
+    'set -eu',
+    'printf "not-json\\n"'
+  ].join('\n'));
+
+  const finalized = await runWorkflowCommand('finalize', [
+    '--no-state',
+    ...commonArgs,
+    '--state-token',
+    triage.stateToken,
+    '--final-response-stdin'
+  ], { ...opts, stdin: FINAL_FINDINGS });
+
+  assert.equal(finalized.ok, false, JSON.stringify(finalized));
+  assert.equal(finalized.status, 'blocked');
+  assert.equal(finalized.blockingReason, 'r2p-json-contract-unavailable');
+  assert.equal(finalized.errorCode, 'ERR_R2P_JSON_CONTRACT_UNAVAILABLE');
+  assert.equal(finalized.finalResponse, undefined);
+  assert.equal(fs.existsSync(path.join(root, '.drfx')), false);
+});
+
 // ---------------------------------------------------------------------------
 // Generated route prompt/package carries the finding->ownerStage map.
 // ---------------------------------------------------------------------------

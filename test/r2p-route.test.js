@@ -665,6 +665,62 @@ test('gate2 preflight blocks when r2p-status omits requested workId', async (t) 
   assert.equal(fs.existsSync(path.join(root, '.drfx')), false);
 });
 
+test('gate2 record-review blocks when r2p-status omits requested workId after context', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-record-review-status-missing';
+  makeRun(root, workId);
+  const fake = installFakeR2pCli(root);
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+
+  const start = await startFor(root, homeDir, workId, [], { env });
+  assert.equal(start.ok, true, JSON.stringify(start));
+  const context = await contextFor(root, homeDir, workId, [], { env });
+  assert.equal(context.ok, true, JSON.stringify(context));
+
+  writeExecutable(path.join(fake.binDir, 'r2p-status'), statusScript([{
+    work_id: 'WF-20260627-sibling',
+    status: 'closed_at_plan_checkpoint',
+    current_stage: 'plan',
+    open_routes_detail: []
+  }]));
+
+  const review = await recordReviewPassFor(root, homeDir, workId, [], { env });
+  assert.equal(review.ok, false, JSON.stringify(review));
+  assert.equal(review.status, 'blocked');
+  assert.equal(review.blockingReason, 'r2p-run-not-found');
+  assert.equal(review.errorCode, 'ERR_R2P_STATUS_NOT_FOUND');
+  assert.equal(fs.existsSync(path.join(start.targetStateDir, 'reports', 'reviewer-round-001.md')), false);
+});
+
+test('gate2 record-triage blocks when r2p-status omits requested workId after review', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-record-triage-status-missing';
+  makeRun(root, workId);
+  const fake = installFakeR2pCli(root);
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+
+  const start = await startFor(root, homeDir, workId, [], { env });
+  assert.equal(start.ok, true, JSON.stringify(start));
+  const context = await contextFor(root, homeDir, workId, [], { env });
+  assert.equal(context.ok, true, JSON.stringify(context));
+  const review = await recordReviewFor(root, homeDir, workId, [], { env });
+  assert.equal(review.ok, true, JSON.stringify(review));
+
+  writeExecutable(path.join(fake.binDir, 'r2p-status'), statusScript([{
+    work_id: 'WF-20260627-sibling',
+    status: 'closed_at_plan_checkpoint',
+    current_stage: 'plan',
+    open_routes_detail: []
+  }]));
+
+  const triage = await recordTriageFor(root, homeDir, workId, [], { env });
+  assert.equal(triage.ok, false, JSON.stringify(triage));
+  assert.equal(triage.status, 'blocked');
+  assert.equal(triage.blockingReason, 'r2p-run-not-found');
+  assert.equal(triage.errorCode, 'ERR_R2P_STATUS_NOT_FOUND');
+  assert.equal(fs.existsSync(path.join(start.targetStateDir, 'reports', 'triage-round-001.md')), false);
+});
+
 test('gate2 treats missing work_id as status JSON contract failure before artifacts', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const workId = 'WF-20260627-gate2-status-contract';
