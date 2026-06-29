@@ -1544,6 +1544,34 @@ test('same-workId r2p repair counts against rounds limit after resume', async (t
   assert.equal(afterStoppedApply.statusReason, 'round-limit');
 });
 
+test('r2p resume at fix phase points to the repair plan, never begin-fix', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-resume-fix-phase';
+  makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'closed_at_plan_checkpoint',
+      current_stage: 'plan',
+      open_routes_detail: []
+    })
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+
+  // Triage accepting a blocking finding leaves r2p at Status: fix / phase: fix.
+  const { start } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
+  const atFix = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(atFix.status, 'fix');
+  assert.equal(atFix.currentPhase, 'fix');
+
+  // begin-fix is forbidden for r2p, so resume must route to the lifecycle repair.
+  const resumed = await startFor(root, homeDir, workId, ['resume'], { env });
+  assert.equal(resumed.ok, true, JSON.stringify(resumed));
+  assert.equal(resumed.status, 'fix');
+  assert.match(resumed.nextAction, /record-r2p-repair-plan/);
+  assert.doesNotMatch(resumed.nextAction, /begin-fix/);
+});
+
 test('r2p resume refuses changed roundLimit identity', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const workId = 'WF-20260627-r2p-round-limit-identity';
