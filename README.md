@@ -224,39 +224,29 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 Syntax:
 
 ```text
-review-fix-r2p target=<requirement-dir> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
+review-fix-r2p workId=<WF-...> [read-only|review-and-fix] [resume|reset] [rounds=<n>] [root=<path>] [debug]
 ```
 
-`review-fix-r2p` reviews an r2p requirement directory's `07-plan.md` with the PLAN rubric and fixes findings in place across the `03`–`07` file set: plan-local execution defects are fixed directly in `07-plan.md`, and when a finding's root cause is upstream it edits the owning upstream doc (`03`–`06`) and re-aligns the affected `07-plan.md` section. `run.md` is a read-only, fingerprinted gate — review-fix-r2p never writes it and never invokes the r2p CLI.
+`review-fix-r2p` reviews an active r2p (requirement-to-PLAN) run named by `workId=<WF-...>` under `<project>/.req-to-plan/WF-*`. It judges the requirement plan (`07-plan.md`) with the PLAN rubric against its owning upstream docs (`03`–`06`), but it never edits artifacts: `03`–`07` and `run.md` are read-only, fingerprinted evidence. Accepted high/medium blocking findings map to an owning upstream stage and are repaired only through the official r2p lifecycle commands — `r2p-reopen` or `r2p-gap-open` — never by writing the docs. After a repair the route checkpoints, tells you to run `r2p-continue` so r2p regenerates artifacts, and earns a workflow PASS only on a clean rerun.
 
-- `target=<requirement-dir>` is required. The target is the requirement directory (the one that contains `run.md`, `07-plan.md`, and the upstream docs `03`–`06`). A bare path is accepted as shorthand.
-- The route gates on a generated plan (`07-plan.md` must exist and must not be under `*/.req-to-plan/archive/*`). **Accepted execution-state risk:** no `r2p-execute` marker exists in the workflow state, so archive-location is a pre-archive proxy, not proof the plan artifacts were not consumed.
-- `guard=snapshot` is the default (not `guard=git`) because active `.req-to-plan/WF-*` directories are commonly untracked; `guard=git` is accepted when the requirement directory is tracked and clean.
-- Auto-fix may modify the resolved requirement file set `03`–`07`: it fixes plan-local execution defects directly in `07-plan.md`, and when a finding's root cause is upstream it edits the owning upstream doc (`03`–`06`) and re-aligns the affected `07-plan.md` section. `run.md` is the read-only gate and is never written; nothing outside `03`–`07` is touched.
+- `workId=<WF-...>` is required; a bare `WF-...` token is accepted as shorthand. It names an active run directory under `<project>/.req-to-plan/WF-*`. There is no `target=`, `ref=`, or path form — a path is rejected with `invalid-r2p-invocation`.
+- `03`–`07` and `run.md` are read-only, fingerprinted evidence. drfx never writes, deletes, renames, restores, or patches them, and the review set or `run.md` changing mid-run is detected.
+- Repair runs only through the r2p lifecycle. `record-r2p-repair-plan` records the repair plan; `apply-r2p-repair` invokes `r2p-reopen` or `r2p-gap-open` and refuses with `r2p-drift-detected` if review/triage state moved since the plan was recorded, or `r2p-existing-route-open` when the run already has an open route. `r2p-continue` is the required next action after a repair, not a drfx-invoked fix step.
+- There is no user-facing `guard=` token; read-only drift detection is internal and always on.
 - `read-only` or `review-and-fix` (default `review-and-fix` on Claude Code, Codex, and opencode; advisory read-only on Gemini).
 - Advisory-only on Gemini: `review-and-fix` is unsupported, `rounds=<n>` is not accepted, workflow PASS is unavailable, and automatic fixing never runs.
 - `resume` explicitly continues from saved state. Stale state is refused; there is no silent reuse.
 - `reset` archives the existing target state (moved to `.drfx/archived/`, never deleted) and starts a fresh review. `resume` and `reset` are mutually exclusive.
 - `rounds=<n>` sets the maximum repair-loop count (positive integer). Unsupported with `read-only`.
 - `root=<path>` sets the project root.
-- Does not accept `ref=`, `base=`, `strict`, `normal`, `assurance=`, `scope=`, or `ledger=`.
-
-`guard=snapshot` monitoring details:
-
-- It monitors the target, explicit `ref=` documents, ordinary project files, and unrelated file symlinks as opaque entries.
-- Well-known infrastructure directories (`.git`, `.claude`, `.codex`, `.codegraph`, `.gemini`, `.opencode`, `.config/opencode`, `.req-to-plan`, `node_modules`, `.pnpm-store`, `.yarn`, `.cache`, `dist`, `build`, `coverage`) are excluded from monitoring unless the target or a reference lives inside one.
-- When any directory is excluded, the guard reports `monitorScope: project-tree-files-and-references-excluding-infrastructure`.
-- Directory symlinks are not supported and block the guard.
-- Opaque file-symlink entries are checked by symlink metadata and `readlink` target text, but they do not detect writes made through the symlink to its resolved target.
+- Does not accept `target=`, `ref=`, `base=`, `strict`, `normal`, `assurance=`, `scope=`, `ledger=`, or `guard=`.
 
 Parsing is strict:
 
-- A single unlabeled target path is allowed.
-- If `target=` is used, unlabeled paths are rejected.
-- Duplicate `target=` and duplicate `root=` are rejected.
+- The only target form is `workId=<WF-...>` or a single bare `WF-...` token; path-based input is rejected.
+- A bare `WF-...` and an explicit `workId=` must not both be given, and `workId=` must not be duplicated; multiple unlabeled work IDs are ambiguous.
+- Duplicate `root=` is rejected.
 - Unknown `key=value` tokens and unknown dash options are rejected.
-- Paths with spaces must be passed as one shell-quoted token.
-- Natural-language input is accepted only when target and reference roles are unambiguous.
 
 For valid target invocations, Codex, Claude Code, and opencode routes default missing mode to `review-and-fix` and missing assurance to `practical`. Explicit `assurance=advisory` without mode selects `read-only` on Codex, Claude Code, and opencode. Gemini routes default missing mode to `read-only` and missing assurance to `advisory`.
 

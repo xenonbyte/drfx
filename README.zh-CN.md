@@ -223,39 +223,29 @@ review-fix-code [scope=<path>...] [read-only|review-and-fix] [guard=git|snapshot
 Syntax:
 
 ```text
-review-fix-r2p target=<requirement-dir> [read-only|review-and-fix] [guard=git|snapshot] [resume|reset] [rounds=<n>] [root=<path>] [debug]
+review-fix-r2p workId=<WF-...> [read-only|review-and-fix] [resume|reset] [rounds=<n>] [root=<path>] [debug]
 ```
 
-`review-fix-r2p` 用 PLAN rubric 审查 r2p requirement directory 中的 `07-plan.md`，并在 `03`–`07` 文件集内就地修复 findings：plan 本身的执行层缺陷直接在 `07-plan.md` 修复；当 finding 根因在上游时，编辑对应的 upstream doc（`03`–`06`）并同步对齐受影响的 `07-plan.md` 段落。`run.md` 是只读的、带指纹的 gate——review-fix-r2p 从不写入 `run.md`，也从不调用 r2p CLI。
+`review-fix-r2p` 审查由 `workId=<WF-...>` 指定的活跃 r2p（requirement-to-PLAN）run，该 run 位于 `<project>/.req-to-plan/WF-*` 下。它用 PLAN rubric 以 upstream docs（`03`–`06`）为依据评判 requirement plan（`07-plan.md`），但从不编辑制品：`03`–`07` 和 `run.md` 都是只读、带指纹的证据。被接受的 high/medium blocking findings 映射到所属的 upstream stage，且只能通过官方 r2p lifecycle 命令——`r2p-reopen` 或 `r2p-gap-open`——修复，绝不写文档。修复后 route 进入 checkpoint，提示你运行 `r2p-continue` 让 r2p 重新生成制品，只有 clean rerun 才能获得 workflow PASS。
 
-- `target=<requirement-dir>` 为必填。target 是 requirement directory（包含 `run.md`、`07-plan.md` 以及 upstream docs `03`–`06` 的目录）。也接受 bare path 作为简写。
-- route 以 generated plan 作为 gate（`07-plan.md` 必须存在，且不能位于 `*/.req-to-plan/archive/*` 下）。**已接受的执行状态风险：** workflow state 中不存在 `r2p-execute` marker，因此 archive 位置是 pre-archive 代理，而非制品未被消费的证明。
-- `guard=snapshot` 是默认值（而非 `guard=git`），因为活跃的 `.req-to-plan/WF-*` 目录通常未被 git 跟踪；当 requirement directory 已跟踪且 clean 时，`guard=git` 也可接受。
-- 自动修复可改动 requirement directory 内的 `03`–`07` 文件集：plan 本身的执行层缺陷直接在 `07-plan.md` 修复；当 finding 根因在上游时，编辑对应的 upstream doc（`03`–`06`）并同步对齐受影响的 `07-plan.md` 段落。`run.md` 是只读 gate，从不写入；`03`–`07` 之外的文件一律不动。
+- `workId=<WF-...>` 为必填；也接受单个 bare `WF-...` token 作为简写。它指向 `<project>/.req-to-plan/WF-*` 下的一个活跃 run 目录。没有 `target=`、`ref=` 或 path 形式——传 path 会以 `invalid-r2p-invocation` 被拒绝。
+- `03`–`07` 和 `run.md` 是只读、带指纹的证据。drfx 从不写入、删除、重命名、还原或修补它们，并且 review set 或 `run.md` 在 run 期间发生变化会被检测到。
+- 修复只走 r2p lifecycle。`record-r2p-repair-plan` 记录修复计划；`apply-r2p-repair` 调用 `r2p-reopen` 或 `r2p-gap-open`，若 review/triage state 在记录计划后发生漂移则以 `r2p-drift-detected` 拒绝，若该 run 已存在 open route 则以 `r2p-existing-route-open` 拒绝。修复后的必需下一步是 `r2p-continue`，它不是 drfx 调用的修复步骤。
+- 没有面向用户的 `guard=` token；只读 drift detection 是内部的、始终开启。
 - `read-only` 或 `review-and-fix`（Claude Code、Codex 和 opencode 默认 `review-and-fix`；Gemini 上为 advisory read-only）。
 - 在 Gemini 上为 advisory-only：`review-and-fix` 不支持，`rounds=<n>` 不接受，workflow PASS 不可用，自动修复永远不会运行。
 - `resume` 显式从已保存的 state 继续。拒绝 stale state，不存在静默复用。
 - `reset` 归档现有 target state（移到 `.drfx/archived/`，绝不删除）并全新开始 review。`resume` 与 `reset` 互斥。
 - `rounds=<n>` 设置最大修复循环次数（正整数）。与 `read-only` 不兼容。
 - `root=<path>` 设置 project root。
-- 不接受 `ref=`、`base=`、`strict`、`normal`、`assurance=`、`scope=` 或 `ledger=`。
-
-`guard=snapshot` monitoring details:
-
-- 它监控 target、显式 `ref=` documents、普通 project files，以及无关 file symlinks（作为 opaque entries）。
-- 常见 infrastructure directories（`.git`、`.claude`、`.codex`、`.codegraph`、`.gemini`、`.opencode`、`.config/opencode`、`.req-to-plan`、`node_modules`、`.pnpm-store`、`.yarn`、`.cache`、`dist`、`build`、`coverage`）默认排除在监控范围之外，除非 target 或 reference 位于其中。
-- 若有目录被排除，guard 报告 `monitorScope: project-tree-files-and-references-excluding-infrastructure`。
-- Directory symlinks 不被支持，会阻断 guard。
-- Opaque file-symlink entries 通过 symlink metadata 和 `readlink` target text 检测变化，但无法检测通过 symlink 写入其 resolved target 的修改。
+- 不接受 `target=`、`ref=`、`base=`、`strict`、`normal`、`assurance=`、`scope=`、`ledger=` 或 `guard=`。
 
 Parsing 是 strict 的：
 
-- 允许单个 unlabeled target path。
-- 如果使用 `target=`，unlabeled paths 会被拒绝。
-- Duplicate `target=` 和 duplicate `root=` 会被拒绝。
+- 唯一的 target 形式是 `workId=<WF-...>` 或单个 bare `WF-...` token；path-based input 会被拒绝。
+- 不能同时给出 bare `WF-...` 和显式 `workId=`，且 `workId=` 不能重复；多个 unlabeled work ID 是有歧义的。
+- Duplicate `root=` 会被拒绝。
 - Unknown `key=value` tokens 和 unknown dash options 会被拒绝。
-- 含空格的 paths 必须作为一个 shell-quoted token 传入。
-- Natural-language input 只有在 target 和 reference roles 明确时才被接受。
 
 对 valid target invocations，Codex、Claude Code 和 opencode routes 会把缺失的 mode 默认为 `review-and-fix`，把缺失的 assurance 默认为 `practical`。显式 `assurance=advisory` 且未传 mode 时，在 Codex、Claude Code 和 opencode 上选择 `read-only`。Gemini routes 默认缺失 mode 为 `read-only`，缺失 assurance 为 `advisory`。
 
