@@ -1242,9 +1242,7 @@ test('gate6 repair exec argv shell:false; capture new_work_id/route_id; checkpoi
         work_id: gapWorkId,
         status: 'active_stage_draft',
         current_stage: 'plan',
-        open_routes_detail: [
-          { route_id: 'ROUTE-001', owner_stage: 'design', required_action: 'clarify design constraints' }
-        ]
+        open_routes_detail: []
     }])}'`
   ].join('\n'));
   const gapStatus = await readRunStatus(paths, gapWorkId, { cwd: root, env, homeDir });
@@ -1396,9 +1394,7 @@ test('gate7 resume keeps same-workId r2p repair receipts across regenerated arti
       work_id: workId,
       status: 'active_stage_draft',
       current_stage: 'plan',
-      open_routes_detail: [
-        { route_id: 'ROUTE-001', owner_stage: 'design', required_action: 'clarify design constraints' }
-      ]
+      open_routes_detail: []
     })
   });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
@@ -1478,9 +1474,7 @@ test('same-workId r2p repair counts against rounds limit after resume', async (t
       work_id: workId,
       status: 'active_stage_draft',
       current_stage: 'plan',
-      open_routes_detail: [
-        { route_id: 'ROUTE-001', owner_stage: 'design', required_action: 'clarify design constraints' }
-      ]
+      open_routes_detail: []
     })
   });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
@@ -1583,9 +1577,7 @@ test('gate7 resume refreshes when only run.md drifted after r2p repair', async (
       work_id: workId,
       status: 'active_stage_draft',
       current_stage: 'plan',
-      open_routes_detail: [
-        { route_id: 'ROUTE-001', owner_stage: 'design', required_action: 'clarify design constraints' }
-      ]
+      open_routes_detail: []
     })
   });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
@@ -1691,10 +1683,13 @@ test('gate8 status-contract parses multiple owner stages; missing contract block
   const paths = resolveR2pCommands({ env, homeDir });
   const status = await readRunStatus(paths, workId, { cwd: root, env, homeDir });
   assert.deepEqual(status.openRouteOwnerStages, ['design', 'spec']);
+  // With routes already open, r2p refuses gap-open; the contract still parses the
+  // owner stages, but the repair maps to the existing-route blocker, not a command.
   const mode = mapRepairMode(status, status.currentStage, [
     { issue_id: 'ISSUE-001', owner_stage: 'design', required_action: 'Clarify design.' }
   ]);
-  assert.equal(mode.command_kind, 'r2p-gap-open');
+  assert.equal(mode.kind, 'blocked');
+  assert.equal(mode.blockingReason, 'r2p-existing-route-open');
 
   writeExecutable(path.join(fake.binDir, 'r2p-status'), '#!/bin/sh\nset -eu\nprintf "oops\\n"\n');
   await assert.rejects(
@@ -2050,10 +2045,7 @@ test('gate10 earliest-stage aggregation + r2p-repair-plan-ambiguous', async (t) 
         work_id: workId,
         status: 'open',
         current_stage: 'plan',
-        open_routes_detail: [
-          { route_id: 'ROUTE-001', owner_stage: 'requirement_brief', required_action: 'clarify scope' },
-          { route_id: 'ROUTE-002', owner_stage: 'design', required_action: 'tighten architecture' }
-        ]
+        open_routes_detail: []
       }])}'`
     ].join('\n')
   });
@@ -2078,6 +2070,67 @@ test('gate10 earliest-stage aggregation + r2p-repair-plan-ambiguous', async (t) 
     ),
     (error) => error && error.blockingReason === 'r2p-repair-plan-ambiguous'
   );
+});
+
+test('gate10 open run with an existing open route blocks gap-open (one route per run)', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-gate10-existing-route';
+  makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript([{
+      work_id: workId,
+      status: 'active_stage_draft',
+      current_stage: 'plan',
+      open_routes_detail: [
+        { route_id: 'ROUTE-001', owner_stage: 'design', required_action: 'resolve the open design route' }
+      ]
+    }])
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+  const paths = resolveR2pCommands({ env, homeDir });
+  const status = await readRunStatus(paths, workId, { cwd: root, env, homeDir });
+  const findings = [
+    { issue_id: 'ISSUE-001', owner_stage: 'design', required_action: 'Reopen design.' }
+  ];
+
+  // Real r2p refuses gap-open while another route is open; map to a clean blocked
+  // result instead of emitting a command r2p would reject as a command failure.
+  const mode = mapRepairMode(status, status.currentStage, findings);
+  assert.equal(mode.kind, 'blocked');
+  assert.equal(mode.blockingReason, 'r2p-existing-route-open');
+  assert.match(mode.nextAction, /r2p-continue|r2p-gap-resolve/);
+
+  // End to end: record-r2p-repair-plan surfaces the blocker; no r2p-gap-open is invoked.
+  const start = await startFor(root, homeDir, workId, [], { env });
+  assert.equal(start.ok, true, JSON.stringify(start));
+  const context = await contextFor(root, homeDir, workId, [], { env });
+  assert.equal(context.ok, true, JSON.stringify(context));
+  const review = await recordReviewFor(root, homeDir, workId, [], { env });
+  assert.equal(review.ok, true, JSON.stringify(review));
+  const triage = await recordTriageFor(root, homeDir, workId, [], { env });
+  assert.equal(triage.ok, true, JSON.stringify(triage));
+
+  const repairPlan = await runWorkflowCommand('record-r2p-repair-plan', [start.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(repairPlan.ok, false, JSON.stringify(repairPlan));
+  assert.equal(repairPlan.blockingReason, 'r2p-existing-route-open');
+  assert.match(repairPlan.nextAction, /r2p-continue|r2p-gap-resolve/);
+
+  const apply = await runWorkflowCommand('apply-r2p-repair', [start.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(apply.ok, false, JSON.stringify(apply));
+  assert.equal(apply.blockingReason, 'r2p-existing-route-open');
+  assert.equal(fs.existsSync(path.join(fake.logDir, 'r2p-gap-open.log')), false);
+
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'blocked');
+  assert.equal(manifest.blockingReason, 'r2p-existing-route-open');
 });
 
 test('gate10 persistent repair-plan path preserves owner stage and reason from accepted r2p findings', async (t) => {
