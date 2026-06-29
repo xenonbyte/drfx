@@ -1823,6 +1823,25 @@ test('gate8 status-contract parses multiple owner stages; missing contract block
   );
 });
 
+test('gate8 readRunStatus fails closed when a workId appears more than once', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-gate8-dup';
+  makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript([
+      { work_id: workId, status: 'closed_at_plan_checkpoint', current_stage: 'plan', open_routes_detail: [] },
+      { work_id: workId, status: 'executing', current_stage: 'closed', open_routes_detail: [] }
+    ])
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+  const paths = resolveR2pCommands({ env, homeDir });
+
+  await assert.rejects(
+    () => readRunStatus(paths, workId, { cwd: root, env, homeDir }),
+    (error) => error && error.blockingReason === 'r2p-json-contract-unavailable'
+  );
+});
+
 // Real `r2p-status --all` prints one pretty-printed JSON object PER run, back to
 // back (NOT a single array), and a closed/executing run reports
 // current_stage:"closed" (r2p Stage.CLOSED). Verified against the installed
