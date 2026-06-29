@@ -1304,6 +1304,62 @@ test('gate8 status-contract parses multiple owner stages; missing contract block
   );
 });
 
+// Real `r2p-status --all` prints one pretty-printed JSON object PER run, back to
+// back (NOT a single array), and a closed/executing run reports
+// current_stage:"closed" (r2p Stage.CLOSED). Verified against the installed
+// @xenonbyte/req-2-plan v0.7.3. This fake reproduces that exact shape.
+function concatenatedStatusScript(payloads) {
+  const body = payloads.map((payload) => JSON.stringify(payload, null, 2)).join('\n');
+  return ['#!/bin/sh', 'set -eu', `cat <<'R2P_EOF'\n${body}\nR2P_EOF`].join('\n');
+}
+
+test('gate8 readRunStatus parses concatenated multi-run --all with a closed current_stage', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-multi-closed';
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': concatenatedStatusScript([
+      { work_id: 'WF-20260627-sibling', status: 'archived', current_stage: 'closed', open_routes_detail: [] },
+      { work_id: workId, status: 'closed_at_plan_checkpoint', current_stage: 'closed', open_routes_detail: [] }
+    ])
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+  const paths = resolveR2pCommands({ env, homeDir });
+
+  // Before the fix: JSON.parse of concatenated objects threw, and ensureContractStage
+  // rejected "closed" -> r2p-json-contract-unavailable. Now both parse cleanly.
+  const status = await readRunStatus(paths, workId, { cwd: root, env, homeDir });
+  assert.equal(status.status, 'closed_at_plan_checkpoint');
+  assert.equal(status.currentStage, 'closed');
+
+  const mode = mapRepairMode(status, status.currentStage, [{ owner_stage: 'design', issue_id: 'ISSUE-001' }]);
+  assert.equal(mode.kind, 'command');
+  assert.equal(mode.command_kind, 'r2p-reopen');
+});
+
+test('gate6 closed_at_plan_checkpoint run (current_stage=closed) reopens end to end', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-closed-stage-reopen';
+  makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': concatenatedStatusScript([
+      { work_id: workId, status: 'closed_at_plan_checkpoint', current_stage: 'closed', open_routes_detail: [] }
+    ])
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+  const { triage } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
+
+  const apply = await runWorkflowCommand('apply-r2p-repair', [triage.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(apply.ok, true, JSON.stringify(apply));
+  assert.equal(apply.status, 'checkpoint');
+  assert.equal(apply.statusReason, 'r2p-repair-applied');
+  assert.ok(apply.newWorkId, 'reopen must capture new_work_id even when current_stage is "closed"');
+  assert.equal(fs.existsSync(path.join(fake.logDir, 'r2p-reopen.log')), true);
+});
+
 test('gate9 current-stage checkpoint', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const workId = 'WF-20260627-gate9';
