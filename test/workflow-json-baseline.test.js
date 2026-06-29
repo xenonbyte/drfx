@@ -28,6 +28,8 @@ const REQUIRED_COMPACT_ALLOWLIST_ROWS = [
   ['fix-lifecycle', 'abort-fix'],
   ['fix-lifecycle', 'record-diff-review'],
   ['fix-lifecycle', 'finalize'],
+  ['r2p-repair', 'record-r2p-repair-plan'],
+  ['r2p-repair', 'apply-r2p-repair'],
   ['file-set', 'start-or-resume'],
   ['file-set', 'context'],
   ['file-set', 'record-review'],
@@ -327,6 +329,16 @@ const COMPACT_ALLOWLIST_MATRIX = [
     'receiptPath',
     'archivedStatePath',
     'archiveWarning'
+  ]),
+  compactRow('r2p-repair', 'record-r2p-repair-plan', [
+    ...STATUS_COMPACT_FIELDS,
+    ...WORKFLOW_IDENTITY_COMPACT_FIELDS,
+    'receiptPath'
+  ]),
+  compactRow('r2p-repair', 'apply-r2p-repair', [
+    ...STATUS_COMPACT_FIELDS,
+    ...WORKFLOW_IDENTITY_COMPACT_FIELDS,
+    'receiptPath'
   ]),
   compactRow('file-set', 'start-or-resume', [
     ...STATUS_COMPACT_FIELDS,
@@ -722,6 +734,36 @@ test('SCOPE-IN-001 compact allowlist matrix covers every generated-route workflo
         `${row.scope}/${row.command}.${field} lacks an allowed compact purpose`
       );
     }
+  }
+});
+
+test('SCOPE-IN-001 compact r2p repair commands route target-state output', () => {
+  const base = {
+    ok: true,
+    status: 'checkpoint',
+    targetStateDir: '/tmp/drfx-r2p-state',
+    targetKey: 'r2p-aaaaaaaaaaaa',
+    manifestPath: '/tmp/drfx-r2p-state/MANIFEST.md',
+    ledgerPath: '/tmp/drfx-r2p-state/LEDGER.md',
+    round: 1,
+    documentType: 'none',
+    strictness: 'normal',
+    requestedMode: 'review-and-fix',
+    mode: 'review-and-fix',
+    guardMode: 'git',
+    requestedAssurance: 'practical',
+    assurance: 'practical',
+    runtimePlatform: 'codex',
+    currentPhase: 'final',
+    receiptPath: '/tmp/drfx-r2p-state/rounds/001-r2p-repair.md'
+  };
+  for (const subcommand of ['record-r2p-repair-plan', 'apply-r2p-repair']) {
+    const compact = JSON.parse(formatWorkflowJson(base, { mode: 'compact', subcommand }));
+    assertCompactResponseFields(`r2p ${subcommand}`, compact, {
+      scope: 'r2p-repair',
+      command: subcommand,
+      requiredFields: ['targetStateDir', 'manifestPath', 'receiptPath']
+    });
   }
 });
 

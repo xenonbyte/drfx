@@ -90,6 +90,20 @@ const TRIAGE_ACCEPT = [
   '  non_blocking: false'
 ].join('\n');
 
+const TRIAGE_ACCEPT_SECOND = [
+  'Triage:',
+  '- reviewer_id: R001',
+  '  issue_id: ISSUE-002',
+  '  decision: accepted',
+  '  severity: high',
+  '  original_severity: high',
+  '  rationale: The repeated upstream gap remains real after the first repair.',
+  '  merged_into: none',
+  '  deferred_owner: none',
+  '  deferred_next_action: none',
+  '  non_blocking: false'
+].join('\n');
+
 const TRIAGE_ACCEPT_MULTI = [
   'Triage:',
   '- reviewer_id: R001',
@@ -506,6 +520,28 @@ test('gate3 workspace preflight', async (t) => {
   assert.equal(missingWorkspace.ok, false);
   assert.equal(missingWorkspace.blockingReason, 'r2p-workspace-not-found');
 
+  fs.mkdirSync(path.join(root, '.req-to-plan'), { recursive: true });
+  const missingRunPreflight = await runWorkflowCommand(
+    'preflight',
+    runtimeArgs([
+      'review-fix-r2p',
+      `workId=${workId}`,
+      'review-and-fix'
+    ], {
+      subagent: 'not-required',
+      stdin: 'not-required'
+    }),
+    {
+      cwd: root,
+      homeDir,
+      env
+    }
+  );
+  assert.equal(missingRunPreflight.ok, false, JSON.stringify(missingRunPreflight));
+  assert.equal(missingRunPreflight.blockingReason, 'r2p-run-not-found');
+  assert.equal(missingRunPreflight.errorCode, 'ERR_R2P_WORK_ID_MISSING');
+  fs.rmSync(path.join(root, '.req-to-plan'), { recursive: true, force: true });
+
   makeRun(root, workId, { underArchive: true });
   const archiveOnly = await startFor(root, homeDir, workId, [], { env });
   assert.equal(archiveOnly.ok, false);
@@ -732,6 +768,95 @@ test('gate5 apply-r2p-repair blocks missing or unsafe artifacts before r2p comma
   assert.equal(fs.existsSync(path.join(fake.logDir, 'r2p-reopen.log')), false);
 });
 
+test('gate5 apply-r2p-repair reserves receipt before mutating r2p command', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-gate5-receipt-reserve';
+  const runDir = makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'closed_at_plan_checkpoint',
+      current_stage: 'plan',
+      open_routes_detail: []
+    }),
+    'r2p-reopen': [
+      '#!/bin/sh',
+      'set -eu',
+      `printf "%s\\n" "$0|$*|R2P_JSON=\${R2P_JSON:-}" >> "${path.join(root, 'fake-r2p-logs', 'r2p-reopen.log')}"`,
+      `printf "%s\\n" "r2p-side-effect" >> "${path.join(runDir, '07-plan.md')}"`,
+      `printf "%s\\n" '${JSON.stringify({ new_work_id: 'WF-20260627-gate5-receipt-reserve-r1' })}'`
+    ].join('\n')
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+  const { start, triage } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
+
+  const roundsDir = path.join(start.targetStateDir, 'rounds');
+  const unsafeReceiptDir = path.join(root, 'unsafe-receipts');
+  fs.rmSync(roundsDir, { recursive: true, force: true });
+  fs.mkdirSync(unsafeReceiptDir, { recursive: true });
+  fs.symlinkSync(unsafeReceiptDir, roundsDir);
+
+  const apply = await runWorkflowCommand('apply-r2p-repair', [triage.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(apply.ok, false, JSON.stringify(apply));
+  assert.equal(apply.blockingReason, 'state-validation-failed');
+  assert.equal(fs.existsSync(path.join(fake.logDir, 'r2p-reopen.log')), false);
+  assert.doesNotMatch(fs.readFileSync(path.join(runDir, '07-plan.md'), 'utf8'), /r2p-side-effect/);
+
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'blocked');
+  assert.equal(manifest.blockingReason, 'state-validation-failed');
+});
+
+test('gate5 apply-r2p-repair records failed r2p command in reserved receipt', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-gate5-receipt-failure';
+  makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'closed_at_plan_checkpoint',
+      current_stage: 'plan',
+      open_routes_detail: []
+    }),
+    'r2p-reopen': [
+      '#!/bin/sh',
+      'set -eu',
+      `printf "%s\\n" "$0|$*|R2P_JSON=\${R2P_JSON:-}" >> "${path.join(root, 'fake-r2p-logs', 'r2p-reopen.log')}"`,
+      'printf "%s\\n" "failed stdout before exit"',
+      'printf "%s\\n" "failed stderr before exit" 1>&2',
+      'exit 7'
+    ].join('\n')
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+  const { start, triage } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
+
+  const apply = await runWorkflowCommand('apply-r2p-repair', [triage.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(apply.ok, false, JSON.stringify(apply));
+  assert.equal(apply.blockingReason, 'r2p-command-failed');
+  assert.equal(typeof apply.receiptPath, 'string');
+
+  const receipt = fs.readFileSync(apply.receiptPath, 'utf8');
+  assert.match(receipt, /- Status: blocked/);
+  assert.match(receipt, /- Blocking reason: r2p-command-failed/);
+  assert.match(receipt, /Command: r2p-reopen/);
+  assert.match(receipt, /Exit code: 7/);
+  assert.match(receipt, /Stdout: failed stdout before exit/);
+  assert.match(receipt, /Stderr: failed stderr before exit/);
+  assert.doesNotMatch(receipt, /receipt reserved before mutating r2p command/);
+
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'blocked');
+  assert.equal(manifest.blockingReason, 'r2p-command-failed');
+});
+
 test('gate5 r2p-authored change after apply-r2p-repair is allowed', async (t) => {
   const { root, homeDir } = makeSandbox(t);
   const workId = 'WF-20260627-gate5-apply';
@@ -761,6 +886,81 @@ test('gate5 r2p-authored change after apply-r2p-repair is allowed', async (t) =>
   });
   assert.equal(apply.ok, true, JSON.stringify(apply));
   assert.match(fs.readFileSync(path.join(runDir, '07-plan.md'), 'utf8'), /r2p-side-effect/);
+});
+
+test('gate5 retry apply-r2p-repair does not rerun fixed ledger issues', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-gate5-no-duplicate-apply';
+  makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'closed_at_plan_checkpoint',
+      current_stage: 'plan',
+      open_routes_detail: []
+    })
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+  const { triage } = await reachAcceptedRepairState(root, homeDir, workId, [], { env });
+
+  const firstApply = await runWorkflowCommand('apply-r2p-repair', [triage.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(firstApply.ok, true, JSON.stringify(firstApply));
+
+  const reopenLogPath = path.join(fake.logDir, 'r2p-reopen.log');
+  const firstLog = fs.readFileSync(reopenLogPath, 'utf8');
+  assert.equal(firstLog.trim().split('\n').length, 1);
+
+  const retry = await runWorkflowCommand('apply-r2p-repair', [triage.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(retry.ok, false, JSON.stringify(retry));
+  assert.equal(retry.blockingReason, 'r2p-repair-plan-ambiguous');
+  assert.equal(fs.readFileSync(reopenLogPath, 'utf8'), firstLog);
+});
+
+test('gate5 run.md refreshed before review becomes apply-r2p-repair baseline', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-gate5-runmd-refresh';
+  const runDir = makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'closed_at_plan_checkpoint',
+      current_stage: 'plan',
+      open_routes_detail: []
+    })
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+
+  const start = await startFor(root, homeDir, workId, [], { env });
+  assert.equal(start.ok, true, JSON.stringify(start));
+  fs.appendFileSync(path.join(runDir, 'run.md'), '\nr2p refreshed run metadata before review\n');
+
+  const context = await contextFor(root, homeDir, workId, [], { env });
+  assert.equal(context.ok, true, JSON.stringify(context));
+  const review = await recordReviewFor(root, homeDir, workId, [], { env });
+  assert.equal(review.ok, true, JSON.stringify(review));
+  const triage = await recordTriageFor(root, homeDir, workId, [], { env });
+  assert.equal(triage.ok, true, JSON.stringify(triage));
+
+  const manifestBeforeApply = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(
+    manifestBeforeApply.runMdSha256,
+    crypto.createHash('sha256').update(fs.readFileSync(path.join(runDir, 'run.md'))).digest('hex')
+  );
+
+  const apply = await runWorkflowCommand('apply-r2p-repair', [triage.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(apply.ok, true, JSON.stringify(apply));
 });
 
 test('gate5 unsupported repair status returns specific blocker without invalid manifest value', async (t) => {
@@ -865,6 +1065,7 @@ test('gate6 repair exec argv shell:false; capture new_work_id/route_id; checkpoi
   assert.equal(gapApply.statusReason, 'r2p-repair-applied');
   assert.equal(gapApply.routeId, 'ROUTE-001');
   assert.match(gapApply.nextAction, new RegExp(`review-fix-r2p workId=${gapWorkId}`));
+  assert.match(gapApply.nextAction, /\bresume\b/);
   assert.match(gapApply.nextAction, /r2p-continue/);
 
   const gapOpenLog = fs.readFileSync(path.join(fake.logDir, 'r2p-gap-open.log'), 'utf8');
@@ -1071,6 +1272,89 @@ test('gate7 resume keeps same-workId r2p repair receipts across regenerated arti
   });
   assert.equal(final.ok, true, JSON.stringify(final));
   assert.equal(final.status, 'pass');
+});
+
+test('same-workId r2p repair counts against rounds limit after resume', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-r2p-round-limit';
+  makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'active_stage_draft',
+      current_stage: 'plan',
+      open_routes_detail: [
+        { route_id: 'ROUTE-001', owner_stage: 'design', required_action: 'clarify design constraints' }
+      ]
+    })
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+
+  const { start } = await reachAcceptedRepairState(root, homeDir, workId, ['rounds=1'], { env });
+  const apply = await runWorkflowCommand('apply-r2p-repair', [start.targetStateDir, '--json'], {
+    cwd: root,
+    homeDir,
+    env
+  });
+  assert.equal(apply.ok, true, JSON.stringify(apply));
+  assert.equal(apply.routeId, 'ROUTE-001');
+  assert.match(apply.nextAction, /\bresume\b/);
+
+  const afterApply = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(Number(afterApply.fixAttemptCount), 1);
+  assert.equal(afterApply.status, 'checkpoint');
+
+  fs.appendFileSync(path.join(root, '.req-to-plan', workId, '07-plan.md'), '\nregenerated by r2p\n');
+  writeExecutable(path.join(fake.binDir, 'r2p-status'), statusScript({
+    work_id: workId,
+    status: 'closed_at_plan_checkpoint',
+    current_stage: 'plan',
+    open_routes_detail: []
+  }));
+
+  const resumed = await startFor(root, homeDir, workId, ['resume', 'rounds=1'], { env });
+  assert.equal(resumed.ok, true, JSON.stringify(resumed));
+  const refreshedContext = await contextFor(root, homeDir, workId, [], { env });
+  assert.equal(refreshedContext.ok, true, JSON.stringify(refreshedContext));
+  const secondReview = await recordReviewFor(root, homeDir, workId, [], {
+    env,
+    stdin: REVIEW_FAIL_WITH_OWNER_STAGE
+  });
+  assert.equal(secondReview.ok, true, JSON.stringify(secondReview));
+  const secondTriage = await recordTriageFor(root, homeDir, workId, [], {
+    env,
+    stdin: TRIAGE_ACCEPT_SECOND
+  });
+  assert.equal(secondTriage.ok, true, JSON.stringify(secondTriage));
+
+  const afterSecondTriage = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(Number(afterSecondTriage.fixAttemptCount), 1);
+  assert.equal(afterSecondTriage.status, 'stopped-with-deferrals');
+  assert.equal(afterSecondTriage.statusReason, 'round-limit');
+});
+
+test('r2p resume refuses changed roundLimit identity', async (t) => {
+  const { root, homeDir } = makeSandbox(t);
+  const workId = 'WF-20260627-r2p-round-limit-identity';
+  makeRun(root, workId);
+  const fake = installFakeR2pCli(root, {
+    'r2p-status': statusScript({
+      work_id: workId,
+      status: 'closed_at_plan_checkpoint',
+      current_stage: 'plan',
+      open_routes_detail: []
+    })
+  });
+  const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
+
+  const start = await startFor(root, homeDir, workId, [], { env });
+  assert.equal(start.ok, true, JSON.stringify(start));
+
+  const resumed = await startFor(root, homeDir, workId, ['resume', 'rounds=1'], { env });
+  assert.equal(resumed.ok, false, JSON.stringify(resumed));
+  assert.equal(resumed.blockingReason, 'state-validation-failed');
+  assert.equal(resumed.errorCode, 'ERR_FILE_SET_STALE_IDENTITY');
+  assert.deepEqual(resumed.staleIdentityFields, ['roundLimit']);
 });
 
 test('gate7 resume refreshes when only run.md drifted after r2p repair', async (t) => {
@@ -1564,8 +1848,12 @@ test('redaction receipt omits raw reason/secrets', async (t) => {
     'r2p-reopen': [
       '#!/bin/sh',
       'set -eu',
-      'printf "%s\\n" "SECRET_TOKEN=sk-live-redaction raw required_action=password" 1>&2',
-      `printf "%s\\n" '${JSON.stringify({ new_work_id: 'WF-20260627-redaction-r1' })}'`
+      'printf "%s\\n" "SECRET_TOKEN=sk-live-redaction raw required_action=multi word stderr instruction reason=multi word stderr reason" 1>&2',
+      `printf "%s\\n" '${JSON.stringify({
+        new_work_id: 'WF-20260627-redaction-r1',
+        reason: 'multi word stdout reason from reviewer context',
+        required_action: 'multi word stdout action from reviewer context'
+      })}'`
     ].join('\n')
   });
   const env = { ...process.env, PATH: `${fake.binDir}${path.delimiter}${process.env.PATH || ''}` };
@@ -1580,6 +1868,10 @@ test('redaction receipt omits raw reason/secrets', async (t) => {
   const receiptPath = path.join(root, 'r2p-repair-receipt.md');
   const receipt = writeReceipt({ ...apply, receiptPath }).receiptText;
   assert.doesNotMatch(receipt, /SECRET_TOKEN|sk-live|password/i);
+  assert.doesNotMatch(receipt, /multi word stdout reason/i);
+  assert.doesNotMatch(receipt, /multi word stdout action/i);
+  assert.doesNotMatch(receipt, /multi word stderr instruction/i);
+  assert.doesNotMatch(receipt, /multi word stderr reason/i);
   assert.doesNotMatch(receipt, /raw required_action/i);
   assert.equal(fs.existsSync(receiptPath), true);
 });
