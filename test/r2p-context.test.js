@@ -344,6 +344,82 @@ test('r2p persistent record-review blocks when protected run.md drifts after con
   assert.equal(review.blockingReason, 'reviewer-mutated-file');
 });
 
+test('r2p persistent record-review blocks structurally when a review artifact disappears after context', async (t) => {
+  const workId = 'WF-20260624-context-artifact-missing';
+  const { root, homeDir, wfDir, env } = makeR2pProject(t, workId);
+  const opts = { cwd: root, homeDir, env };
+  const args = r2pArgs(workId);
+
+  const start = await runWorkflowCommand('start', args, opts);
+  assert.equal(start.ok, true, JSON.stringify(start));
+  const context = await runWorkflowCommand('context', args, opts);
+  assert.equal(context.ok, true, JSON.stringify(context));
+
+  fs.rmSync(path.join(wfDir, '06-spec.md'));
+
+  const review = await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], {
+    ...opts,
+    stdin: [
+      'PASS',
+      'Summary: no blocking findings'
+    ].join('\n')
+  });
+
+  assert.equal(review.ok, false, JSON.stringify(review));
+  assert.equal(review.status, 'blocked');
+  assert.equal(review.blockingReason, 'r2p-artifact-missing-or-unsafe');
+  assert.equal(review.errorCode, 'ERR_R2P_ARTIFACT_MISSING');
+
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'blocked');
+  assert.equal(manifest.blockingReason, 'r2p-artifact-missing-or-unsafe');
+  assert.equal(manifest.runtimeFingerprintGuard, 'not-run');
+});
+
+test('r2p persistent record-review blocks structurally when the run is archived after context', async (t) => {
+  const workId = 'WF-20260624-context-archived';
+  const { root, homeDir, wfDir, env } = makeR2pProject(t, workId);
+  const opts = { cwd: root, homeDir, env };
+  const args = r2pArgs(workId);
+
+  const start = await runWorkflowCommand('start', args, opts);
+  assert.equal(start.ok, true, JSON.stringify(start));
+  const context = await runWorkflowCommand('context', args, opts);
+  assert.equal(context.ok, true, JSON.stringify(context));
+
+  const archiveRoot = path.join(root, '.req-to-plan', 'archive');
+  fs.mkdirSync(archiveRoot, { recursive: true });
+  fs.renameSync(wfDir, path.join(archiveRoot, workId));
+
+  const review = await runWorkflowCommand('record-review', [
+    ...args,
+    '--phase',
+    'initial-review',
+    '--result-stdin'
+  ], {
+    ...opts,
+    stdin: [
+      'PASS',
+      'Summary: no blocking findings'
+    ].join('\n')
+  });
+
+  assert.equal(review.ok, false, JSON.stringify(review));
+  assert.equal(review.status, 'blocked');
+  assert.equal(review.blockingReason, 'r2p-run-archived');
+  assert.equal(review.errorCode, 'ERR_R2P_WORK_ID_ARCHIVED');
+
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'blocked');
+  assert.equal(manifest.blockingReason, 'r2p-run-archived');
+  assert.equal(manifest.runtimeFingerprintGuard, 'not-run');
+});
+
 // ---------------------------------------------------------------------------
 // Persistent context re-resolves the active run on each step and reports
 // structured blockers when the review evidence disappears.
@@ -372,7 +448,7 @@ test('r2p persistent start accepts an incomplete-plan run.md when the active wor
   assert.equal(fs.existsSync(start.manifestPath), true);
 });
 
-test('r2p persistent context rejects when run.md is deleted after start', async (t) => {
+test('r2p persistent context blocks when run.md is deleted after start', async (t) => {
   const workId = 'WF-20260624-missing-run';
   const { root, homeDir, wfDir, env } = makeR2pProject(t, workId);
   const opts = { cwd: root, homeDir, env };
@@ -382,13 +458,19 @@ test('r2p persistent context rejects when run.md is deleted after start', async 
   assert.equal(start.ok, true, JSON.stringify(start));
   fs.rmSync(path.join(wfDir, 'run.md'));
 
-  await assert.rejects(
-    () => runWorkflowCommand('context', args, opts),
-    (error) => error.code === 'ERR_R2P_ARTIFACT_MISSING'
-  );
+  const context = await runWorkflowCommand('context', args, opts);
+  assert.equal(context.ok, false, JSON.stringify(context));
+  assert.equal(context.status, 'blocked');
+  assert.equal(context.blockingReason, 'r2p-artifact-missing-or-unsafe');
+  assert.equal(context.errorCode, 'ERR_R2P_ARTIFACT_MISSING');
+
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'blocked');
+  assert.equal(manifest.blockingReason, 'r2p-artifact-missing-or-unsafe');
+  assert.equal(manifest.runtimeFingerprintGuard, 'not-run');
 });
 
-test('r2p persistent context rejects when an owner doc is deleted after start', async (t) => {
+test('r2p persistent context blocks when an owner doc is deleted after start', async (t) => {
   const workId = 'WF-20260624-missing-doc';
   const { root, homeDir, wfDir, env } = makeR2pProject(t, workId);
   const opts = { cwd: root, homeDir, env };
@@ -398,8 +480,14 @@ test('r2p persistent context rejects when an owner doc is deleted after start', 
   assert.equal(start.ok, true, JSON.stringify(start));
   fs.rmSync(path.join(wfDir, '05-design.md'));
 
-  await assert.rejects(
-    () => runWorkflowCommand('context', args, opts),
-    (error) => error.code === 'ERR_R2P_ARTIFACT_MISSING'
-  );
+  const context = await runWorkflowCommand('context', args, opts);
+  assert.equal(context.ok, false, JSON.stringify(context));
+  assert.equal(context.status, 'blocked');
+  assert.equal(context.blockingReason, 'r2p-artifact-missing-or-unsafe');
+  assert.equal(context.errorCode, 'ERR_R2P_ARTIFACT_MISSING');
+
+  const manifest = parseManifestV2(fs.readFileSync(start.manifestPath, 'utf8'));
+  assert.equal(manifest.status, 'blocked');
+  assert.equal(manifest.blockingReason, 'r2p-artifact-missing-or-unsafe');
+  assert.equal(manifest.runtimeFingerprintGuard, 'not-run');
 });
