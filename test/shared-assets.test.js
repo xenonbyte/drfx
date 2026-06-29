@@ -119,19 +119,19 @@ const CODEX_SHARED_DEDUP_EXPECTED_MEASUREMENT = Object.freeze({
       wouldGrow: false
     }),
     'review-fix-r2p': Object.freeze({
-      routeBytes: 81459,
-      embeddedSharedBytes: 61139,
+      routeBytes: 81693,
+      embeddedSharedBytes: 61163,
       copiedSharedBytes: 60521,
       duplicateBytes: 60521,
-      copiedRouteBytes: 21526,
-      shrinkBytes: 59933,
-      shrinkPercent: 73.57,
+      copiedRouteBytes: 21736,
+      shrinkBytes: 59957,
+      shrinkPercent: 73.39,
       wouldGrow: false
     })
   }),
   totals: Object.freeze({
-    routeBytes: 580197,
-    embeddedSharedBytes: 419651,
+    routeBytes: 580431,
+    embeddedSharedBytes: 419675,
     copiedSharedBytes: 417366,
     duplicateBytes: 417366
   }),
@@ -468,6 +468,32 @@ test('generated r2p route text uses workId shorthand and exposes no user-facing 
       /cannot run repair commands from the current run state[\s\S]*r2p-reopen[\s\S]*r2p-gap-open/i,
       `${platform}:review-fix-r2p must render workId/run-state preflight blocker guidance in the full route`
     );
+  }
+});
+
+test('generated r2p workflow commands preserve the root override token', () => {
+  const SNAPSHOT_VERSION = '0.0.0-snapshot';
+
+  for (const platform of ['claude', 'codex', 'gemini', 'opencode']) {
+    const rendered = renderPlatformRoute(platform, 'review-fix-r2p', { packageVersion: SNAPSHOT_VERSION });
+    const commandLines = generatedWorkflowCommandLines(rendered)
+      .filter((line) => line.includes('review-fix-r2p'));
+
+    assert.ok(commandLines.length > 0, `${platform}:review-fix-r2p must render invocation-based workflow commands`);
+    for (const line of commandLines) {
+      assert.match(
+        line,
+        /workId=<WF-\.\.\.> <rootToken>/,
+        `${platform}:review-fix-r2p workflow command must propagate root=<project-root>: ${line}`
+      );
+    }
+    if (platform !== 'gemini') {
+      assert.match(
+        rendered,
+        /rerun `review-fix-r2p workId=<new-or-same-WF-\.\.\.> <rootToken>`/,
+        `${platform}:review-fix-r2p rerun guidance must preserve root=<project-root>`
+      );
+    }
   }
 });
 

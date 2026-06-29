@@ -15,7 +15,7 @@ A bare `WF-...` token is valid shorthand. When a valid `workId=<WF-...>` is pres
 This route reviews the `07-plan.md` anchor against `03-06`, but `03-07` and `run.md` remain read-only evidence. Repair means `r2p-reopen` or `r2p-gap-open` only, followed by `r2p-continue` and a rerun before PASS.
 This route has a fixed PLAN rubric and exposes no `assurance=` or `guard=` token; for `review-and-fix` it internally materializes `practical` assurance.
 It does not accept `target=`, `ref=`, `strict`, `normal`, `assurance=`, `ledger=`, `scope=`, `base=`, or `guard=`.
-The generated route must materialize effective mode and assurance before workflow calls; never pass omitted values through to `drfx workflow`.
+The generated route must materialize effective mode, assurance, and `<rootToken>` before workflow calls; `<rootToken>` is the original `root=<project-root>` token when supplied, otherwise omitted.
 Help-style or invalid invocations explain usage without reading files, running probes, creating state, or declaring review results.
 
 ## Route Contract
@@ -143,7 +143,7 @@ Generated routes must not pin concrete model names. Runtime readiness probes may
 When effective mode is `review-and-fix`, run write eligibility preflight before runtime readiness probe, semantic reviewer dispatch, semantic document review, and target-local workflow state creation:
 
 ```text
-drfx workflow preflight review-fix-r2p workId=<WF-...> review-and-fix --assurance <selectedAssurance> --runtime-platform opencode --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --json=compact
+drfx workflow preflight review-fix-r2p workId=<WF-...> <rootToken> review-and-fix --assurance <selectedAssurance> --runtime-platform opencode --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --json=compact
 ```
 
 This generated opencode route uses `--runtime-platform opencode`.
@@ -193,7 +193,7 @@ drfx doctor --platform opencode --json
 Read the JSON object, then extract `runId`, `descriptorDirectory`, and `platforms.opencode.descriptorPath`. Let `<selectedMode>` be the effective mode from the Invocation Gate. In this strict verified branch, `<selectedAssurance>` is `strict-verified`. Materialize `<stateControlToken>` as `reset` only when the current invocation includes `reset`; otherwise omit it. Pass those current-run values to workflow start:
 
 ```text
-drfx workflow start review-fix-r2p workId=<WF-...> <selectedMode> <stateControlToken> rounds=<roundLimit> --assurance strict-verified --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json=compact
+drfx workflow start review-fix-r2p workId=<WF-...> <rootToken> <selectedMode> <stateControlToken> rounds=<roundLimit> --assurance strict-verified --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json=compact
 ```
 
 For an internal strict-verified `review-and-fix` r2p start, `<selectedMode>` must be `review-and-fix`; do not silently substitute `read-only`. After strict verified start succeeds, continue the persistent review-and-fix loop from the returned `targetStateDir`; the manifest carries the effective strict verified assurance.
@@ -205,21 +205,21 @@ Do not scrape human-readable `drfx doctor` output. Do not reuse a cached descrip
 For the materialized practical path, after successful probes, start persistent state:
 
 ```text
-drfx workflow start review-fix-r2p workId=<WF-...> review-and-fix <stateControlToken> rounds=<roundLimit> --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json=compact
+drfx workflow start review-fix-r2p workId=<WF-...> <rootToken> review-and-fix <stateControlToken> rounds=<roundLimit> --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json=compact
 ```
 
 This persistent practical command is the materialized default path: `<selectedMode>` is `review-and-fix`, `<selectedAssurance>` is `practical`, and `<stateControlToken>` is `reset` only for explicit reset starts. The route exposes no `guard=` token; drift detection is internal and always on. If the internal strict-verified branch is selected, use the strict verified start command above with effective `<selectedMode>` set to `review-and-fix`.
 Then coordinate this loop:
 
-1. Run persistent context with `drfx workflow context review-fix-r2p workId=<WF-...> review-and-fix --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json=compact`.
+1. Run persistent context with `drfx workflow context review-fix-r2p workId=<WF-...> <rootToken> review-and-fix --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json=compact`.
 2. Build the reviewer prompt in memory from the context manifest plus review-file reads. Do not write prompt text or run artifacts to disk.
-3. Spawn a read-only reviewer subagent and submit its exact output with `drfx workflow record-review review-fix-r2p workId=<WF-...> review-and-fix --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --result-stdin --json=compact`.
+3. Spawn a read-only reviewer subagent and submit its exact output with `drfx workflow record-review review-fix-r2p workId=<WF-...> <rootToken> review-and-fix --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --result-stdin --json=compact`.
 4. If `record-review` returns `PASS`, finalize through `drfx workflow finalize <targetStateDir> --final-response-stdin --json=compact`; PASS is allowed only when this rerun is clean and no repair command ran in the current round.
-5. If `record-review` returns `FAIL`, triage every finding semantically and submit the triage with `drfx workflow record-triage review-fix-r2p workId=<WF-...> review-and-fix --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --triage-stdin --json=compact`.
+5. If `record-review` returns `FAIL`, triage every finding semantically and submit the triage with `drfx workflow record-triage review-fix-r2p workId=<WF-...> <rootToken> review-and-fix --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --triage-stdin --json=compact`.
 6. If accepted, reopened, or downgraded high/medium blocking issues remain, run `drfx workflow record-r2p-repair-plan <targetStateDir> --json=compact`.
 7. Apply the validated repair command with `drfx workflow apply-r2p-repair <targetStateDir> --json=compact`. Direct artifact writes are forbidden: do not run `begin-fix`, `refresh-lock`, `end-fix`, `abort-fix`, or `record-diff-review` for r2p.
-8. After `apply-r2p-repair`, stop at checkpoint. Tell the user to run `r2p-continue`, let r2p regenerate artifacts, then rerun `review-fix-r2p workId=<new-or-same-WF-...>`.
-9. If triage leaves no accepted, reopened, or downgraded high/medium blocking issues after a reviewer `FAIL`, run full re-review context with `drfx workflow context review-fix-r2p workId=<WF-...> review-and-fix --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --json=compact`, then record the full re-review with `drfx workflow record-review review-fix-r2p workId=<WF-...> review-and-fix --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --result-stdin --json=compact`. Finalize only if that latest reviewer result is `PASS`.
+8. After `apply-r2p-repair`, stop at checkpoint. Tell the user to run `r2p-continue`, let r2p regenerate artifacts, then rerun `review-fix-r2p workId=<new-or-same-WF-...> <rootToken>`.
+9. If triage leaves no accepted, reopened, or downgraded high/medium blocking issues after a reviewer `FAIL`, run full re-review context with `drfx workflow context review-fix-r2p workId=<WF-...> <rootToken> review-and-fix --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --json=compact`, then record the full re-review with `drfx workflow record-review review-fix-r2p workId=<WF-...> <rootToken> review-and-fix --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase full-re-review --result-stdin --json=compact`. Finalize only if that latest reviewer result is `PASS`.
 Direct artifact writes are forbidden for r2p. Do not materialize or pass `guard=`. The route still performs internal drift detection over `run.md` and `03-07` before repair commands, and it may repair only through `r2p-reopen` or `r2p-gap-open`.
 
 ## No-State Read-Only Flow
@@ -236,15 +236,15 @@ Use the materialized `<selectedAssurance>` to choose runtime fields. The r2p rou
 Practical read-only no-state path starts with:
 
 ```text
-drfx workflow context --no-state review-fix-r2p workId=<WF-...> read-only --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json=compact
+drfx workflow context --no-state review-fix-r2p workId=<WF-...> <rootToken> read-only --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --json=compact
 ```
 
 Submit practical review, triage, and final response by repeating the same practical runtime fields:
 
 ```text
-drfx workflow record-review --no-state review-fix-r2p workId=<WF-...> read-only --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json=compact
-drfx workflow record-triage --no-state review-fix-r2p workId=<WF-...> read-only --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json=compact
-drfx workflow finalize --no-state review-fix-r2p workId=<WF-...> read-only --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json=compact
+drfx workflow record-review --no-state review-fix-r2p workId=<WF-...> <rootToken> read-only --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --review-guard <reviewGuard> --result-stdin --json=compact
+drfx workflow record-triage --no-state review-fix-r2p workId=<WF-...> <rootToken> read-only --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --phase initial-review --state-token <latestStateToken> --triage-stdin --json=compact
+drfx workflow finalize --no-state review-fix-r2p workId=<WF-...> <rootToken> read-only --assurance practical --runtime-platform opencode --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --state-token <latestStateToken> --final-response-stdin --json=compact
 ```
 
 No-state final status is `read-only-clean`, `read-only-findings`, `blocked`, or `unsupported`; never `pass`.

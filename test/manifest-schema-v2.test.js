@@ -389,11 +389,16 @@ test('r2p-kind blocked manifest accepts r2p blocker reasons', () => {
   assert.equal(formatManifestV2(parsed), text);
 });
 
-test('r2p-kind manifest requires a non-empty workId value', () => {
+test('r2p-kind manifest requires a valid single-segment workId value', () => {
   for (const workId of [
     '',
     'none',
-    '   '
+    '   ',
+    'WF-20260627/feature-x',
+    'archive/WF-20260627-feature-x',
+    '../WF-20260627-feature-x',
+    'WF-20260627-..-feature-x',
+    'REQ-20260627-feature-x'
   ]) {
     assert.throws(
       () => formatManifestV2(makeR2pManifest({ workId })),

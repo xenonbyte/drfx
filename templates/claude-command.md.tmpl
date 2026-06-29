@@ -105,7 +105,7 @@ Generated routes must not pin concrete model names. Runtime readiness probes may
 When effective mode is `review-and-fix`, run write eligibility preflight before runtime readiness probe, semantic reviewer dispatch, {{REVIEW_SEMANTIC_NOUN}}, and target-local workflow state creation:
 
 ```text
-drfx workflow preflight {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix{{WORKFLOW_GUARD_TOKEN}} --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --json=compact
+drfx workflow preflight {{ROUTE_NAME}} {{WORKFLOW_TARGET_TOKEN}} review-and-fix{{WORKFLOW_GUARD_TOKEN}} --assurance <selectedAssurance> --runtime-platform claude-code --runtime-subagent-probe not-required --runtime-stdin-handoff not-required --runtime-downgrade-reason none --json=compact
 ```
 
 For Codex, use `--runtime-platform codex`.
@@ -153,7 +153,7 @@ drfx doctor --platform claude --json
 {{STRICT_VERIFIED_SELECTED_MODE_TEXT}}
 
 ```text
-drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} <selectedMode>{{STATE_CONTROL_TOKEN}}{{ROUNDS_TOKEN}}{{WORKFLOW_GUARD_TOKEN}} --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json=compact
+drfx workflow start {{ROUTE_NAME}} {{WORKFLOW_TARGET_TOKEN}} <selectedMode>{{STATE_CONTROL_TOKEN}}{{ROUNDS_TOKEN}}{{WORKFLOW_GUARD_TOKEN}} --assurance strict-verified --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --capability-descriptor <descriptorPath> --descriptor-directory <descriptorDirectory> --proof-run-id <runId> --json=compact
 ```
 
 {{STRICT_VERIFIED_REVIEW_AND_FIX_TEXT}}
@@ -165,7 +165,7 @@ Do not scrape human-readable `drfx doctor` output. Do not reuse a cached descrip
 {{PERSISTENT_PRACTICAL_INTRO_TEXT}}
 
 ```text
-drfx workflow start {{ROUTE_NAME}} {{TARGET_TOKEN}} review-and-fix{{STATE_CONTROL_TOKEN}}{{ROUNDS_TOKEN}}{{WORKFLOW_GUARD_TOKEN}} --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json=compact
+drfx workflow start {{ROUTE_NAME}} {{WORKFLOW_TARGET_TOKEN}} review-and-fix{{STATE_CONTROL_TOKEN}}{{ROUNDS_TOKEN}}{{WORKFLOW_GUARD_TOKEN}} --assurance practical --runtime-platform claude-code --runtime-subagent-probe ready --runtime-stdin-handoff ready --runtime-downgrade-reason none --json=compact
 ```
 
 {{PERSISTENT_PRACTICAL_SUMMARY_TEXT}}

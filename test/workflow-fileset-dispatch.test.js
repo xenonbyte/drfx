@@ -93,6 +93,50 @@ function freshR2pProject(t) {
   return root;
 }
 
+function writeExecutable(filePath, body) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, body, { mode: 0o755 });
+}
+
+function installFakeR2pCli(root, workId) {
+  const binDir = path.join(root, 'fake-r2p-bin');
+  const statusPayload = JSON.stringify([{
+    work_id: workId,
+    status: 'closed_at_plan_checkpoint',
+    current_stage: 'plan',
+    open_routes_detail: []
+  }]);
+  const scripts = {
+    'r2p-status': [
+      '#!/bin/sh',
+      'set -eu',
+      `printf "%s\\n" '${statusPayload}'`
+    ].join('\n'),
+    'r2p-reopen': [
+      '#!/bin/sh',
+      'set -eu',
+      'printf "%s\\n" \'{"new_work_id":"WF-fake-reopen"}\''
+    ].join('\n'),
+    'r2p-gap-open': [
+      '#!/bin/sh',
+      'set -eu',
+      'printf "%s\\n" \'{"route_id":"route-fake","staled_stages":["plan"]}\''
+    ].join('\n'),
+    'r2p-continue': [
+      '#!/bin/sh',
+      'set -eu',
+      'printf "%s\\n" \'{"ok":true}\''
+    ].join('\n')
+  };
+  for (const [name, body] of Object.entries(scripts)) {
+    writeExecutable(path.join(binDir, name), body);
+  }
+  return {
+    ...process.env,
+    PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`
+  };
+}
+
 test('resolveRouteTargetMetadata derives a pr-<hash> file-set key, never deriveTargetKey on undefined target', (t) => {
   const root = freshRepo(t);
   const parsed = parsedFor('review-fix-pr', ['base=main', 'read-only']);
@@ -270,6 +314,32 @@ test('file-set write eligibility preflight lets oversized whole-root CODE reach 
   assert.equal(result.targetOnlyGuard.status, 'partitioning-deferred');
   assert.equal(result.targetOnlyGuard.reason, 'whole-root-over-cap');
   assert.equal(result.blockingReason, 'none');
+});
+
+test('r2p write eligibility preflight skips git file-set guards', async (t) => {
+  const root = freshR2pProject(t);
+  const env = installFakeR2pCli(root, 'WF-1');
+  const result = await runWorkflowCommand('preflight', [
+    'review-fix-r2p',
+    'workId=WF-1',
+    'review-and-fix',
+    '--assurance',
+    'practical',
+    '--runtime-platform',
+    'codex',
+    '--runtime-subagent-probe',
+    'not-required',
+    '--runtime-stdin-handoff',
+    'not-required',
+    '--json'
+  ], { cwd: root, env });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.status, 'write-eligible');
+  assert.equal(result.routeKind, 'r2p');
+  assert.equal(result.blockingReason, 'none');
+  assert.equal(result.targetOnlyGuard.status, 'not-applicable');
+  assert.equal(result.targetOnlyGuard.reason, 'r2p-repair-uses-lifecycle-commands');
 });
 
 test('advisory review-and-fix PR start dispatches to unsupported (file-set context resolved, no crash)', async (t) => {
