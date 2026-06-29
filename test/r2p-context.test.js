@@ -179,10 +179,11 @@ function r2pArgsForWorkId(workId) {
 }
 
 // ---------------------------------------------------------------------------
-// Persistent context: editable set is exactly 03–07; run.md is protected.
+// Persistent context: the read-only review set is exactly 03–07; run.md is protected
+// and no artifact is editable (direct writes forbidden).
 // ---------------------------------------------------------------------------
 
-test('r2p persistent start + context assembles the 03–07 editable set with run.md protected', async (t) => {
+test('r2p persistent start + context assembles the 03–07 read-only review set with run.md protected', async (t) => {
   const workId = 'WF-20260624-context';
   const { root, homeDir, wfDir, env } = makeR2pProject(t, workId);
   const opts = { cwd: root, homeDir, env };
@@ -276,7 +277,7 @@ test('r2p persistent record-review blocks when context has not established revie
 
 // ---------------------------------------------------------------------------
 // Persisted manifest round-trips as targetContextKind:'r2p' with run.md
-// fingerprint + editable-set fingerprint.
+// fingerprint + read-only review-set fingerprint.
 // ---------------------------------------------------------------------------
 
 test('r2p persistent manifest round-trips with targetContextKind r2p + run.md fingerprint', async (t) => {

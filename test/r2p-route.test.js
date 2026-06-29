@@ -1,14 +1,9 @@
 'use strict';
 
-// PLAN-TASK-001
-//
-// RED contract suite for the new workId-based review-fix-r2p route. These tests
-// are intentionally ahead of the implementation tasks that will make them pass.
-// Their job in this task is to:
-// 1. name the gate 1-10 / redaction / drift cases explicitly;
-// 2. provide a fake req-to-plan CLI harness that emits documented R2P_JSON payloads;
-// 3. execute under `node --test test/r2p-route.test.js` so later tasks can turn the
-//    suite green incrementally.
+// Contract suite for the workId-based review-fix-r2p route. It:
+// 1. covers the gate 1-10 / redaction / drift cases explicitly;
+// 2. provides a fake req-to-plan CLI harness that emits documented R2P_JSON payloads;
+// 3. runs under `node --test test/r2p-route.test.js`.
 
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
