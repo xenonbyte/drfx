@@ -20,7 +20,7 @@ Help-style or invalid invocations explain usage without reading files, running p
 - Users must not pass `target=`, `type`, `ref=`, `base=`, `assurance=`, `strict`, `normal`, or `ledger=`; this route has no document type and no reference documents.
 - The review judges the resolved source file set, not a single document. Discover the in-scope source files deterministically, then review correctness, architecture, state-and-io, safety, tests, contracts, and maintainability.
 - Code review is actionable-only: pure style preferences, no-risk refactors, and over-abstraction are not blocking.
-- Public CLI commands are `drfx doctor`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.
+- Public CLI commands are `drfx version`, `drfx help`, `drfx doctor`, `drfx status`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.
 - The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, code editing, diff judgment, and final coordinator agreement are LLM work.
 - Do not trust old or stale descriptor files for automatic fixing or workflow PASS.
 - For resume, read `.drfx/targets/<target-key>/`.

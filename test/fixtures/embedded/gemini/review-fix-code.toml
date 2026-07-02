@@ -22,7 +22,7 @@ The fix loop is bounded: after a deterministic fix-attempt cap (default 5 fixes 
 
 The generated route coordinates host LLM work with deterministic `drfx workflow ...` commands. The CLI validates inputs, guards, state, tokens, and machine payload shapes. It does not perform semantic review, semantic triage, target edits, diff judgment, or final coordinator agreement.
 
-Generated Codex, Claude Code, and opencode routes default a valid target invocation to `review-and-fix assurance=practical` when mode and assurance are omitted. Explicit `assurance=advisory` without mode selects `read-only` on Codex, Claude Code, and opencode. Generated Gemini routes default a valid target invocation to `read-only assurance=advisory`. Help-style or invalid invocations explain usage only and must not read target/reference bodies, run workflow commands, run probes, create state, or declare a review result.
+Generated Codex, Claude Code, and opencode routes default a valid target invocation to `review-and-fix assurance=practical` when mode and assurance are omitted. For document/PR/CODE routes on Codex, Claude Code, and opencode, explicit `assurance=advisory` without mode selects `read-only`; `review-fix-r2p` has its own invocation grammar and does not accept user-facing `assurance=`. Generated Gemini routes default a valid target invocation to `read-only assurance=advisory`. Help-style or invalid invocations explain usage only and must not read target/reference bodies, run workflow commands, run probes, create state, or declare a review result.
 
 Usage prefers a bare path target for document routes, for example `review-fix-spec docs/spec.md`. The full form `target=<path>` remains supported there; a bare path is shorthand for `target=<path>`. The r2p route is different: it uses `workId=<WF-...>` or a bare `WF-...` token and exposes no `guard=` token. For document/PR/CODE routes, `guard=git|snapshot` selects the rollback and target-only guard family. `guard=snapshot` monitors the target, explicit `ref=` documents, ordinary project files, and unrelated file symlinks as opaque entries. Well-known infrastructure directories (`.git`, `node_modules`, `.pnpm-store`, `.yarn`, `.cache`, `dist`, `build`, `coverage`) are excluded from monitoring unless the target or a reference lives inside one; when any directory is excluded the guard reports `monitorScope: project-tree-files-and-references-excluding-infrastructure`. Directory symlinks are not supported and block the guard. Opaque file-symlink entries are checked by symlink metadata and `readlink` target text, but they do not detect writes made through the symlink to its resolved target; directory symlinks remain unsupported for that reason.
 
@@ -212,8 +212,8 @@ Final status: pass | read-only-clean | read-only-findings | stopped-with-deferra
 Assurance: practical | strict-verified | advisory
 Runtime platform: codex | claude-code | gemini | opencode | manual
 Mode: review-and-fix | read-only
-Target: <target path for document routes, or none for PR/CODE/r2p file-set routes>
-Files changed: <none, the exact target path for document routes, or comma-separated in-set relative paths for PR/CODE/r2p file-set routes>
+Target: <target path for document routes, none for PR/CODE file-set routes, or workId=<WF-...> for r2p>
+Files changed: <none, the exact target path for document routes, comma-separated in-set relative paths for PR/CODE file-set routes, or none for r2p>
 Fixed issue IDs: <none or comma-separated ISSUE-### values>
 Verification performed: <redacted summary>
 Deferrals or blockers: <none or redacted issue/blocker summary with owner and next action when applicable>
@@ -289,12 +289,12 @@ Project-root `.drfx/rules/` is shared project configuration, not target state. D
 
 ## Manifest Fields
 
-`MANIFEST.md` records enough state to resume safely. The manifest carries an optional `Target context kind` discriminator (`document`, `pr`, or `code`); absent means `document`, so existing document manifests are unchanged. The identity block varies by kind; the shared workflow fields below apply to every kind.
+`MANIFEST.md` records enough state to resume safely. The manifest carries an optional `Target context kind` discriminator (`document`, `pr`, `code`, or `r2p`); absent means `document`, so existing document manifests are unchanged. The identity block varies by kind; the shared workflow fields below apply to every kind.
 
 Shared fields (all kinds):
 
 - Manifest schema: `2`.
-- Target context kind: `document`, `pr`, or `code` (omitted for document, which is the default).
+- Target context kind: `document`, `pr`, `code`, or `r2p` (omitted for document, which is the default).
 - Strictness: `normal` or `strict`.
 - Mode: `review-and-fix` or `read-only`.
 - Assurance: `practical`, `strict-verified`, or `advisory`.
@@ -324,6 +324,12 @@ File-set (PR/CODE) target context identity:
 - A deterministic file-set fingerprint over the resolved files identifies the reviewed set; a changed fingerprint means the set drifted.
 - PR records the base ref plus the resolved base, merge-base, and HEAD commits.
 - CODE records the normalized scopes and the mandatory exclusion list.
+
+R2P target context identity:
+
+- Document type is `PLAN`; the reviewed anchor is `07-plan.md` inside the active run.
+- Target context kind is `r2p`, and the manifest records `workId`.
+- The `03-07` review-set fingerprint and the `run.md` sha256 gate repair commands; any mismatch blocks repair and requires rerun or r2p lifecycle recovery.
 
 If `ledger=` is supplied, record the resolved target-local ledger path. A custom ledger must stay inside `.drfx/targets/<target-key>/` and must not point to reserved state files, `LOCK/`, `stale-locks/`, or `rounds/`.
 
@@ -402,14 +408,14 @@ When stale state can no longer be resumed (for example after an exclusion-policy
 
 On `resume`:
 
-1. Derive the target key from the requested target context identity (document: the normalized target path; PR/CODE: the route kind plus base/scope identity).
+1. Derive the target key from the requested target context identity (document: the normalized target path; PR/CODE: the route kind plus base/scope identity; r2p: the route kind plus workId).
 2. Read that target's `MANIFEST.md`.
 3. Read the manifest `Ledger path`, defaulting to target-local `ISSUES.md`.
 4. Read `CONTINUITY.md` when present.
-5. Confirm the manifest target context matches the requested one (document: the manifest target path matches the requested target; PR/CODE: the base/scope identity and file-set fingerprint match).
+5. Confirm the manifest target context matches the requested one (document: the manifest target path matches the requested target; PR/CODE: the base/scope identity and file-set fingerprint match; r2p: the workId, review-set fingerprint, and run.md gate hash match).
 6. Restore strictness and mode from the manifest unless the user explicitly asks to change them.
-7. Rebuild the merged rule set from current shared rubrics (document routes) or the route-kind rule stack (PR/CODE), plus user-global and project-local rules.
-8. Recompute the current target context identity and compare it with the manifest: document routes compare the content fingerprint; PR/CODE routes compare the file-set fingerprint.
+7. Rebuild the merged rule set from current shared rubrics (document and r2p routes) or the route-kind rule stack (PR/CODE), plus user-global and project-local rules.
+8. Recompute the current target context identity and compare it with the manifest: document routes compare the content fingerprint; PR/CODE routes compare the file-set fingerprint; r2p compares the review-set fingerprint and run.md gate hash.
 9. Continue from the recorded next action only when state is still valid.
 
 If the current invocation supplies different strictness or mode from the manifest, stop and ask whether to resume with manifest values or start a new review round. A `read-only` manifest must not resume into `review-and-fix` without explicit user confirmation.
@@ -525,7 +531,7 @@ You are the reviewer subagent for the drfx review-fix loop.
 
 Mode: read-only. Do not modify files. A read-only review never claims PASS on its own; PASS is decided by the coordinator only after a full re-review.
 
-Target context: a single target document for document routes, or the full resolved file set for PR/CODE routes (review the whole set, not only a sample). The fields below describe the document-route case; PR/CODE routes carry no fixed document type.
+Target context: a single target document for document routes, the full resolved file set for PR/CODE routes (review the whole set, not only a sample), or the active workId run for r2p. The fields below describe the document-route case; PR/CODE routes carry no fixed document type.
 
 Target document: <path>
 Reference documents: <paths, read-only>
@@ -540,10 +546,10 @@ Changed since last review:
 <fixed issue IDs and section anchors from the last fix, or none>
 
 Objective:
-Review the full target context and decide whether it can PASS. The target context is the single target document for document routes, or the entire resolved file set (every file, not a sample) for PR/CODE routes.
+Review the full target context and decide whether it can PASS. The target context is the single target document for document routes, the entire resolved file set (every file, not a sample) for PR/CODE routes, or the read-only r2p review set for r2p.
 
 Instructions:
-- Review the whole target context — the whole target document for document routes, or every file in the resolved file set for PR/CODE routes — not only recent changes.
+- Review the whole target context — the whole target document for document routes, every file in the resolved file set for PR/CODE routes, or the full read-only r2p review set — not only recent changes.
 - If the context pack includes "Changed since last review", still review the whole target context, but additionally focus on those sections and fixed issue IDs for regressions or new contradictions introduced by the last fix. Do not narrow the review to only those areas.
 - Use reference documents only to check consistency, coverage, and constraints.
 - Treat `ref=` documents as consistency sources, not mandatory upstream chains.
@@ -590,7 +596,7 @@ Findings:
 ```text
 You are the fixer subagent for the drfx review-fix loop.
 
-Target context: the target document for document routes, or the resolved file set for PR/CODE routes.
+Target context: the target document for document routes, the resolved file set for PR/CODE routes, or the active workId run for r2p.
 Target document (document routes): <path>
 Reference documents: <paths, read-only>
 
@@ -647,7 +653,7 @@ You are the coordinator for the drfx review-fix loop.
 
 Own the review-fix loop. Use reviewer subagents for every read-only review. Fix accepted issues directly by default, or use one serial fixer subagent only for bounded accepted issue lists.
 
-Target context: the single target document for document routes, or the full resolved file set for PR/CODE routes. The Target document / Document type / Entry skill fields below describe the document-route case; PR/CODE routes carry no fixed document type and review the resolved file set instead.
+Target context: the single target document for document routes, the full resolved file set for PR/CODE routes, or the active workId run for r2p. The Target document / Document type / Entry skill fields below describe the document-route case; PR/CODE routes carry no fixed document type and review the resolved file set instead.
 
 Target document: <path>
 Reference documents: <paths, read-only>
@@ -663,7 +669,7 @@ Reference documents: <paths, read-only>
 Document type: <SPEC|PLAN|DESIGN|COMMON>
 Strictness: <normal|strict>
 Mode: <review-and-fix|read-only>
-Objective: review the full target context (whole document, or the entire resolved file set for PR/CODE routes), fix confirmed blocking issues when mode permits, and continue until a defined terminal or pause state.
+Objective: review the full target context (whole document, the entire resolved file set for PR/CODE routes, or the full read-only r2p review set), fix confirmed blocking issues when mode permits, and continue until a defined terminal or pause state.
 Merged rule set: <workflow hard constraints + COMMON rubric + type rubric + user-global rules + project-local rules>
 Accepted non-blocking low issues: <issue IDs and anchors, or none>
 Changed since last review: <fixed issue IDs and section anchors from the last fix, or none>
@@ -671,7 +677,7 @@ Constraints:
 - reviewer subagent is mandatory and read-only
 - fixer subagent is optional and serial
 - coordinator fixes directly by default
-- only the target context may be modified: the target document for document routes, or the resolved file set for PR/CODE routes
+- only the target context may be modified: the target document for document routes, or the resolved file set for PR/CODE routes; r2p direct artifact writes are forbidden
 - reference documents are read-only
 - ref= documents are consistency sources, not mandatory upstream chains
 - no unconfirmed background, requirements, or external facts

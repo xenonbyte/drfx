@@ -21,6 +21,7 @@ const {
   readRunStatus,
   mapRepairMode,
   buildRepairPlan,
+  statusMatchesCommandKind,
   driftGuard,
   runRepairCommand,
   writeReceipt
@@ -1363,6 +1364,12 @@ test('gate5 apply-r2p-repair rejects live command drift from recorded plan', asy
   assert.equal(apply.blockingReason, 'r2p-drift-detected');
   assert.equal(fs.existsSync(path.join(fake.logDir, 'r2p-reopen.log')), false);
   assert.equal(fs.existsSync(path.join(fake.logDir, 'r2p-gap-open.log')), false);
+});
+
+test('gate5 r2p-gap-open live status guard rejects next_stage', () => {
+  assert.equal(statusMatchesCommandKind('r2p-gap-open', 'active_stage_draft'), true);
+  assert.equal(statusMatchesCommandKind('r2p-gap-open', 'next_stage'), false);
+  assert.equal(statusMatchesCommandKind('r2p-gap-open', 'closed_at_plan_checkpoint'), false);
 });
 
 test('gate5 apply-r2p-repair rejects accepted finding drift from recorded plan', async (t) => {

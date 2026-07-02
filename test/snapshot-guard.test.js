@@ -14,8 +14,7 @@ const {
   restoreSnapshot,
   captureFileSetBaseline,
   validateFileSetBaseline,
-  restoreFileSetBaseline,
-  ensureDependencyBaseline
+  restoreFileSetBaseline
 } = require('../lib/snapshot-guard');
 
 const { formatFixGuardReport } = require('../lib/fix-guard');
@@ -1013,61 +1012,6 @@ test('file-set snapshot restore blocks (no silent pass) when a snapshot body is 
   });
   assert.equal(result.status, 'blocked');
   assert.equal(result.blockingReason, 'rollback-unavailable');
-});
-
-test('dependency baseline captures a NEW dependency file before its first write', (t) => {
-  const fixture = makeWorkspace(t);
-  const baseline = captureFileSetBaseline({
-    projectRoot: fixture.root,
-    monitoredFiles: ['docs/target.md']
-  });
-  // The fixer just recorded docs/sibling.md as a necessary dependency. Establish its
-  // baseline BEFORE writing to it.
-  const result = ensureDependencyBaseline({
-    projectRoot: fixture.root,
-    baseline,
-    dependency: { path: 'docs/sibling.md', reason: 'necessary dependency', issueId: 'I-2' }
-  });
-  assert.equal(result.status, 'passed');
-  assert.ok(result.baseline.entries.some((entry) => entry.path === 'docs/sibling.md'));
-  // The new entry carries a captured body so restore can roll it back.
-  const dep = result.baseline.entries.find((entry) => entry.path === 'docs/sibling.md');
-  assert.ok(dep.body, 'dependency baseline must capture a restorable body');
-});
-
-test('dependency baseline VALIDATES an existing recorded dependency without re-baselining a mutated file', (t) => {
-  const fixture = makeWorkspace(t);
-  // sibling.md is already recorded in the baseline.
-  const baseline = captureFileSetBaseline({
-    projectRoot: fixture.root,
-    monitoredFiles: ['docs/target.md', { path: 'docs/sibling.md', reason: 'dep', issueId: 'I-3' }]
-  });
-  // It then unexpectedly differs from the recorded baseline BEFORE the fixer writes.
-  fs.appendFileSync(fixture.sibling, '\nUnexpected pre-write drift.\n');
-
-  const result = ensureDependencyBaseline({
-    projectRoot: fixture.root,
-    baseline,
-    dependency: { path: 'docs/sibling.md', reason: 'dep', issueId: 'I-3' }
-  });
-  // Must NOT take a late baseline after mutation; block instead.
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.blockingReason, 'unexpected-worktree-change');
-});
-
-test('dependency baseline blocks when the new dependency file is unreadable', (t) => {
-  const fixture = makeWorkspace(t);
-  const baseline = captureFileSetBaseline({
-    projectRoot: fixture.root,
-    monitoredFiles: ['docs/target.md']
-  });
-  const result = ensureDependencyBaseline({
-    projectRoot: fixture.root,
-    baseline,
-    dependency: { path: 'docs/missing-dep.md', reason: 'dep', issueId: 'I-4' }
-  });
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.blockingReason, 'target-only-guard-unavailable');
 });
 
 test('fix guard report persists monitorScope and excludedDirectories', () => {

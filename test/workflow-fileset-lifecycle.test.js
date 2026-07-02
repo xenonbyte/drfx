@@ -1971,6 +1971,30 @@ test('recordUnitReview: rejects malformed extraRead contentId before persistence
   );
 });
 
+test('recordUnitReview: rejects extraRead contentId mismatches before persistence', async (t) => {
+  const { root, targetStateDir, plan } = await makeUnitReviewProject(t);
+  const unit = plan.units[0];
+
+  await assert.rejects(
+    recordUnitReview({
+      targetStateDir,
+      projectRoot: root,
+      unitId: unit.unit_id,
+      coverageReceipt: unitReviewPayload({
+        unitId: unit.unit_id,
+        extraReads: [{ path: 'src/b.js', contentId: '0'.repeat(64) }]
+      }),
+      reviewerFindings: REVIEWER_PASS
+    }),
+    (error) => error.code === 'ERR_UNIT_REVIEW_EXTRA_READ_STALE' &&
+      /extraRead contentId/.test(String(error.message))
+  );
+
+  assert.equal(fs.existsSync(path.join(
+    targetStateDir, 'project-review', 'summaries', `${unit.unit_id}.json`
+  )), false);
+});
+
 test('recordUnitReview: an oversize unit writes the FIXED high-risk summary, never claims coverage', async (t) => {
   const { root, targetStateDir, plan } = await makeUnitReviewProject(t, { oversize: true });
   const oversizeUnit = plan.units.find((u) => u.oversize_file === true);
@@ -2026,6 +2050,60 @@ test('recordUnitReview cache skip: an unchanged unit reuses its prior summary; a
   // the contentId actually moved.
   const newHelperId = await streamingContentId(path.join(root, 'src', 'helper.js'));
   assert.notEqual(newHelperId, helperRef.contentId, 'editing the contract file changes its contentId');
+
+  const resume = await nextUnit(targetStateDir, undefined, { projectRoot: root });
+  assert.equal(resume.status, 'blocked');
+  assert.equal(resume.statusReason, 'stale-fingerprint-mismatch');
+});
+
+test('nextUnit: stale extraReads invalidate a stored summary even when the project fingerprint is stable', async (t) => {
+  const { root, targetStateDir, plan } = await makeUnitReviewProject(t);
+  const aUnit = plan.units.find((u) => u.files.some((f) => f.path === 'src/a.js'));
+  const dependencyPath = path.join(root, 'node_modules', 'external-contract.js');
+  fs.mkdirSync(path.dirname(dependencyPath), { recursive: true });
+  fs.writeFileSync(dependencyPath, 'module.exports = 1;\n');
+  const dependencyContentId = await streamingContentId(dependencyPath);
+
+  await recordUnitReview({
+    targetStateDir,
+    projectRoot: root,
+    unitId: aUnit.unit_id,
+    coverageReceipt: unitReviewPayload({
+      unitId: aUnit.unit_id,
+      extraReads: [{ path: 'node_modules/external-contract.js', contentId: dependencyContentId }]
+    }),
+    reviewerFindings: REVIEWER_PASS
+  });
+
+  fs.writeFileSync(dependencyPath, 'module.exports = 2;\n');
+  const resume = await nextUnit(targetStateDir, undefined, { projectRoot: root });
+  assert.equal(resume.status, 'next-unit');
+  assert.equal(resume.unitId, aUnit.unit_id);
+});
+
+test('nextUnit: missing extraReads invalidate a stored summary even when the project fingerprint is stable', async (t) => {
+  const { root, targetStateDir, plan } = await makeUnitReviewProject(t);
+  const aUnit = plan.units.find((u) => u.files.some((f) => f.path === 'src/a.js'));
+  const dependencyPath = path.join(root, 'node_modules', 'deleted-contract.js');
+  fs.mkdirSync(path.dirname(dependencyPath), { recursive: true });
+  fs.writeFileSync(dependencyPath, 'module.exports = 1;\n');
+  const dependencyContentId = await streamingContentId(dependencyPath);
+
+  await recordUnitReview({
+    targetStateDir,
+    projectRoot: root,
+    unitId: aUnit.unit_id,
+    coverageReceipt: unitReviewPayload({
+      unitId: aUnit.unit_id,
+      extraReads: [{ path: 'node_modules/deleted-contract.js', contentId: dependencyContentId }]
+    }),
+    reviewerFindings: REVIEWER_PASS
+  });
+
+  fs.rmSync(dependencyPath);
+  const resume = await nextUnit(targetStateDir, undefined, { projectRoot: root });
+  assert.equal(resume.status, 'next-unit');
+  assert.equal(resume.unitId, aUnit.unit_id);
 });
 
 test('nextUnit: resume continues from the first unit lacking a valid summary', async (t) => {
@@ -2082,13 +2160,14 @@ test('unitsToReReview: changed ∪ suggestedRefs-hit ∪ extraReads-hit, determi
   assert.ok(aUnit && helperUnit);
 
   // Record a summary for aUnit that carries an extraRead on src/b.js.
+  const bContentId = await streamingContentId(path.join(root, 'src', 'b.js'));
   await recordUnitReview({
     targetStateDir,
     projectRoot: root,
     unitId: aUnit.unit_id,
     coverageReceipt: unitReviewPayload({
       unitId: aUnit.unit_id,
-      extraReads: [{ path: 'src/b.js', contentId: aUnit.files[0].contentId }]
+      extraReads: [{ path: 'src/b.js', contentId: bContentId }]
     }),
     reviewerFindings: REVIEWER_PASS
   });

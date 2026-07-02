@@ -248,7 +248,7 @@ Parsing is strict:
 - Duplicate `root=` is rejected.
 - Unknown `key=value` tokens and unknown dash options are rejected.
 
-For valid target invocations, Codex, Claude Code, and opencode routes default missing mode to `review-and-fix` and missing assurance to `practical`. Explicit `assurance=advisory` without mode selects `read-only` on Codex, Claude Code, and opencode. Gemini routes default missing mode to `read-only` and missing assurance to `advisory`.
+For valid target invocations, Codex, Claude Code, and opencode routes default missing mode to `review-and-fix` and missing assurance to `practical`. For document/PR/CODE routes on Codex, Claude Code, and opencode, explicit `assurance=advisory` without mode selects `read-only`; `review-fix-r2p` does not accept user-facing `assurance=`. Gemini routes default missing mode to `read-only` and missing assurance to `advisory`.
 
 Help-style or invalid invocations explain usage only and must not read files, run `drfx workflow`, create state, run probes, or declare review results.
 

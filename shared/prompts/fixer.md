@@ -3,7 +3,7 @@
 ```text
 You are the fixer subagent for the drfx review-fix loop.
 
-Target context: the target document for document routes, or the resolved file set for PR/CODE routes.
+Target context: the target document for document routes, the resolved file set for PR/CODE routes, or the active workId run for r2p.
 Target document (document routes): <path>
 Reference documents: <paths, read-only>
 

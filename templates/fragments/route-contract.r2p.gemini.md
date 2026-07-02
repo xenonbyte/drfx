@@ -3,7 +3,7 @@
 - Users must not pass target=, ref=, assurance=, strict, normal, ledger=, scope=, base=, or guard=; this route has a fixed PLAN rubric and no reference-document surface.
 - The review judges the requirement plan (07-plan.md) against its owning upstream docs (03-06) inside the same active run. 03-07 and run.md are read-only evidence.
 - Direct artifact writes are forbidden. Gemini must not edit run.md or any 03-07 artifact, and it must not execute r2p repair commands.
-- Public CLI commands are drfx doctor, drfx install, and drfx uninstall; drfx workflow is the internal deterministic interface used by this generated route.
+- Public CLI commands are drfx version, drfx help, drfx doctor, drfx status, drfx install, and drfx uninstall; drfx workflow is the internal deterministic interface used by this generated route.
 - The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, owner-stage mapping, and final coordinator agreement are LLM work.
 - Gemini routes are no-state advisory routes; do not read or reuse .drfx/targets/<target-key>/ for resume/reset.
 - Gemini is advisory-only.

@@ -43,12 +43,12 @@ Project-root `.drfx/rules/` is shared project configuration, not target state. D
 
 ## Manifest Fields
 
-`MANIFEST.md` records enough state to resume safely. The manifest carries an optional `Target context kind` discriminator (`document`, `pr`, or `code`); absent means `document`, so existing document manifests are unchanged. The identity block varies by kind; the shared workflow fields below apply to every kind.
+`MANIFEST.md` records enough state to resume safely. The manifest carries an optional `Target context kind` discriminator (`document`, `pr`, `code`, or `r2p`); absent means `document`, so existing document manifests are unchanged. The identity block varies by kind; the shared workflow fields below apply to every kind.
 
 Shared fields (all kinds):
 
 - Manifest schema: `2`.
-- Target context kind: `document`, `pr`, or `code` (omitted for document, which is the default).
+- Target context kind: `document`, `pr`, `code`, or `r2p` (omitted for document, which is the default).
 - Strictness: `normal` or `strict`.
 - Mode: `review-and-fix` or `read-only`.
 - Assurance: `practical`, `strict-verified`, or `advisory`.
@@ -78,6 +78,12 @@ File-set (PR/CODE) target context identity:
 - A deterministic file-set fingerprint over the resolved files identifies the reviewed set; a changed fingerprint means the set drifted.
 - PR records the base ref plus the resolved base, merge-base, and HEAD commits.
 - CODE records the normalized scopes and the mandatory exclusion list.
+
+R2P target context identity:
+
+- Document type is `PLAN`; the reviewed anchor is `07-plan.md` inside the active run.
+- Target context kind is `r2p`, and the manifest records `workId`.
+- The `03-07` review-set fingerprint and the `run.md` sha256 gate repair commands; any mismatch blocks repair and requires rerun or r2p lifecycle recovery.
 
 If `ledger=` is supplied, record the resolved target-local ledger path. A custom ledger must stay inside `.drfx/targets/<target-key>/` and must not point to reserved state files, `LOCK/`, `stale-locks/`, or `rounds/`.
 
@@ -156,14 +162,14 @@ When stale state can no longer be resumed (for example after an exclusion-policy
 
 On `resume`:
 
-1. Derive the target key from the requested target context identity (document: the normalized target path; PR/CODE: the route kind plus base/scope identity).
+1. Derive the target key from the requested target context identity (document: the normalized target path; PR/CODE: the route kind plus base/scope identity; r2p: the route kind plus workId).
 2. Read that target's `MANIFEST.md`.
 3. Read the manifest `Ledger path`, defaulting to target-local `ISSUES.md`.
 4. Read `CONTINUITY.md` when present.
-5. Confirm the manifest target context matches the requested one (document: the manifest target path matches the requested target; PR/CODE: the base/scope identity and file-set fingerprint match).
+5. Confirm the manifest target context matches the requested one (document: the manifest target path matches the requested target; PR/CODE: the base/scope identity and file-set fingerprint match; r2p: the workId, review-set fingerprint, and run.md gate hash match).
 6. Restore strictness and mode from the manifest unless the user explicitly asks to change them.
-7. Rebuild the merged rule set from current shared rubrics (document routes) or the route-kind rule stack (PR/CODE), plus user-global and project-local rules.
-8. Recompute the current target context identity and compare it with the manifest: document routes compare the content fingerprint; PR/CODE routes compare the file-set fingerprint.
+7. Rebuild the merged rule set from current shared rubrics (document and r2p routes) or the route-kind rule stack (PR/CODE), plus user-global and project-local rules.
+8. Recompute the current target context identity and compare it with the manifest: document routes compare the content fingerprint; PR/CODE routes compare the file-set fingerprint; r2p compares the review-set fingerprint and run.md gate hash.
 9. Continue from the recorded next action only when state is still valid.
 
 If the current invocation supplies different strictness or mode from the manifest, stop and ask whether to resume with manifest values or start a new review round. A `read-only` manifest must not resume into `review-and-fix` without explicit user confirmation.

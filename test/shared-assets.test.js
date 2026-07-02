@@ -59,84 +59,84 @@ const GENERATED_SHELL_BASELINE_BYTES = Object.freeze({
 const CODEX_SHARED_DEDUP_EXPECTED_MEASUREMENT = Object.freeze({
   routes: Object.freeze({
     'review-fix-spec': Object.freeze({
-      routeBytes: 83996,
-      embeddedSharedBytes: 61802,
-      copiedSharedBytes: 61504,
-      duplicateBytes: 61504,
-      copiedRouteBytes: 23400,
-      shrinkBytes: 60596,
-      shrinkPercent: 72.14,
+      routeBytes: 84963,
+      embeddedSharedBytes: 62725,
+      copiedSharedBytes: 62427,
+      duplicateBytes: 62427,
+      copiedRouteBytes: 23444,
+      shrinkBytes: 61519,
+      shrinkPercent: 72.41,
       wouldGrow: false
     }),
     'review-fix-plan': Object.freeze({
-      routeBytes: 84304,
-      embeddedSharedBytes: 62110,
-      copiedSharedBytes: 61812,
-      duplicateBytes: 61812,
-      copiedRouteBytes: 23400,
-      shrinkBytes: 60904,
-      shrinkPercent: 72.24,
+      routeBytes: 85271,
+      embeddedSharedBytes: 63033,
+      copiedSharedBytes: 62735,
+      duplicateBytes: 62735,
+      copiedRouteBytes: 23444,
+      shrinkBytes: 61827,
+      shrinkPercent: 72.51,
       wouldGrow: false
     }),
     'review-fix-design': Object.freeze({
-      routeBytes: 84106,
-      embeddedSharedBytes: 61864,
-      copiedSharedBytes: 61564,
-      duplicateBytes: 61564,
-      copiedRouteBytes: 23450,
-      shrinkBytes: 60656,
-      shrinkPercent: 72.12,
+      routeBytes: 85073,
+      embeddedSharedBytes: 62787,
+      copiedSharedBytes: 62487,
+      duplicateBytes: 62487,
+      copiedRouteBytes: 23494,
+      shrinkBytes: 61579,
+      shrinkPercent: 72.38,
       wouldGrow: false
     }),
     'review-fix-doc': Object.freeze({
-      routeBytes: 80803,
-      embeddedSharedBytes: 58624,
-      copiedSharedBytes: 58365,
-      duplicateBytes: 58365,
-      copiedRouteBytes: 23358,
-      shrinkBytes: 57445,
-      shrinkPercent: 71.09,
+      routeBytes: 81770,
+      embeddedSharedBytes: 59547,
+      copiedSharedBytes: 59288,
+      duplicateBytes: 59288,
+      copiedRouteBytes: 23402,
+      shrinkBytes: 58368,
+      shrinkPercent: 71.38,
       wouldGrow: false
     }),
     'review-fix-pr': Object.freeze({
-      routeBytes: 81145,
-      embeddedSharedBytes: 59129,
-      copiedSharedBytes: 58874,
-      duplicateBytes: 58874,
-      copiedRouteBytes: 23191,
-      shrinkBytes: 57954,
-      shrinkPercent: 71.42,
+      routeBytes: 82112,
+      embeddedSharedBytes: 60052,
+      copiedSharedBytes: 59797,
+      duplicateBytes: 59797,
+      copiedRouteBytes: 23235,
+      shrinkBytes: 58877,
+      shrinkPercent: 71.7,
       wouldGrow: false
     }),
     'review-fix-code': Object.freeze({
-      routeBytes: 92130,
-      embeddedSharedBytes: 62729,
-      copiedSharedBytes: 62472,
-      duplicateBytes: 62472,
-      copiedRouteBytes: 30578,
-      shrinkBytes: 61552,
-      shrinkPercent: 66.81,
+      routeBytes: 93097,
+      embeddedSharedBytes: 63652,
+      copiedSharedBytes: 63395,
+      duplicateBytes: 63395,
+      copiedRouteBytes: 30622,
+      shrinkBytes: 62475,
+      shrinkPercent: 67.11,
       wouldGrow: false
     }),
     'review-fix-r2p': Object.freeze({
-      routeBytes: 83138,
-      embeddedSharedBytes: 62481,
-      copiedSharedBytes: 61812,
-      duplicateBytes: 61812,
-      copiedRouteBytes: 21863,
-      shrinkBytes: 61275,
-      shrinkPercent: 73.7,
+      routeBytes: 84105,
+      embeddedSharedBytes: 63404,
+      copiedSharedBytes: 62735,
+      duplicateBytes: 62735,
+      copiedRouteBytes: 21907,
+      shrinkBytes: 62198,
+      shrinkPercent: 73.95,
       wouldGrow: false
     })
   }),
   totals: Object.freeze({
-    routeBytes: 589622,
-    embeddedSharedBytes: 428739,
-    copiedSharedBytes: 426403,
-    duplicateBytes: 426403
+    routeBytes: 596391,
+    embeddedSharedBytes: 435200,
+    copiedSharedBytes: 432864,
+    duplicateBytes: 432864
   }),
-  largestShellShrinkBytes: 61552,
-  largestShellShrinkPercent: 66.81,
+  largestShellShrinkBytes: 62475,
+  largestShellShrinkPercent: 67.11,
   anyCodexRouteWouldGrow: false,
   gateEntered: true
 });
@@ -582,7 +582,7 @@ test('shared platform contract includes opencode in source and generated opencod
   );
   assert.match(
     core,
-    /Explicit `assurance=advisory` without mode selects `read-only` on Codex, Claude Code, and opencode/
+    /For document\/PR\/CODE routes on Codex, Claude Code, and opencode, explicit `assurance=advisory` without mode selects `read-only`/
   );
   assert.match(core, /Runtime platform: codex \| claude-code \| gemini \| opencode \| manual/);
   assert.match(longTask, /Runtime platform: `codex`, `claude-code`, `gemini`, `opencode`, or `manual`/);
@@ -1368,7 +1368,7 @@ test('rendered route text omits stale missing-mode explain-only contract', () =>
   assert.doesNotMatch(renderedRoutes, /omits `?read-only`? and `?review-and-fix`?[^.]*explains usage only/i);
   assert.doesNotMatch(renderedRoutes, new RegExp('Without an explicit mode token' + ', explain usage only', 'i'));
   assert.match(renderedRoutes, /Codex, Claude Code, and opencode routes default a valid target invocation to `review-and-fix assurance=practical`/);
-  assert.match(renderedRoutes, /Explicit `assurance=advisory` without mode selects `read-only` on Codex, Claude Code, and opencode/);
+  assert.match(renderedRoutes, /For document\/PR\/CODE routes on Codex, Claude Code, and opencode, explicit `assurance=advisory` without mode selects `read-only`/);
   assert.match(renderedRoutes, /Gemini routes default a valid target invocation to `read-only assurance=advisory`/);
   assert.match(renderedRoutes, /Help-style or invalid invocations explain usage only and must not read target\/reference bodies, run workflow commands, run probes, create state, or declare a review result/);
 });
@@ -1513,7 +1513,7 @@ test('README documents v3 invocation defaults and explain-only boundary', () => 
   const readme = read('README.md');
 
   assert.match(readme, /Codex, Claude Code, and opencode routes default missing mode to `review-and-fix` and missing assurance to `practical`/);
-  assert.match(readme, /Explicit `assurance=advisory` without mode selects `read-only` on Codex, Claude Code, and opencode/);
+  assert.match(readme, /For document\/PR\/CODE routes on Codex, Claude Code, and opencode, explicit `assurance=advisory` without mode selects `read-only`/);
   assert.match(readme, /Gemini routes default missing mode to `read-only` and missing assurance to `advisory`/);
   assert.match(readme, /Help-style or invalid invocations[\s\S]*explain usage only[\s\S]*must not read files[\s\S]*run `drfx workflow`[\s\S]*create state[\s\S]*run probes[\s\S]*declare review results/);
 });

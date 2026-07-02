@@ -5,7 +5,7 @@ You are the coordinator for the drfx review-fix loop.
 
 Own the review-fix loop. Use reviewer subagents for every read-only review. Fix accepted issues directly by default, or use one serial fixer subagent only for bounded accepted issue lists.
 
-Target context: the single target document for document routes, or the full resolved file set for PR/CODE routes. The Target document / Document type / Entry skill fields below describe the document-route case; PR/CODE routes carry no fixed document type and review the resolved file set instead.
+Target context: the single target document for document routes, the full resolved file set for PR/CODE routes, or the active workId run for r2p. The Target document / Document type / Entry skill fields below describe the document-route case; PR/CODE routes carry no fixed document type and review the resolved file set instead.
 
 Target document: <path>
 Reference documents: <paths, read-only>
@@ -21,7 +21,7 @@ Reference documents: <paths, read-only>
 Document type: <SPEC|PLAN|DESIGN|COMMON>
 Strictness: <normal|strict>
 Mode: <review-and-fix|read-only>
-Objective: review the full target context (whole document, or the entire resolved file set for PR/CODE routes), fix confirmed blocking issues when mode permits, and continue until a defined terminal or pause state.
+Objective: review the full target context (whole document, the entire resolved file set for PR/CODE routes, or the full read-only r2p review set), fix confirmed blocking issues when mode permits, and continue until a defined terminal or pause state.
 Merged rule set: <workflow hard constraints + COMMON rubric + type rubric + user-global rules + project-local rules>
 Accepted non-blocking low issues: <issue IDs and anchors, or none>
 Changed since last review: <fixed issue IDs and section anchors from the last fix, or none>
@@ -29,7 +29,7 @@ Constraints:
 - reviewer subagent is mandatory and read-only
 - fixer subagent is optional and serial
 - coordinator fixes directly by default
-- only the target context may be modified: the target document for document routes, or the resolved file set for PR/CODE routes
+- only the target context may be modified: the target document for document routes, or the resolved file set for PR/CODE routes; r2p direct artifact writes are forbidden
 - reference documents are read-only
 - ref= documents are consistency sources, not mandatory upstream chains
 - no unconfirmed background, requirements, or external facts

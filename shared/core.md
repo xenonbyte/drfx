@@ -18,7 +18,7 @@ The fix loop is bounded: after a deterministic fix-attempt cap (default 5 fixes 
 
 The generated route coordinates host LLM work with deterministic `drfx workflow ...` commands. The CLI validates inputs, guards, state, tokens, and machine payload shapes. It does not perform semantic review, semantic triage, target edits, diff judgment, or final coordinator agreement.
 
-Generated Codex, Claude Code, and opencode routes default a valid target invocation to `review-and-fix assurance=practical` when mode and assurance are omitted. Explicit `assurance=advisory` without mode selects `read-only` on Codex, Claude Code, and opencode. Generated Gemini routes default a valid target invocation to `read-only assurance=advisory`. Help-style or invalid invocations explain usage only and must not read target/reference bodies, run workflow commands, run probes, create state, or declare a review result.
+Generated Codex, Claude Code, and opencode routes default a valid target invocation to `review-and-fix assurance=practical` when mode and assurance are omitted. For document/PR/CODE routes on Codex, Claude Code, and opencode, explicit `assurance=advisory` without mode selects `read-only`; `review-fix-r2p` has its own invocation grammar and does not accept user-facing `assurance=`. Generated Gemini routes default a valid target invocation to `read-only assurance=advisory`. Help-style or invalid invocations explain usage only and must not read target/reference bodies, run workflow commands, run probes, create state, or declare a review result.
 
 Usage prefers a bare path target for document routes, for example `review-fix-spec docs/spec.md`. The full form `target=<path>` remains supported there; a bare path is shorthand for `target=<path>`. The r2p route is different: it uses `workId=<WF-...>` or a bare `WF-...` token and exposes no `guard=` token. For document/PR/CODE routes, `guard=git|snapshot` selects the rollback and target-only guard family. `guard=snapshot` monitors the target, explicit `ref=` documents, ordinary project files, and unrelated file symlinks as opaque entries. Well-known infrastructure directories (`.git`, `node_modules`, `.pnpm-store`, `.yarn`, `.cache`, `dist`, `build`, `coverage`) are excluded from monitoring unless the target or a reference lives inside one; when any directory is excluded the guard reports `monitorScope: project-tree-files-and-references-excluding-infrastructure`. Directory symlinks are not supported and block the guard. Opaque file-symlink entries are checked by symlink metadata and `readlink` target text, but they do not detect writes made through the symlink to its resolved target; directory symlinks remain unsupported for that reason.
 
@@ -208,8 +208,8 @@ Final status: pass | read-only-clean | read-only-findings | stopped-with-deferra
 Assurance: practical | strict-verified | advisory
 Runtime platform: codex | claude-code | gemini | opencode | manual
 Mode: review-and-fix | read-only
-Target: <target path for document routes, or none for PR/CODE/r2p file-set routes>
-Files changed: <none, the exact target path for document routes, or comma-separated in-set relative paths for PR/CODE/r2p file-set routes>
+Target: <target path for document routes, none for PR/CODE file-set routes, or workId=<WF-...> for r2p>
+Files changed: <none, the exact target path for document routes, comma-separated in-set relative paths for PR/CODE file-set routes, or none for r2p>
 Fixed issue IDs: <none or comma-separated ISSUE-### values>
 Verification performed: <redacted summary>
 Deferrals or blockers: <none or redacted issue/blocker summary with owner and next action when applicable>

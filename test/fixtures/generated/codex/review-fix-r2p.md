@@ -28,7 +28,7 @@ Help-style or invalid invocations explain usage without reading files, running p
 - Direct artifact writes are forbidden: drfx must not write, delete, rename, restore, or patch `run.md` or any `03-07` artifact itself.
 - Required r2p commands are `r2p-status`, `r2p-reopen`, `r2p-gap-open`, and `r2p-continue`. Repair means `r2p-reopen` or `r2p-gap-open` only; `r2p-continue` is the required next action after repair, not a drfx-invoked fix step.
 - Findings map to an `ownerStage`, not to an editable file. After `apply-r2p-repair`, the round ends at checkpoint; PASS is allowed only on a clean rerun after r2p regeneration.
-- Public CLI commands are `drfx doctor`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.
+- Public CLI commands are `drfx version`, `drfx help`, `drfx doctor`, `drfx status`, `drfx install`, and `drfx uninstall`; `drfx workflow ...` is the internal deterministic interface used by this generated route.
 - The CLI validates workflow state and parses machine payloads. Semantic review, semantic triage, owner-stage mapping, repair-plan judgment, and final coordinator agreement are LLM work.
 - For resume, read `.drfx/targets/<target-key>/`.
 - This skill includes copied shared references under this skill directory; it does not need a home-level shared asset directory at runtime.

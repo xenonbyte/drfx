@@ -247,7 +247,7 @@ Parsing 是 strict 的：
 - Duplicate `root=` 会被拒绝。
 - Unknown `key=value` tokens 和 unknown dash options 会被拒绝。
 
-对 valid target invocations，Codex、Claude Code 和 opencode routes 会把缺失的 mode 默认为 `review-and-fix`，把缺失的 assurance 默认为 `practical`。显式 `assurance=advisory` 且未传 mode 时，在 Codex、Claude Code 和 opencode 上选择 `read-only`。Gemini routes 默认缺失 mode 为 `read-only`，缺失 assurance 为 `advisory`。
+对 valid target invocations，Codex、Claude Code 和 opencode routes 会把缺失的 mode 默认为 `review-and-fix`，把缺失的 assurance 默认为 `practical`。对 Codex、Claude Code 和 opencode 上的 document/PR/CODE routes，显式 `assurance=advisory` 且未传 mode 时选择 `read-only`；`review-fix-r2p` 不接受 user-facing `assurance=`。Gemini routes 默认缺失 mode 为 `read-only`，缺失 assurance 为 `advisory`。
 
 Help-style 或 invalid invocations 只解释用法，不得读取文件、运行 `drfx workflow`、创建 state、运行 probes，或声明 review results。
 

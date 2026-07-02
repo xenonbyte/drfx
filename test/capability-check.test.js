@@ -827,6 +827,53 @@ test('install copies all shared package assets for regeneration', async (t) => {
   }
 });
 
+test('install refuses symlinked shared asset destinations', async (t) => {
+  const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
+  const outside = path.join(homeDir, 'outside-core.md');
+  const sharedDir = path.join(homeDir, '.drfx', 'shared');
+  fs.mkdirSync(sharedDir, { recursive: true });
+  fs.writeFileSync(outside, '# outside\n');
+  fs.symlinkSync(outside, path.join(sharedDir, 'core.md'));
+
+  await assert.rejects(
+    () =>
+      installPlatform('claude', {
+        homeDir,
+        platformRoots,
+        cwd,
+        packageVersion: PACKAGE_VERSION
+      }),
+    (error) => error && error.code === 'ERR_SHARED_ASSET_TARGET_KIND'
+  );
+
+  assert.equal(fs.readFileSync(outside, 'utf8'), '# outside\n');
+  assert.equal(readInstallManifest('claude', { homeDir }).missing, true);
+});
+
+test('install rolls shared assets back when a later generated write fails', async (t) => {
+  const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
+  const sharedCore = path.join(homeDir, '.drfx', 'shared', 'core.md');
+  fs.mkdirSync(path.dirname(sharedCore), { recursive: true });
+  fs.writeFileSync(sharedCore, '# user shared core\n');
+
+  await assert.rejects(
+    () =>
+      installPlatform('codex', {
+        homeDir,
+        platformRoots,
+        cwd,
+        packageVersion: PACKAGE_VERSION,
+        _onBeforeReplaceGeneratedDirectory: () => {
+          throw new Error('simulated generated directory write failure');
+        }
+      }),
+    /simulated generated directory write failure/
+  );
+
+  assert.equal(fs.readFileSync(sharedCore, 'utf8'), '# user shared core\n');
+  assert.equal(readInstallManifest('codex', { homeDir }).missing, true);
+});
+
 test('install backs up existing Claude and Gemini files and records overwritten action', async (t) => {
   const { homeDir, cwd, platformRoots } = makeCommandSandbox(t);
   const claudeRoute = path.join(platformRoots.claude, 'review-fix-spec.md');

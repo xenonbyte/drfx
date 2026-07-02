@@ -1208,8 +1208,9 @@ test('refreshPartitionPlanContent converts a changed legacy oversize blocker int
 // invalidateUnitReviews / invalidateAllBackstopReviews
 // ---------------------------------------------------------------------------
 
-function tmpTargetWithReviews() {
+function tmpTargetWithReviews(t) {
   const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'drfx-inval-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const pr = pathMod.join(dir, 'project-review');
   fs.mkdirSync(pathMod.join(pr, 'summaries'), { recursive: true });
   fs.mkdirSync(pathMod.join(pr, 'findings'), { recursive: true });
@@ -1220,8 +1221,8 @@ function tmpTargetWithReviews() {
   return dir;
 }
 
-test('invalidateUnitReviews removes summary+findings for the named units only', () => {
-  const dir = tmpTargetWithReviews();
+test('invalidateUnitReviews removes summary+findings for the named units only', (t) => {
+  const dir = tmpTargetWithReviews(t);
   const removed = invalidateUnitReviews(dir, ['unit-001']);
   assert.deepEqual(removed, ['unit-001']);
   assert.ok(!fs.existsSync(pathMod.join(dir, 'project-review', 'summaries', 'unit-001.json')));
@@ -1229,9 +1230,10 @@ test('invalidateUnitReviews removes summary+findings for the named units only', 
   assert.ok(fs.existsSync(pathMod.join(dir, 'project-review', 'summaries', 'unit-002.json')));
 });
 
-test('invalidateAllBackstopReviews clears every backstop summary+findings', () => {
+test('invalidateAllBackstopReviews clears every backstop summary+findings', (t) => {
   // Build a tmp dir with fixtures for EVERY backstop in CROSSCUTTING_BACKSTOPS.
   const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'drfx-inval-all-backstops-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const pr = pathMod.join(dir, 'project-review');
   fs.mkdirSync(pathMod.join(pr, 'summaries'), { recursive: true });
   fs.mkdirSync(pathMod.join(pr, 'findings'), { recursive: true });
@@ -1257,8 +1259,8 @@ test('invalidateAllBackstopReviews clears every backstop summary+findings', () =
   }
 });
 
-test('invalidateUnitReviews fails loudly when a review artifact cannot be removed', () => {
-  const dir = tmpTargetWithReviews();
+test('invalidateUnitReviews fails loudly when a review artifact cannot be removed', (t) => {
+  const dir = tmpTargetWithReviews(t);
   const badPath = pathMod.join(dir, 'project-review', 'summaries', 'unit-001.json');
   fs.rmSync(badPath);
   fs.mkdirSync(badPath);

@@ -620,6 +620,32 @@ test('formatWorkflowError stable JSON includes full error contract fields', () =
   });
 });
 
+test('formatWorkflowError redacts sensitive message and nextAction fields', () => {
+  const error = new Error('failed with token=sk-live-1234567890abcdef');
+  error.nextAction = 'rerun after removing Authorization: Bearer sk-live-abcdef1234567890';
+
+  const formatted = formatWorkflowError({ error });
+
+  assert.equal(formatted.message.includes('sk-live'), false);
+  assert.equal(formatted.nextAction.includes('sk-live'), false);
+  assert.match(formatted.message, /\[REDACTED:api-token\]/);
+  assert.match(formatted.nextAction, /\[REDACTED:api-token\]/);
+});
+
+test('workflowJson redacts sensitive message and nextAction fields', () => {
+  const json = workflowJson({
+    ok: false,
+    status: 'blocked',
+    message: 'bad Cookie: session=super-session-value',
+    nextAction: 'retry with token=sk-live-1234567890abcdef'
+  });
+
+  assert.equal(json.message.includes('super-session-value'), false);
+  assert.equal(json.nextAction.includes('sk-live'), false);
+  assert.match(json.message, /\[REDACTED:cookie\]/);
+  assert.match(json.nextAction, /\[REDACTED:api-token\]/);
+});
+
 test('formatWorkflowError preserves coded blocker fields from thrown errors', () => {
   const error = new Error('bad r2p root');
   error.code = 'ERR_R2P_PROJECT_ROOT';
