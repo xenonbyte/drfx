@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.10.1 - 2026-07-02
+
+Hardens install rollback, workflow output redaction, and file-set unit-review freshness.
+
+### Fixed
+
+- **Shared-asset install is now atomic and fully rolled back on failure.** `copySharedAssets` writes through `atomicCopyFile` and refuses to overwrite a non-file target (`ERR_SHARED_ASSET_TARGET_KIND`). The copy runs inside the install try-block with per-file backup tracking, so a later generated-file write failure restores the prior shared assets; transient backups are discarded on success so cross-platform shared assets are never recorded in a single platform's manifest (`lib/generator.js`, `lib/install.js`).
+- **Workflow output redacts sensitive strings.** `workflowJson` and `formatWorkflowError` now pass `message` and `nextAction` through `redactSensitive` before returning them (`lib/workflow-state.js`, `lib/workflow/index.js`).
+- **Unit review rejects stale extra reads.** `recordUnitReview` refuses a coverage receipt whose `extraRead` contentId no longer matches on-disk content (`ERR_UNIT_REVIEW_EXTRA_READ_STALE`), and `nextUnit` invalidates a stored summary whose extra reads drifted, mirroring the existing cache-skip guard (`lib/workflow/file-set-unit-review.js`).
+- **r2p gap-open live-status guard is consistent.** `statusMatchesCommandKind` gates `r2p-gap-open` on `GAP_ROUTABLE_STATUSES`, so a `next_stage` run is rejected in the drift guard exactly as in the routing check (`lib/workflow/r2p-repair.js`).
+
+### Changed
+
+- Removed the unused `ensureDependencyBaseline` snapshot-guard helper, and synced the public CLI command list, r2p assurance grammar, and r2p `targetContextKind` across docs and generated route fixtures (`lib/snapshot-guard.js`, `shared/`, `templates/`, docs).
+
 ## 0.10.0 - 2026-06-30
 
 Reworks the `review-fix-r2p` route from in-place document editing into a review-only route that repairs exclusively through the official r2p lifecycle commands.
